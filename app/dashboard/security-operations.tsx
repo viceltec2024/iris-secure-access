@@ -51,7 +51,9 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   }
 
   function listen() {
-    const SpeechRecognition = (window as unknown as { SpeechRecognition?: new () => { lang: string; start(): void; onresult: (e: { results: { 0: { 0: { transcript: string } } }[] }) => void } }).SpeechRecognition;
+    type Recognition = new () => { lang: string; start(): void; onresult: (e: { results: { 0: { 0: { transcript: string } } }[] }) => void };
+    const speechWindow = window as unknown as { SpeechRecognition?: Recognition; webkitSpeechRecognition?: Recognition };
+    const SpeechRecognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!SpeechRecognition) { setAnswer("Voice input is not available in this browser. You can type your question below."); return; }
     const recognition = new SpeechRecognition(); recognition.lang = "en-US";
     recognition.onresult = e => { const transcript = e.results[0][0].transcript; setQuestion(transcript); analyze(transcript); };
