@@ -8,6 +8,13 @@
       "when": 1785777616506,
       "tag": "0000_bumpy_callisto",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785787240383,
+      "tag": "0001_silly_blob",
+      "breakpoints": true
     }
   ]
 }

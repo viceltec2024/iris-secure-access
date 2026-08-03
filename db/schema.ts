@@ -20,3 +20,32 @@ export const auditEvents = sqliteTable("audit_events", {
   metadata: text("metadata").notNull().default("{}"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const incidentStates = sqliteTable("incident_states", {
+  incidentId: text("incident_id").primaryKey(),
+  status: text("status", { enum: ["Open", "Investigating", "Contained"] }).notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const responseActions = sqliteTable("response_actions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  incidentId: text("incident_id").notNull(),
+  actorEmail: text("actor_email").notNull(),
+  action: text("action").notNull(),
+  mode: text("mode", { enum: ["SIMULATION", "LIVE"] }).notNull().default("SIMULATION"),
+  outcome: text("outcome", { enum: ["APPROVED", "REJECTED", "COMPLETED"] }).notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const devices = sqliteTable("devices", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  name: text("name").notNull(),
+  platform: text("platform").notNull(),
+  status: text("status", { enum: ["PENDING", "ONLINE", "OFFLINE"] }).notNull().default("PENDING"),
+  risk: text("risk", { enum: ["UNKNOWN", "LOW", "MEDIUM", "HIGH"] }).notNull().default("UNKNOWN"),
+  enrollmentCode: text("enrollment_code").notNull(),
+  lastSeenAt: text("last_seen_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [uniqueIndex("devices_enrollment_code_unique").on(table.enrollmentCode)]);

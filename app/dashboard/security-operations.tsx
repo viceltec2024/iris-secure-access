@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Bell, ChartLineUp, CheckCircle, Eye, LockKey, Pulse, ShieldCheck, SignOut, Siren, UsersThree, Warning, X } from "@phosphor-icons/react";
+import { useEffect, useMemo, useState } from "react";
+import { Bell, ChartLineUp, CheckCircle, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, UsersThree, Warning, X } from "@phosphor-icons/react";
 import AskIrisPanel from "./ask-iris-panel";
 import { incidentSpanish, Language, text } from "./dashboard-i18n";
 
 type Incident = { id: string; title: string; subject: string; severity: "Critical" | "High" | "Medium" | "Low"; status: "Open" | "Investigating" | "Contained"; time: string; source: string; summary: string; cause: string; impact: string; confidence: number; evidence: string[]; actions: string[]; recommendation: string };
-type Section = "operations" | "incidents" | "intelligence" | "approvals" | "audit";
+type Section = "operations" | "incidents" | "intelligence" | "devices" | "approvals" | "audit";
+type Device = { id: string; name: string; platform: string; status: "PENDING" | "ONLINE" | "OFFLINE"; risk: "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH"; enrollmentCode: string; lastSeenAt: string | null };
+type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
 
 const seedIncidents: Incident[] = [
   { id: "IR-1042", title: "Anomalous outbound connection", subject: "10.0.4.25 → 203.0.113.45", severity: "Critical", status: "Open", time: "2 min ago", source: "Network sensor", summary: "Endpoint WS-1025 started an unusual transfer to a destination never seen before. The pattern may indicate data exfiltration or command-and-control traffic.", cause: "Unknown process executed after a privileged login.", impact: "Possible data exposure and remote control of the affected endpoint.", confidence: 94, evidence: ["First-seen destination", "4.8 GB transferred in 11 minutes", "Connection followed privileged login"], actions: ["Isolate WS-1025 from the network", "Block 203.0.113.45", "Preserve memory and logs", "Open a forensic investigation"], recommendation: "Isolate the endpoint, block the destination, and preserve evidence before closing connections or processes." },
@@ -27,6 +29,17 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [section, setSection] = useState<Section>("operations");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [executionNote, setExecutionNote] = useState("");
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [responseHistory, setResponseHistory] = useState<ResponseAction[]>([]);
+  const [creatingDevice, setCreatingDevice] = useState(false);
+
+  useEffect(() => {
+    void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[] }) => {
+      if (data.incidents?.length) setIncidents(current => current.map(item => ({ ...item, status: data.incidents?.find(saved => saved.incidentId === item.id)?.status || item.status })));
+      if (data.devices) setDevices(data.devices);
+      if (data.actions) setResponseHistory(data.actions);
+    }).catch(() => undefined);
+  }, []);
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
   const open = incidents.filter(i => i.status !== "Contained").length;
@@ -38,11 +51,20 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const statusLabel = (status: Incident["status"]) => t(status === "Open" ? "statusOpen" : status === "Investigating" ? "statusInvestigating" : "statusContained");
   const changeLanguage = (next: Language) => { setLanguage(next); localStorage.setItem("iris-language", next); };
 
-  function contain() {
+  async function decide(decision: "approve" | "reject") {
+    const response = await fetch("/api/security-state", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ incidentId: selected.id, decision }) });
+    if (!response.ok) { setExecutionNote(language === "es" ? "No se pudo guardar la decisión. Inténtalo nuevamente." : "The decision could not be saved. Please try again."); return; }
+    if (decision === "reject") { setApprovalOpen(false); setExecutionNote(language === "es" ? `Plan rechazado para ${selected.id}. No se realizaron cambios.` : `Plan rejected for ${selected.id}. No changes were made.`); return; }
     setIncidents(all => all.map(i => i.id === selected.id ? { ...i, status: "Contained" } : i));
     setSelected({ ...selected, status: "Contained" });
     setApprovalOpen(false);
     setExecutionNote(language === "es" ? `Plan aprobado y ejecutado en modo demostración para ${selected.id}. No se modificó ningún equipo real.` : `Plan approved and executed in demo mode for ${selected.id}. No real device was modified.`);
+    setResponseHistory(current => [{ id: Date.now(), incidentId: selected.id, actorEmail: user.email, action: "CONTAIN_INCIDENT", mode: "SIMULATION", outcome: "COMPLETED", createdAt: new Date().toISOString() }, ...current]);
+  }
+
+  async function createDeviceEnrollment() {
+    setCreatingDevice(true);
+    try { const response = await fetch("/api/security-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "device_enrollment", name: "My Mac", platform: "macOS" }) }); const data = await response.json() as { device?: Device }; if (response.ok && data.device) setDevices(current => [data.device!, ...current]); } finally { setCreatingDevice(false); }
   }
 
   function selectIncident(incident: Incident) {
@@ -58,6 +80,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
         <button className={section === "operations" ? "active" : ""} onClick={() => setSection("operations")}><Pulse /> {t("operations")}</button>
         <button className={section === "incidents" ? "active" : ""} onClick={() => setSection("incidents")}><Siren /> {t("incidents")} <b>{open}</b></button>
         <button className={section === "intelligence" ? "active" : ""} onClick={() => setSection("intelligence")}><ChartLineUp /> {t("intelligence")}</button>
+        <button className={section === "devices" ? "active" : ""} onClick={() => setSection("devices")}><Desktop /> {language === "es" ? "Dispositivos" : "Devices"} <b>{devices.length}</b></button>
         <button className={section === "approvals" ? "active" : ""} onClick={() => setSection("approvals")}><ShieldCheck /> {t("approvals")} <b>{open}</b></button>
         <button className={section === "audit" ? "active" : ""} onClick={() => setSection("audit")}><LockKey /> {t("audit")} <b>{auditCount}</b></button>
         {user.role === "ADMIN" && <a href="/admin/users"><UsersThree /> {t("access")}</a>}
@@ -66,7 +89,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     </aside>
 
     <section className="soc-main">
-      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {t("connected")} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => setLastUpdate(t("now"))}><Pulse /></button><button aria-label="Open approvals" onClick={() => setSection("approvals")}><Bell /><b>{open}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
+      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {t("connected")} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => setLastUpdate(t("now"))}><Pulse /></button><button aria-label="Open approvals" onClick={() => setSection("approvals")}><Bell /><b>{open}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
 
       {section === "operations" && <><section className="metric-row">
         <article><span>{t("riskScore")}</span><strong>{risk}<small>/100</small></strong><em className="risk-high">{t("elevated")}</em></article>
@@ -107,9 +130,11 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
         </aside></div>
       </section>}
 
-      {approvalOpen && <div className="approval-backdrop" role="presentation" onMouseDown={() => setApprovalOpen(false)}><section className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="approval-title" onMouseDown={event => event.stopPropagation()}><button className="approval-close" aria-label={t("cancel")} onClick={() => setApprovalOpen(false)}><X /></button><span className="approval-icon"><ShieldCheck weight="duotone" /></span><p>{t("approvalRequired")}</p><h2 id="approval-title">{t("authorize")} {selected.id}</h2><div className="approval-list">{selectedView.actions.map(action=><span key={action}><CheckCircle weight="fill" />{action}</span>)}</div><div className="demo-warning"><Warning weight="fill" /><span><strong>{t("secureConfirmation")}</strong>{t("simulationOnly")}</span></div><div className="approval-actions"><button onClick={() => setApprovalOpen(false)}>{t("cancel")}</button><button onClick={contain}><ShieldCheck /> {t("approveSimulation")}</button></div></section></div>}
+      {approvalOpen && <div className="approval-backdrop" role="presentation" onMouseDown={() => setApprovalOpen(false)}><section className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="approval-title" onMouseDown={event => event.stopPropagation()}><button className="approval-close" aria-label={t("cancel")} onClick={() => setApprovalOpen(false)}><X /></button><span className="approval-icon"><ShieldCheck weight="duotone" /></span><p>{t("approvalRequired")}</p><h2 id="approval-title">{t("authorize")} {selected.id}</h2><div className="approval-list">{selectedView.actions.map(action=><span key={action}><CheckCircle weight="fill" />{action}</span>)}</div><div className="demo-warning"><Warning weight="fill" /><span><strong>{t("secureConfirmation")}</strong>{t("simulationOnly")}</span></div><div className="approval-actions"><button onClick={() => void decide("reject")}>{language === "es" ? "Rechazar" : "Reject"}</button><button onClick={() => void decide("approve")}><ShieldCheck /> {t("approveSimulation")}</button></div></section></div>}
 
       {section === "approvals" && <section className="module-panel approvals-view"><div className="module-toolbar"><div><h2>{t("pendingApprovals")}</h2><p>{t("approvalExplain")}</p></div><span className="audit-total">{open}</span></div><div className="approval-queue">{incidents.filter(i => i.status !== "Contained").map(i => { const v=localized(i); return <article key={i.id}><span className={`severity ${i.severity.toLowerCase()}`}><Warning weight="fill" /></span><div><strong>{v.title}</strong><p>{i.id} · {i.subject}</p><small>{v.actions.length} {language === "es" ? "acciones propuestas" : "proposed actions"}</small></div><button onClick={() => { selectIncident(i); setApprovalOpen(true); }}>{t("review")}</button></article>})}{open === 0 && <p className="empty-approvals"><CheckCircle weight="fill" />{t("noPending")}</p>}</div></section>}
+
+      {section === "devices" && <section className="module-panel devices-view"><div className="module-toolbar"><div><h2>{language === "es" ? "Inventario de dispositivos" : "Device inventory"}</h2><p>{language === "es" ? "Registra un dispositivo para preparar su conexión segura con IRIS." : "Register a device to prepare its secure connection to IRIS."}</p></div><button className="add-device" onClick={createDeviceEnrollment} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar mi Mac" : "Register my Mac")}</button></div><div className="device-grid">{devices.map(device => <article key={device.id}><div className="device-icon"><Desktop weight="duotone" /></div><div><strong>{device.name}</strong><span>{device.platform}</span></div><b className={`device-state ${device.status.toLowerCase()}`}>{device.status === "PENDING" ? (language === "es" ? "PENDIENTE" : "PENDING") : device.status}</b><dl><div><dt>{language === "es" ? "Riesgo" : "Risk"}</dt><dd>{device.risk}</dd></div><div><dt>{language === "es" ? "Última conexión" : "Last seen"}</dt><dd>{device.lastSeenAt || (language === "es" ? "Nunca" : "Never")}</dd></div></dl><div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div><p><Warning weight="fill" />{language === "es" ? "El agente todavía no está instalado. IRIS no recibe telemetría de este dispositivo." : "The agent is not installed yet. IRIS receives no telemetry from this device."}</p></article>)}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra tu Mac para generar un código seguro. La supervisión comenzará únicamente después de instalar y autorizar el agente." : "Register your Mac to generate a secure code. Monitoring will begin only after you install and authorize the agent."}</p></div>}</div></section>}
 
       {section === "intelligence" && <section className="module-panel intelligence-view">
         <div className="module-toolbar"><div><h2>{t("threatIntelligence")}</h2><p>{language === "es" ? "Indicadores actuales, patrones de ataque y tendencias de exposición." : "Current indicators, attack patterns, and exposure trends."}</p></div><span className="live-pill"><i /> {t("liveFeed")}</span></div>
@@ -126,7 +151,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           ["19 min ago","iris.system","ANOMALY_DETECTED","DB-PROD-01","SUCCESS"],
           ["34 min ago","admin.service","PRIVILEGE_GRANTED","PAM-session-82","SUCCESS"],
           ["1 hr ago","iris.system","POLICY_CHECK","DLP-policy","SUCCESS"]
-        ].map(row=><div className="audit-table-row" role="row" key={row.join("-")}><span>{row[0]}</span><span>{row[1]}</span><span>{row[2].replaceAll("_"," ")}</span><span>{row[3]}</span><span className="audit-success"><CheckCircle weight="fill" />{row[4]}</span></div>)}</div>
+        ].map(row=><div className="audit-table-row" role="row" key={row.join("-")}><span>{row[0]}</span><span>{row[1]}</span><span>{row[2].replaceAll("_"," ")}</span><span>{row[3]}</span><span className="audit-success"><CheckCircle weight="fill" />{row[4]}</span></div>)}{responseHistory.slice(0,8).map(row=><div className="audit-table-row" role="row" key={`response-${row.id}`}><span>{new Date(row.createdAt).toLocaleString(language)}</span><span>{row.actorEmail}</span><span>{row.action.replaceAll("_"," ")}</span><span>{row.incidentId}</span><span className="audit-success"><CheckCircle weight="fill" />{row.outcome}</span></div>)}</div>
       </section>}
       <AskIrisPanel section={section} selectedIncident={selectedView} incidents={incidents.map(localized)} userRole={user.role} language={language} />
     </section>
