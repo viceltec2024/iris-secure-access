@@ -25,7 +25,15 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await request.json().catch(() => ({})) as { type?: string; name?: string; platform?: string };
+  const body = await request.json().catch(() => ({})) as { type?: string; name?: string; platform?: string; deviceId?: string };
+  if (body.type === "rotate_device_code" && body.deviceId) {
+    const [device] = await getDb().select().from(devices).where(eq(devices.id, body.deviceId)).limit(1);
+    if (!device || (user.role !== "ADMIN" && device.ownerEmail !== user.email)) return Response.json({ error: "Device not found" }, { status: 404 });
+    const enrollmentCode = crypto.randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase();
+    const [updated] = await getDb().update(devices).set({ enrollmentCode, agentTokenHash: null, status: "PENDING", risk: "UNKNOWN", lastSeenAt: null, telemetry: "{}" }).where(eq(devices.id, device.id)).returning();
+    await logAudit(user.email, "DEVICE_ENROLLMENT_ROTATED", device.id, "SUCCESS");
+    return Response.json({ device: updated });
+  }
   if (body.type !== "device_enrollment") return Response.json({ error: "Unsupported request" }, { status: 400 });
   const name = String(body.name || "My Mac").trim().slice(0, 80);
   const platform = String(body.platform || "macOS").trim().slice(0, 40);

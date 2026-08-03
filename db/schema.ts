@@ -46,6 +46,8 @@ export const devices = sqliteTable("devices", {
   status: text("status", { enum: ["PENDING", "ONLINE", "OFFLINE"] }).notNull().default("PENDING"),
   risk: text("risk", { enum: ["UNKNOWN", "LOW", "MEDIUM", "HIGH"] }).notNull().default("UNKNOWN"),
   enrollmentCode: text("enrollment_code").notNull(),
+  agentTokenHash: text("agent_token_hash"),
+  telemetry: text("telemetry").notNull().default("{}"),
   lastSeenAt: text("last_seen_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("devices_enrollment_code_unique").on(table.enrollmentCode)]);

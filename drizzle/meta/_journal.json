@@ -15,6 +15,13 @@
       "when": 1785787240383,
       "tag": "0001_silly_blob",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785791267637,
+      "tag": "0002_vengeful_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }
