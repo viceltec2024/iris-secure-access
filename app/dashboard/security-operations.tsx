@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bell, ChartLineUp, CheckCircle, Eye, LockKey, MagnifyingGlass, Microphone, Pulse, ShieldCheck, SignOut, Siren, SpeakerHigh, UsersThree, Warning } from "@phosphor-icons/react";
+import { Bell, ChartLineUp, CheckCircle, Eye, LockKey, Pulse, ShieldCheck, SignOut, Siren, UsersThree, Warning } from "@phosphor-icons/react";
+import AskIrisPanel from "./ask-iris-panel";
 
 type Incident = { id: string; title: string; subject: string; severity: "Critical" | "High" | "Medium" | "Low"; status: "Open" | "Investigating" | "Contained"; time: string; source: string; evidence: string[]; recommendation: string };
 type Section = "operations" | "incidents" | "intelligence" | "audit";
@@ -20,9 +21,6 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [incidents, setIncidents] = useState(seedIncidents);
   const [selected, setSelected] = useState<Incident>(seedIncidents[0]);
   const [filter, setFilter] = useState("All");
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("IRIS is ready. Ask about risk, evidence, affected assets, or the next response action.");
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("just now");
   const [section, setSection] = useState<Section>("operations");
 
@@ -31,41 +29,9 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const critical = incidents.filter(i => i.severity === "Critical" && i.status !== "Contained").length;
   const risk = Math.min(99, incidents.reduce((sum, i) => sum + (i.status === "Contained" ? 0 : severityRank[i.severity] * 7), 18));
 
-  function analyze(value = question) {
-    const q = value.trim().toLowerCase();
-    let response: string;
-    if (!q) response = "Ask a specific question, for example: What is the highest priority incident?";
-    else if (q.includes("highest") || q.includes("priority") || q.includes("critical") || q.includes("prioridad")) response = `${selected.id} is the current priority because ${selected.evidence.join(", ").toLowerCase()}. Recommended action: ${selected.recommendation}`;
-    else if (q.includes("complete") || q.includes("summary") || q.includes("resumen") || q.includes("system")) response = `IRIS analyzed ${incidents.length} active signals. ${critical} critical and ${open} unresolved incidents require attention. The strongest correlated risk is ${selected.title.toLowerCase()} affecting ${selected.subject}. Evidence: ${selected.evidence.join("; ")}. ${selected.recommendation}`;
-    else if (q.includes("evidence") || q.includes("evidencia") || q.includes("why") || q.includes("por qué")) response = `${selected.id} was raised from ${selected.source}. Supporting evidence: ${selected.evidence.join("; ")}. Confidence is high because multiple independent signals agree.`;
-    else if (q.includes("action") || q.includes("do") || q.includes("hacer") || q.includes("response")) response = `For ${selected.id}: ${selected.recommendation} Keep the incident open until identity, endpoint, and network telemetry all confirm containment.`;
-    else response = `I reviewed your question against the current incident context. ${selected.title} (${selected.id}) is ${selected.status.toLowerCase()} with ${selected.severity.toLowerCase()} severity. ${selected.recommendation}`;
-    setAnswer(response);
-  }
-
-  function speak() {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(answer);
-    utterance.onend = () => setIsSpeaking(false);
-    setIsSpeaking(true);
-    window.speechSynthesis.speak(utterance);
-  }
-
-  function listen() {
-    type Recognition = new () => { lang: string; start(): void; onresult: (e: { results: { 0: { 0: { transcript: string } } }[] }) => void };
-    const speechWindow = window as unknown as { SpeechRecognition?: Recognition; webkitSpeechRecognition?: Recognition };
-    const SpeechRecognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
-    if (!SpeechRecognition) { setAnswer("Voice input is not available in this browser. You can type your question below."); return; }
-    const recognition = new SpeechRecognition(); recognition.lang = "en-US";
-    recognition.onresult = e => { const transcript = e.results[0][0].transcript; setQuestion(transcript); analyze(transcript); };
-    recognition.start();
-  }
-
   function contain() {
     setIncidents(all => all.map(i => i.id === selected.id ? { ...i, status: "Contained" } : i));
     setSelected({ ...selected, status: "Contained" });
-    setAnswer(`${selected.id} has been marked contained. IRIS will continue monitoring for recurrence and preserve the incident evidence.`);
   }
 
   return <main className="soc-shell">
@@ -106,7 +72,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
         </aside>
       </section>
 
-      <section className="ask-bar"><div className="ask-answer"><ShieldCheck weight="duotone" /><p>{answer}</p><button className={isSpeaking ? "speaking" : ""} onClick={speak} aria-label="Read analysis aloud"><SpeakerHigh /></button></div><div className="ask-input"><MagnifyingGlass /><input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => e.key === "Enter" && analyze()} placeholder="Ask IRIS about risk, evidence, or the next action…" /><button onClick={listen} aria-label="Ask by voice"><Microphone /></button><button onClick={() => analyze()}>Analyze</button></div></section></>}
+      </>}
 
       {section === "incidents" && <section className="module-panel">
         <div className="module-toolbar"><div><h2>All incidents</h2><p>Select an incident to investigate its evidence and response plan.</p></div><div className="filters">{["All","Critical","High","Medium"].map(f => <button className={filter === f ? "active" : ""} onClick={() => setFilter(f)} key={f}>{f}</button>)}</div></div>
@@ -130,6 +96,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           ["1 hr ago","iris.system","POLICY_CHECK","DLP-policy","SUCCESS"]
         ].map(row=><div className="audit-table-row" role="row" key={row.join("-")}><span>{row[0]}</span><span>{row[1]}</span><span>{row[2].replaceAll("_"," ")}</span><span>{row[3]}</span><span className="audit-success"><CheckCircle weight="fill" />{row[4]}</span></div>)}</div>
       </section>}
+      <AskIrisPanel section={section} selectedIncident={selected} incidents={incidents} userRole={user.role} />
     </section>
   </main>;
 }
