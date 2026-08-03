@@ -1,6 +1,6 @@
 import { requireChatGPTUser, chatGPTSignOutPath } from "../chatgpt-auth";
 import { listRecentAudit, provisionIrisUser } from "../../lib/authz";
-import { ShieldCheck, SignOut, UserCircle, LockKey, Pulse } from "@phosphor-icons/react/dist/ssr";
+import { ShieldCheck, SignOut, UserCircle, LockKey, Pulse, UsersThree } from "@phosphor-icons/react/dist/ssr";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export default async function Dashboard() {
     <main className="workspace-shell">
       <aside className="workspace-sidebar">
         <div className="workspace-brand"><ShieldCheck weight="duotone" /><div><strong>IRIS</strong><span>ENTERPRISE</span></div></div>
-        <nav aria-label="Workspace navigation"><a className="nav-active" href="/dashboard"><Pulse /> Security overview</a></nav>
+        <nav aria-label="Workspace navigation"><a className="nav-active" href="/dashboard"><Pulse /> Security overview</a>{user.role === "ADMIN" && <a href="/admin/users"><UsersThree /> Manage users</a>}</nav>
         <div className="workspace-user"><UserCircle /><div><strong>{user.displayName || user.email}</strong><span>{user.role}</span></div></div>
       </aside>
       <section className="workspace-main">
