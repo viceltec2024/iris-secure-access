@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Starter Project",
-  description: "A clean starting point for building your site.",
+  title: "IRIS Enterprise — Secure Access",
+  description: "Identity-aware secure access for IRIS Enterprise AI.",
   other: {
     "codex-preview": "development",
   },
