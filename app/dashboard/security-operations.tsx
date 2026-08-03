@@ -1,18 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bell, ChartLineUp, CheckCircle, Eye, LockKey, Pulse, ShieldCheck, SignOut, Siren, UsersThree, Warning } from "@phosphor-icons/react";
+import { Bell, ChartLineUp, CheckCircle, Eye, LockKey, Pulse, ShieldCheck, SignOut, Siren, UsersThree, Warning, X } from "@phosphor-icons/react";
 import AskIrisPanel from "./ask-iris-panel";
 
-type Incident = { id: string; title: string; subject: string; severity: "Critical" | "High" | "Medium" | "Low"; status: "Open" | "Investigating" | "Contained"; time: string; source: string; evidence: string[]; recommendation: string };
+type Incident = { id: string; title: string; subject: string; severity: "Critical" | "High" | "Medium" | "Low"; status: "Open" | "Investigating" | "Contained"; time: string; source: string; summary: string; cause: string; impact: string; confidence: number; evidence: string[]; actions: string[]; recommendation: string };
 type Section = "operations" | "incidents" | "intelligence" | "audit";
 
 const seedIncidents: Incident[] = [
-  { id: "IR-1042", title: "Anomalous outbound connection", subject: "10.0.4.25 → 203.0.113.45", severity: "Critical", status: "Open", time: "2 min ago", source: "Network sensor", evidence: ["First-seen destination", "4.8 GB transferred in 11 minutes", "Connection followed privileged login"], recommendation: "Isolate endpoint WS-1025, block the destination, and preserve volatile evidence." },
-  { id: "IR-1041", title: "Suspicious login blocked", subject: "jdoe@agency.gov", severity: "High", status: "Contained", time: "8 min ago", source: "Identity", evidence: ["Impossible travel detected", "MFA challenge failed twice", "Source IP has poor reputation"], recommendation: "Reset active sessions and verify the user through an approved channel." },
-  { id: "IR-1039", title: "Database activity anomaly", subject: "DB-PROD-01", severity: "High", status: "Investigating", time: "19 min ago", source: "Database", evidence: ["Query volume 6.2× baseline", "Service account used outside normal window", "No approved change ticket found"], recommendation: "Pause the service credential and compare queries with the deployment record." },
-  { id: "IR-1036", title: "Privileged access granted", subject: "admin.service@agency.gov", severity: "Medium", status: "Investigating", time: "34 min ago", source: "PAM", evidence: ["Temporary admin role granted", "Approval chain complete", "Session recording active"], recommendation: "Monitor until the privilege expires and confirm the work ticket is closed." },
-  { id: "IR-1032", title: "Policy check completed", subject: "Data Loss Prevention Policy", severity: "Low", status: "Contained", time: "1 hr ago", source: "Compliance", evidence: ["148 controls evaluated", "2 warnings recorded", "No critical failure"], recommendation: "Review the two warning-level controls during the next policy cycle." },
+  { id: "IR-1042", title: "Anomalous outbound connection", subject: "10.0.4.25 → 203.0.113.45", severity: "Critical", status: "Open", time: "2 min ago", source: "Network sensor", summary: "El equipo WS-1025 inició una transferencia inusual hacia un destino nunca observado. El patrón puede indicar extracción de datos o comunicación con un servidor de mando y control.", cause: "Proceso desconocido ejecutado después de un inicio de sesión privilegiado.", impact: "Posible exposición de datos y control remoto del equipo afectado.", confidence: 94, evidence: ["Destino observado por primera vez", "4.8 GB transferidos en 11 minutos", "La conexión ocurrió después de un acceso privilegiado"], actions: ["Aislar WS-1025 de la red", "Bloquear 203.0.113.45", "Conservar memoria y registros", "Abrir investigación forense"], recommendation: "Aislar el equipo, bloquear el destino y preservar la evidencia antes de cerrar conexiones o procesos." },
+  { id: "IR-1041", title: "Suspicious login blocked", subject: "jdoe@agency.gov", severity: "High", status: "Contained", time: "8 min ago", source: "Identity", summary: "Se bloqueó un intento de acceso incompatible con la ubicación habitual del usuario y con múltiples fallos de autenticación.", cause: "Credenciales posiblemente comprometidas o intento automatizado de acceso.", impact: "La sesión fue bloqueada; no hay evidencia de acceso exitoso.", confidence: 89, evidence: ["Desplazamiento imposible detectado", "Dos desafíos MFA fallidos", "IP de origen con mala reputación"], actions: ["Revocar sesiones activas", "Solicitar cambio de contraseña", "Verificar al usuario por un canal aprobado"], recommendation: "Restablecer las sesiones y verificar la identidad del usuario antes de reactivar el acceso." },
+  { id: "IR-1039", title: "Database activity anomaly", subject: "DB-PROD-01", severity: "High", status: "Investigating", time: "19 min ago", source: "Database", summary: "La base de datos recibió un volumen de consultas muy superior al normal mediante una cuenta de servicio fuera de su horario habitual.", cause: "Automatización defectuosa, credencial expuesta o cambio no documentado.", impact: "Riesgo de lectura masiva de información y degradación del servicio.", confidence: 86, evidence: ["Volumen de consultas 6.2× sobre la línea base", "Cuenta utilizada fuera del horario normal", "No existe ticket de cambio aprobado"], actions: ["Pausar temporalmente la credencial", "Capturar las consultas recientes", "Comparar con el registro de despliegues"], recommendation: "Pausar la credencial de servicio y validar las consultas antes de restaurarla." },
+  { id: "IR-1036", title: "Privileged access granted", subject: "admin.service@agency.gov", severity: "Medium", status: "Investigating", time: "34 min ago", source: "PAM", summary: "Se otorgó acceso administrativo temporal a una cuenta de servicio. La aprobación existe, pero la sesión continúa bajo observación.", cause: "Elevación programada para realizar una tarea administrativa.", impact: "Riesgo controlado mientras la sesión permanezca grabada y dentro del tiempo autorizado.", confidence: 78, evidence: ["Rol administrativo temporal otorgado", "Cadena de aprobación completa", "Grabación de sesión activa"], actions: ["Vigilar la sesión", "Confirmar el ticket de trabajo", "Revocar el privilegio al vencimiento"], recommendation: "Mantener la supervisión y confirmar el cierre del ticket antes de dar por resuelto el incidente." },
+  { id: "IR-1032", title: "Policy check completed", subject: "Data Loss Prevention Policy", severity: "Low", status: "Contained", time: "1 hr ago", source: "Compliance", summary: "La evaluación DLP finalizó sin fallos críticos. Dos controles produjeron advertencias que requieren revisión programada.", cause: "Dos configuraciones no cumplen completamente el nivel recomendado.", impact: "Sin impacto activo; existe una brecha menor de cumplimiento.", confidence: 97, evidence: ["148 controles evaluados", "2 advertencias registradas", "Ningún fallo crítico"], actions: ["Revisar los dos controles", "Asignar responsable", "Validar nuevamente en el próximo ciclo"], recommendation: "Revisar las advertencias durante el siguiente ciclo de políticas." },
 ];
 
 const severityRank = { Critical: 4, High: 3, Medium: 2, Low: 1 };
@@ -23,6 +23,8 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [filter, setFilter] = useState("All");
   const [lastUpdate, setLastUpdate] = useState("just now");
   const [section, setSection] = useState<Section>("operations");
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [executionNote, setExecutionNote] = useState("");
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
   const open = incidents.filter(i => i.status !== "Contained").length;
@@ -32,6 +34,14 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   function contain() {
     setIncidents(all => all.map(i => i.id === selected.id ? { ...i, status: "Contained" } : i));
     setSelected({ ...selected, status: "Contained" });
+    setApprovalOpen(false);
+    setExecutionNote(`Plan aprobado y ejecutado en modo demostración para ${selected.id}. No se modificó ningún equipo real.`);
+  }
+
+  function selectIncident(incident: Incident) {
+    setSelected(incident);
+    setExecutionNote("");
+    setApprovalOpen(false);
   }
 
   return <main className="soc-shell">
@@ -60,7 +70,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       <section className="soc-grid">
         <div className="incident-card">
           <div className="card-head"><div><h2>Live security activity</h2><p>Correlated signals ranked by operational risk</p></div><div className="filters">{["All","Critical","High","Medium"].map(f => <button className={filter === f ? "active" : ""} onClick={() => setFilter(f)} key={f}>{f}</button>)}</div></div>
-          <div className="incident-list">{visible.map(i => <button key={i.id} className={`incident-row ${selected.id === i.id ? "selected" : ""}`} onClick={() => setSelected(i)}><span className={`severity ${i.severity.toLowerCase()}`}><Warning weight="fill" /></span><span className="incident-copy"><strong>{i.title}</strong><small>{i.subject} · {i.source}</small></span><span className={`status ${i.status.toLowerCase()}`}>{i.status}</span><time>{i.time}</time></button>)}</div>
+          <div className="incident-list">{visible.map(i => <button key={i.id} className={`incident-row ${selected.id === i.id ? "selected" : ""}`} onClick={() => selectIncident(i)}><span className={`severity ${i.severity.toLowerCase()}`}><Warning weight="fill" /></span><span className="incident-copy"><strong>{i.title}</strong><small>{i.subject} · {i.source}</small></span><span className={`status ${i.status.toLowerCase()}`}>{i.status}</span><time>{i.time}</time></button>)}</div>
         </div>
 
         <aside className="analysis-card">
@@ -68,16 +78,28 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           <h2>{selected.title}</h2><p className="case-id">{selected.id} · {selected.subject}</p>
           <div className="evidence"><strong>Correlated evidence</strong>{selected.evidence.map(e => <span key={e}><CheckCircle weight="fill" /> {e}</span>)}</div>
           <div className="recommendation"><strong>Recommended response</strong><p>{selected.recommendation}</p></div>
-          <button className="contain-btn" disabled={selected.status === "Contained"} onClick={contain}>{selected.status === "Contained" ? <><CheckCircle /> Contained</> : <><ShieldCheck /> Contain incident</>}</button>
+          <button className="contain-btn" disabled={selected.status === "Contained"} onClick={() => { setSection("incidents"); setApprovalOpen(true); }}>{selected.status === "Contained" ? <><CheckCircle /> Contained</> : <><ShieldCheck /> Review response plan</>}</button>
         </aside>
       </section>
 
       </>}
 
       {section === "incidents" && <section className="module-panel">
-        <div className="module-toolbar"><div><h2>All incidents</h2><p>Select an incident to investigate its evidence and response plan.</p></div><div className="filters">{["All","Critical","High","Medium"].map(f => <button className={filter === f ? "active" : ""} onClick={() => setFilter(f)} key={f}>{f}</button>)}</div></div>
-        <div className="module-split"><div className="incident-list expanded">{visible.map(i => <button key={i.id} className={`incident-row ${selected.id === i.id ? "selected" : ""}`} onClick={() => setSelected(i)}><span className={`severity ${i.severity.toLowerCase()}`}><Warning weight="fill" /></span><span className="incident-copy"><strong>{i.title}</strong><small>{i.id} · {i.subject} · {i.source}</small></span><span className={`status ${i.status.toLowerCase()}`}>{i.status}</span><time>{i.time}</time></button>)}</div><aside className="module-detail"><span className={`module-severity ${selected.severity.toLowerCase()}`}>{selected.severity}</span><h2>{selected.title}</h2><p>{selected.id} · {selected.subject}</p><h3>Correlated evidence</h3>{selected.evidence.map(e => <span className="detail-line" key={e}><CheckCircle weight="fill" />{e}</span>)}<h3>Response plan</h3><p>{selected.recommendation}</p><button className="contain-btn" disabled={selected.status === "Contained"} onClick={contain}>{selected.status === "Contained" ? "Incident contained" : "Contain incident"}</button></aside></div>
+        <div className="module-toolbar"><div><h2>Todos los incidentes</h2><p>Selecciona un incidente para ver el análisis, la evidencia y aprobar su corrección.</p></div><div className="filters">{["All","Critical","High","Medium"].map(f => <button className={filter === f ? "active" : ""} onClick={() => setFilter(f)} key={f}>{f}</button>)}</div></div>
+        <div className="module-split"><div className="incident-list expanded">{visible.map(i => <button key={i.id} className={`incident-row ${selected.id === i.id ? "selected" : ""}`} onClick={() => selectIncident(i)}><span className={`severity ${i.severity.toLowerCase()}`}><Warning weight="fill" /></span><span className="incident-copy"><strong>{i.title}</strong><small>{i.id} · {i.subject} · {i.source}</small></span><span className={`status ${i.status.toLowerCase()}`}>{i.status}</span><time>{i.time}</time></button>)}</div><aside className="module-detail">
+          <div className="detail-heading"><span className={`module-severity ${selected.severity.toLowerCase()}`}>{selected.severity}</span><span className={`status ${selected.status.toLowerCase()}`}>{selected.status}</span></div>
+          <h2>{selected.title}</h2><p>{selected.id} · {selected.subject} · {selected.source}</p>
+          <div className="incident-summary"><strong>¿Qué ocurrió?</strong><p>{selected.summary}</p></div>
+          <div className="detail-facts"><article><span>Causa probable</span><p>{selected.cause}</p></article><article><span>Impacto</span><p>{selected.impact}</p></article><article><span>Confianza de IRIS</span><b>{selected.confidence}%</b></article></div>
+          <h3>Evidencia correlacionada</h3>{selected.evidence.map(e => <span className="detail-line" key={e}><CheckCircle weight="fill" />{e}</span>)}
+          <h3>Plan que IRIS propone ejecutar</h3><ol className="response-steps">{selected.actions.map((action,index)=><li key={action}><b>{index+1}</b><span>{action}</span></li>)}</ol>
+          <div className="demo-warning"><Warning weight="fill" /><span><strong>Modo de prueba</strong>Estas acciones se simulan. IRIS no tiene conexión con tu computadora, firewall o directorio de usuarios.</span></div>
+          {executionNote && <p className="execution-note"><CheckCircle weight="fill" />{executionNote}</p>}
+          <button className="contain-btn" disabled={selected.status === "Contained"} onClick={() => setApprovalOpen(true)}>{selected.status === "Contained" ? "Incidente contenido" : "Solicitar mi aprobación"}</button>
+        </aside></div>
       </section>}
+
+      {approvalOpen && <div className="approval-backdrop" role="presentation" onMouseDown={() => setApprovalOpen(false)}><section className="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="approval-title" onMouseDown={event => event.stopPropagation()}><button className="approval-close" aria-label="Cerrar" onClick={() => setApprovalOpen(false)}><X /></button><span className="approval-icon"><ShieldCheck weight="duotone" /></span><p>APROBACIÓN REQUERIDA</p><h2 id="approval-title">Autorizar respuesta para {selected.id}</h2><div className="approval-list">{selected.actions.map(action=><span key={action}><CheckCircle weight="fill" />{action}</span>)}</div><div className="demo-warning"><Warning weight="fill" /><span><strong>Confirmación segura</strong>En esta etapa de prueba solo se actualizará el estado dentro de IRIS. No se ejecutarán cambios en sistemas reales.</span></div><div className="approval-actions"><button onClick={() => setApprovalOpen(false)}>Cancelar</button><button onClick={contain}><ShieldCheck /> Aprobar y ejecutar simulación</button></div></section></div>}
 
       {section === "intelligence" && <section className="module-panel intelligence-view">
         <div className="module-toolbar"><div><h2>Threat intelligence</h2><p>Current indicators, attack patterns, and exposure trends.</p></div><span className="live-pill"><i /> LIVE FEED</span></div>
