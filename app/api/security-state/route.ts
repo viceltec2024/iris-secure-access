@@ -44,6 +44,23 @@ export async function POST(request: Request) {
   return Response.json({ device: created }, { status: 201 });
 }
 
+export async function DELETE(request: Request) {
+  const user = await currentUser();
+  if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await request.json().catch(() => ({})) as { deviceId?: string };
+  if (!body.deviceId) return Response.json({ error: "Device ID is required" }, { status: 400 });
+
+  const db = getDb();
+  const [device] = await db.select().from(devices).where(eq(devices.id, body.deviceId)).limit(1);
+  if (!device || (user.role !== "ADMIN" && device.ownerEmail !== user.email)) {
+    return Response.json({ error: "Device not found" }, { status: 404 });
+  }
+
+  await db.delete(devices).where(eq(devices.id, device.id));
+  await logAudit(user.email, "DEVICE_DELETED", device.id, "SUCCESS", { name: device.name, platform: device.platform });
+  return Response.json({ deleted: true, deviceId: device.id });
+}
+
 export async function PATCH(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });

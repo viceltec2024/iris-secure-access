@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, ChartLineUp, CheckCircle, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, UsersThree, Warning, X } from "@phosphor-icons/react";
+import { Bell, ChartLineUp, CheckCircle, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, UsersThree, Warning, X } from "@phosphor-icons/react";
 import AskIrisPanel from "./ask-iris-panel";
 import { incidentSpanish, Language, text } from "./dashboard-i18n";
 
@@ -32,6 +32,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [devices, setDevices] = useState<Device[]>([]);
   const [responseHistory, setResponseHistory] = useState<ResponseAction[]>([]);
   const [creatingDevice, setCreatingDevice] = useState(false);
+  const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
     void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[] }) => {
@@ -71,6 +72,26 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     const response = await fetch("/api/security-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "rotate_device_code", deviceId }) });
     const data = await response.json() as { device?: Device };
     if (response.ok && data.device) setDevices(current => current.map(device => device.id === deviceId ? data.device! : device));
+  }
+
+  async function deleteDevice(device: Device) {
+    const confirmed = window.confirm(language === "es"
+      ? `¿Eliminar ${device.name}? Esta acción revocará su acceso a IRIS y no se puede deshacer.`
+      : `Delete ${device.name}? This will revoke its access to IRIS and cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingDeviceId(device.id);
+    try {
+      const response = await fetch("/api/security-state", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId: device.id }),
+      });
+      if (response.ok) setDevices(current => current.filter(item => item.id !== device.id));
+      else window.alert(language === "es" ? "No se pudo eliminar el dispositivo." : "The device could not be deleted.");
+    } finally {
+      setDeletingDeviceId(null);
+    }
   }
 
   function selectIncident(incident: Incident) {
@@ -140,7 +161,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
 
       {section === "approvals" && <section className="module-panel approvals-view"><div className="module-toolbar"><div><h2>{t("pendingApprovals")}</h2><p>{t("approvalExplain")}</p></div><span className="audit-total">{open}</span></div><div className="approval-queue">{incidents.filter(i => i.status !== "Contained").map(i => { const v=localized(i); return <article key={i.id}><span className={`severity ${i.severity.toLowerCase()}`}><Warning weight="fill" /></span><div><strong>{v.title}</strong><p>{i.id} · {i.subject}</p><small>{v.actions.length} {language === "es" ? "acciones propuestas" : "proposed actions"}</small></div><button onClick={() => { selectIncident(i); setApprovalOpen(true); }}>{t("review")}</button></article>})}{open === 0 && <p className="empty-approvals"><CheckCircle weight="fill" />{t("noPending")}</p>}</div></section>}
 
-      {section === "devices" && <section className="module-panel devices-view"><div className="module-toolbar"><div><h2>{language === "es" ? "Inventario de dispositivos" : "Device inventory"}</h2><p>{language === "es" ? "Registra un dispositivo para preparar su conexión segura con IRIS." : "Register a device to prepare its secure connection to IRIS."}</p></div><button className="add-device" onClick={createDeviceEnrollment} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar mi Mac" : "Register my Mac")}</button></div><div className="device-grid">{devices.map(device => <article key={device.id}><div className="device-icon"><Desktop weight="duotone" /></div><div><strong>{device.name}</strong><span>{device.platform}</span></div><b className={`device-state ${device.status.toLowerCase()}`}>{device.status === "PENDING" ? (language === "es" ? "PENDIENTE" : "PENDING") : device.status}</b><dl><div><dt>{language === "es" ? "Riesgo" : "Risk"}</dt><dd>{device.risk}</dd></div><div><dt>{language === "es" ? "Última conexión" : "Last seen"}</dt><dd>{device.lastSeenAt || (language === "es" ? "Nunca" : "Never")}</dd></div></dl><div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div><div className="device-actions"><a href="/iris-agent-macos.sh" download>{language === "es" ? "Descargar agente" : "Download agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button></div><p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Agente conectado con telemetría de solo lectura." : "Agent connected with read-only telemetry.") : (language === "es" ? "El agente todavía no está instalado. IRIS no recibe telemetría de este dispositivo." : "The agent is not installed yet. IRIS receives no telemetry from this device.")}</p></article>)}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra tu Mac para generar un código seguro. La supervisión comenzará únicamente después de instalar y autorizar el agente." : "Register your Mac to generate a secure code. Monitoring will begin only after you install and authorize the agent."}</p></div>}</div></section>}
+      {section === "devices" && <section className="module-panel devices-view"><div className="module-toolbar"><div><h2>{language === "es" ? "Inventario de dispositivos" : "Device inventory"}</h2><p>{language === "es" ? "Registra un dispositivo para preparar su conexión segura con IRIS." : "Register a device to prepare its secure connection to IRIS."}</p></div><button className="add-device" onClick={createDeviceEnrollment} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar mi Mac" : "Register my Mac")}</button></div><div className="device-grid">{devices.map(device => <article key={device.id}><div className="device-icon"><Desktop weight="duotone" /></div><div><strong>{device.name}</strong><span>{device.platform}</span></div><b className={`device-state ${device.status.toLowerCase()}`}>{device.status === "PENDING" ? (language === "es" ? "PENDIENTE" : "PENDING") : device.status}</b><dl><div><dt>{language === "es" ? "Riesgo" : "Risk"}</dt><dd>{device.risk}</dd></div><div><dt>{language === "es" ? "Última conexión" : "Last seen"}</dt><dd>{device.lastSeenAt || (language === "es" ? "Nunca" : "Never")}</dd></div></dl><div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div><div className="device-actions"><a href="/iris-agent-macos.sh" download>{language === "es" ? "Descargar agente" : "Download agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div><p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Agente conectado con telemetría de solo lectura." : "Agent connected with read-only telemetry.") : (language === "es" ? "El agente todavía no está instalado. IRIS no recibe telemetría de este dispositivo." : "The agent is not installed yet. IRIS receives no telemetry from this device.")}</p></article>)}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra tu Mac para generar un código seguro. La supervisión comenzará únicamente después de instalar y autorizar el agente." : "Register your Mac to generate a secure code. Monitoring will begin only after you install and authorize the agent."}</p></div>}</div></section>}
 
       {section === "intelligence" && <section className="module-panel intelligence-view">
         <div className="module-toolbar"><div><h2>{t("threatIntelligence")}</h2><p>{language === "es" ? "Indicadores actuales, patrones de ataque y tendencias de exposición." : "Current indicators, attack patterns, and exposure trends."}</p></div><span className="live-pill"><i /> {t("liveFeed")}</span></div>
