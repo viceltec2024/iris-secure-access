@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUp, ChatCircleDots, Microphone, Pause, Play, SpeakerHigh, SpeakerSlash, Stop, X } from "@phosphor-icons/react";
+import { ArrowUp, ChatCircleDots, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -17,8 +17,6 @@ export default function AskIrisPanel({ section, selectedIncident, incidents, dev
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
-  const [speaking, setSpeaking] = useState(false);
-  const [paused, setPaused] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
@@ -41,14 +39,10 @@ export default function AskIrisPanel({ section, selectedIncident, incidents, dev
     })[0];
     if (preferred) utterance.voice = preferred;
     utterance.rate = 0.96; utterance.pitch = 1.02;
-    utterance.onstart = () => { setSpeaking(true); setPaused(false); };
-    utterance.onend = () => { setSpeaking(false); setPaused(false); };
-    utterance.onerror = () => { setSpeaking(false); setPaused(false); };
     window.speechSynthesis.speak(utterance);
   }
 
-  function stopVoice() { if (!("speechSynthesis" in window)) return; window.speechSynthesis.cancel(); setSpeaking(false); setPaused(false); }
-  function togglePause() { if (!("speechSynthesis" in window) || !speaking) return; if (paused) window.speechSynthesis.resume(); else window.speechSynthesis.pause(); setPaused(value => !value); }
+  function stopVoice() { if (!("speechSynthesis" in window)) return; window.speechSynthesis.cancel(); }
   function toggleAutoSpeak() { setAutoSpeak(value => { const next = !value; if (!next) stopVoice(); return next; }); }
 
   async function sendMessage(text = input) {
@@ -82,10 +76,6 @@ export default function AskIrisPanel({ section, selectedIncident, incidents, dev
 
   return <aside className="iris-chat" aria-label="Ask IRIS assistant">
     <header><div className="iris-chat-orb"><ChatCircleDots weight="duotone" /></div><div><strong>Ask IRIS</strong><span><i /> OpenAI {language === "es" ? "conectado" : "connected"} · {section}</span></div><button onClick={toggleAutoSpeak} aria-label={autoSpeak ? "Silenciar respuestas automáticas" : "Activar respuestas habladas"} title={autoSpeak ? "Silenciar" : "Activar voz"}>{autoSpeak ? <SpeakerHigh /> : <SpeakerSlash />}</button><button onClick={() => { stopVoice(); setOpen(false); }} aria-label="Close Ask IRIS"><X /></button></header>
-    <div className="iris-voice-controls" aria-label={language === "es" ? "Controles de voz" : "Voice controls"}>
-      <button onClick={togglePause} disabled={!speaking} aria-label={paused ? "Continuar voz" : "Pausar voz"} title={paused ? "Continuar" : "Pausar"}>{paused ? <Play weight="fill" /> : <Pause weight="fill" />}</button>
-      <button onClick={stopVoice} disabled={!speaking} aria-label="Detener voz" title="Detener"><Stop weight="fill" /></button>
-    </div>
     <div className="iris-chat-messages" aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p>{message.role === "assistant" && <button onClick={() => speak(message.content)} aria-label="Read this answer aloud"><SpeakerHigh /></button>}</article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>
     <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong> · {selectedIncident.id}</div>
     <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Escribe tu pregunta para IRIS…" : "Type your question for IRIS…"} rows={2} /><button type="button" className={listening ? "listening" : ""} onClick={startListening} aria-label="Ask with microphone"><Microphone weight="fill" /></button><button type="submit" disabled={!input.trim() || loading} aria-label="Send question"><ArrowUp weight="bold" /></button></form>
