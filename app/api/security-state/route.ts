@@ -5,6 +5,29 @@ import { devices, incidentStates, responseActions } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 
 const knownIncidents = new Set(["IR-1042", "IR-1041", "IR-1039", "IR-1036", "IR-1032"]);
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+
+type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; collectedAt?: string };
+
+function deviceView(device: typeof devices.$inferSelect) {
+  let telemetry: AgentTelemetry | null = null;
+  try {
+    const parsed = JSON.parse(device.telemetry || "{}");
+    if (parsed && typeof parsed === "object" && Object.keys(parsed).length) telemetry = parsed as AgentTelemetry;
+  } catch { telemetry = null; }
+  const reportedAt = device.lastSeenAt ? Date.parse(device.lastSeenAt) : Number.NaN;
+  const fresh = Number.isFinite(reportedAt) && Date.now() - reportedAt <= ONLINE_WINDOW_MS;
+  const enrolled = Boolean(device.agentTokenHash);
+  let healthScore: number | null = telemetry ? 100 : null;
+  if (healthScore !== null) {
+    if (telemetry!.firewallEnabled === false) healthScore -= 30;
+    if ((telemetry!.diskUsedPercent ?? 0) >= 95) healthScore -= 30; else if ((telemetry!.diskUsedPercent ?? 0) >= 85) healthScore -= 15;
+    if ((telemetry!.memoryUsedPercent ?? 0) >= 95) healthScore -= 20; else if ((telemetry!.memoryUsedPercent ?? 0) >= 85) healthScore -= 10;
+    if (!fresh) healthScore -= 20;
+    healthScore = Math.max(0, healthScore);
+  }
+  return { id: device.id, name: device.name, platform: device.platform, status: !enrolled ? "PENDING" : fresh ? "ONLINE" : "OFFLINE", risk: device.risk, enrollmentCode: device.enrollmentCode, lastSeenAt: device.lastSeenAt, telemetry, healthScore, provenance: enrolled && telemetry ? "REAL" : "UNVERIFIED" };
+}
 
 async function currentUser() {
   const identity = await getChatGPTUser();
@@ -19,7 +42,7 @@ export async function GET() {
   const deviceRows = user.role === "ADMIN"
     ? await db.select().from(devices).orderBy(desc(devices.createdAt))
     : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt));
-  return Response.json({ incidents: await db.select().from(incidentStates), actions: await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30), devices: deviceRows });
+  return Response.json({ incidents: await db.select().from(incidentStates), actions: await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30), devices: deviceRows.map(deviceView) });
 }
 
 export async function POST(request: Request) {
@@ -32,7 +55,7 @@ export async function POST(request: Request) {
     const enrollmentCode = crypto.randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase();
     const [updated] = await getDb().update(devices).set({ enrollmentCode, agentTokenHash: null, status: "PENDING", risk: "UNKNOWN", lastSeenAt: null, telemetry: "{}" }).where(eq(devices.id, device.id)).returning();
     await logAudit(user.email, "DEVICE_ENROLLMENT_ROTATED", device.id, "SUCCESS");
-    return Response.json({ device: updated });
+    return Response.json({ device: deviceView(updated) });
   }
   if (body.type !== "device_enrollment") return Response.json({ error: "Unsupported request" }, { status: 400 });
   const name = String(body.name || "My Mac").trim().slice(0, 80);
@@ -41,7 +64,7 @@ export async function POST(request: Request) {
   const enrollmentCode = crypto.randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase();
   const [created] = await getDb().insert(devices).values({ id, ownerEmail: user.email, name, platform, enrollmentCode }).returning();
   await logAudit(user.email, "DEVICE_ENROLLMENT_CREATED", id, "SUCCESS", { name, platform });
-  return Response.json({ device: created }, { status: 201 });
+  return Response.json({ device: deviceView(created) }, { status: 201 });
 }
 
 export async function DELETE(request: Request) {
