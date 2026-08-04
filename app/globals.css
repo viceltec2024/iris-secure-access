@@ -9,6 +9,14 @@
 
 .provenance-legend{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 18px}.provenance-legend span{display:flex;align-items:center;gap:8px;color:#8ea2b7;font-size:12px}.provenance-legend b,.simulation-badge,.provenance-badge{border:1px solid #4b5f72;border-radius:999px;padding:4px 8px;color:#cbd7e2;font-size:10px;letter-spacing:.08em}.provenance-legend span:first-child b,.provenance-badge.real{border-color:#27c99a;color:#52e0b4;background:#10352c}.provenance-legend span:nth-child(2) b,.simulation-badge{border-color:#b98b36;color:#f1bd5c;background:#3a2b12}.provenance-badge.unverified{border-color:#6d7883;color:#aeb8c1;background:#232b33}.device-card-head{display:flex;align-items:center;gap:12px}.device-card-head>div:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1}.device-status-line{display:flex;align-items:center;justify-content:space-between;margin:14px 0}.device-status-line>strong{font-size:13px;color:#dce8f3}.devices-view .device-grid article dl{grid-template-columns:repeat(2,minmax(0,1fr))}.devices-view .device-grid article dl>div:last-child{grid-column:1/-1}.simulation-badge{display:inline-flex;vertical-align:middle;margin-left:8px}.card-head h2 .simulation-badge{font-size:9px}
 
+.device-grid>article>.device-card-head{grid-column:1/-1;display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:13px;min-width:0}
+.device-grid>article>.device-card-head>div:nth-child(2){min-width:0;display:flex;flex-direction:column;gap:4px}
+.device-grid>article>.device-card-head .provenance-badge{justify-self:end;white-space:nowrap}
+.device-grid>article>.device-status-line{grid-column:1/-1;display:flex!important;flex-direction:row!important;align-items:center;justify-content:space-between;gap:12px!important;margin:2px 0 0;padding:12px 0;border-top:1px solid #1a3245}
+.device-grid>article>.device-status-line .device-state{flex:0 0 auto;white-space:nowrap}
+.device-grid>article>.device-status-line>strong{margin-left:auto;white-space:nowrap}
+@media(max-width:520px){.device-grid>article>.device-card-head{grid-template-columns:44px minmax(0,1fr)}.device-grid>article>.device-card-head .provenance-badge{grid-column:1/-1;justify-self:start;margin-top:3px}.device-grid>article>.device-status-line{align-items:flex-start;flex-direction:column!important}.device-grid>article>.device-status-line>strong{margin-left:0}}
+
 * { box-sizing: border-box; }
 
 body { margin: 0; min-width: 320px; min-height: 100vh; -webkit-font-smoothing: antialiased; }
