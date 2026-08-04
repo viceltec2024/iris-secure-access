@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUp, ChatCircleDots, Microphone, Pause, Play, SpeakerHigh, SpeakerLow, SpeakerSlash, Stop, X } from "@phosphor-icons/react";
+import { ArrowUp, ChatCircleDots, Microphone, Pause, Play, SpeakerHigh, SpeakerSlash, Stop, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -17,7 +17,6 @@ export default function AskIrisPanel({ section, selectedIncident, incidents, dev
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
-  const [volume, setVolume] = useState(0.8);
   const [speaking, setSpeaking] = useState(false);
   const [paused, setPaused] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -41,7 +40,7 @@ export default function AskIrisPanel({ section, selectedIncident, incidents, dev
       return quality(b) - quality(a);
     })[0];
     if (preferred) utterance.voice = preferred;
-    utterance.rate = 0.96; utterance.pitch = 1.02; utterance.volume = volume;
+    utterance.rate = 0.96; utterance.pitch = 1.02;
     utterance.onstart = () => { setSpeaking(true); setPaused(false); };
     utterance.onend = () => { setSpeaking(false); setPaused(false); };
     utterance.onerror = () => { setSpeaking(false); setPaused(false); };
@@ -86,8 +85,6 @@ export default function AskIrisPanel({ section, selectedIncident, incidents, dev
     <div className="iris-voice-controls" aria-label={language === "es" ? "Controles de voz" : "Voice controls"}>
       <button onClick={togglePause} disabled={!speaking} aria-label={paused ? "Continuar voz" : "Pausar voz"} title={paused ? "Continuar" : "Pausar"}>{paused ? <Play weight="fill" /> : <Pause weight="fill" />}</button>
       <button onClick={stopVoice} disabled={!speaking} aria-label="Detener voz" title="Detener"><Stop weight="fill" /></button>
-      <SpeakerLow aria-hidden="true" /><input type="range" min="0" max="1" step="0.05" value={volume} onChange={event => setVolume(Number(event.target.value))} aria-label={language === "es" ? "Volumen de IRIS" : "IRIS volume"} /><SpeakerHigh aria-hidden="true" />
-      <span>{Math.round(volume * 100)}%</span>
     </div>
     <div className="iris-chat-messages" aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p>{message.role === "assistant" && <button onClick={() => speak(message.content)} aria-label="Read this answer aloud"><SpeakerHigh /></button>}</article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>
     <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong> · {selectedIncident.id}</div>
