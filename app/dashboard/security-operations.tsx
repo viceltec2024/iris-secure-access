@@ -7,7 +7,7 @@ import { incidentSpanish, Language, text } from "./dashboard-i18n";
 
 type Incident = { id: string; title: string; subject: string; severity: "Critical" | "High" | "Medium" | "Low"; status: "Open" | "Investigating" | "Contained"; time: string; source: string; summary: string; cause: string; impact: string; confidence: number; evidence: string[]; actions: string[]; recommendation: string };
 type Section = "operations" | "incidents" | "intelligence" | "devices" | "approvals" | "audit";
-type Device = { id: string; name: string; platform: string; status: "PENDING" | "ONLINE" | "OFFLINE"; risk: "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH"; enrollmentCode: string; lastSeenAt: string | null };
+type Device = { id: string; name: string; platform: string; status: "PENDING" | "ONLINE" | "OFFLINE"; risk: "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH"; enrollmentCode: string; lastSeenAt: string | null; telemetry?: string };
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
 
 const seedIncidents: Incident[] = [
@@ -180,7 +180,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           ["1 hr ago","iris.system","POLICY_CHECK","DLP-policy","SUCCESS"]
         ].map(row=><div className="audit-table-row" role="row" key={row.join("-")}><span>{row[0]}</span><span>{row[1]}</span><span>{row[2].replaceAll("_"," ")}</span><span>{row[3]}</span><span className="audit-success"><CheckCircle weight="fill" />{row[4]}</span></div>)}{responseHistory.slice(0,8).map(row=><div className="audit-table-row" role="row" key={`response-${row.id}`}><span>{new Date(row.createdAt).toLocaleString(language)}</span><span>{row.actorEmail}</span><span>{row.action.replaceAll("_"," ")}</span><span>{row.incidentId}</span><span className="audit-success"><CheckCircle weight="fill" />{row.outcome}</span></div>)}</div>
       </section>}
-      <AskIrisPanel section={section} selectedIncident={selectedView} incidents={incidents.map(localized)} userRole={user.role} language={language} />
+      <AskIrisPanel section={section} selectedIncident={selectedView} incidents={incidents.map(localized)} devices={devices} userRole={user.role} userName={user.displayName.split(" ")[0]} language={language} />
     </section>
   </main>;
 }
