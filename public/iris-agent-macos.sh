@@ -15,7 +15,7 @@ PLIST_PATH="$HOME/Library/LaunchAgents/com.iris.security-agent.plist"
 json_escape() { printf '%s' "$1" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 telemetry_json() {
-  local hostname os_version architecture disk_used total_pages used_pages memory_used firewall gatekeeper filevault sip auto_updates app_count app_hash risky_json xprotect mrt xprotect_version persistence_count persistence_hash unsigned_persistence_json
+  local hostname os_version architecture disk_used total_pages used_pages memory_used firewall gatekeeper filevault sip auto_updates app_count app_hash risky_json xprotect mrt xprotect_version persistence_count persistence_hash unsigned_persistence_json threat_locations_json
   hostname="$(/bin/hostname -s)"
   os_version="$(/usr/bin/sw_vers -productVersion)"
   architecture="$(/usr/bin/uname -m)"
@@ -40,7 +40,8 @@ telemetry_json() {
   persistence_count="$(printf '%s\n' "$persistence_list" | /usr/bin/awk 'NF {count++} END {print count+0}')"
   persistence_hash="$(printf '%s\n' "$persistence_list" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
   unsigned_persistence_json="["
-  local persistence_separator="" plist executable item_name persistence_checked=0
+  threat_locations_json="["
+  local persistence_separator="" threat_separator="" plist executable item_name persistence_checked=0
   while IFS= read -r plist && [ "$persistence_checked" -lt 100 ]; do
     [ -n "$plist" ] || continue
     persistence_checked=$((persistence_checked + 1))
@@ -49,6 +50,8 @@ telemetry_json() {
       item_name="${plist:t:r}"
       unsigned_persistence_json="${unsigned_persistence_json}${persistence_separator}\"$(json_escape "$item_name")\""
       persistence_separator=","
+      threat_locations_json="${threat_locations_json}${threat_separator}\"$(json_escape "$executable")\""
+      threat_separator=","
     fi
   done <<< "$persistence_list"
   unsigned_persistence_json="${unsigned_persistence_json}]"
@@ -60,10 +63,13 @@ telemetry_json() {
       app_name="${app:t:r}"
       risky_json="${risky_json}${separator}\"$(json_escape "$app_name")\""
       separator=","
+      threat_locations_json="${threat_locations_json}${threat_separator}\"$(json_escape "$app")\""
+      threat_separator=","
     fi
   done < <(/usr/bin/find /Applications -maxdepth 1 -type d -name '*.app' -print 2>/dev/null | /usr/bin/sort)
   risky_json="${risky_json}]"
-  printf '{"hostname":"%s","osVersion":"macOS %s","architecture":"%s","diskUsedPercent":%s,"memoryUsedPercent":%s,"firewallEnabled":%s,"gatekeeperEnabled":%s,"fileVaultEnabled":%s,"sipEnabled":%s,"automaticUpdatesEnabled":%s,"installedApplicationCount":%s,"applicationInventoryHash":"%s","riskyApplications":%s,"xProtectPresent":%s,"xProtectVersion":"%s","malwareRemovalToolPresent":%s,"persistenceItemCount":%s,"persistenceInventoryHash":"%s","unsignedPersistenceItems":%s}' "$(json_escape "$hostname")" "$(json_escape "$os_version")" "$(json_escape "$architecture")" "$disk_used" "$memory_used" "$firewall" "$gatekeeper" "$filevault" "$sip" "$auto_updates" "$app_count" "$app_hash" "$risky_json" "$xprotect" "$(json_escape "$xprotect_version")" "$mrt" "$persistence_count" "$persistence_hash" "$unsigned_persistence_json"
+  threat_locations_json="${threat_locations_json}]"
+  printf '{"hostname":"%s","osVersion":"macOS %s","architecture":"%s","diskUsedPercent":%s,"memoryUsedPercent":%s,"firewallEnabled":%s,"gatekeeperEnabled":%s,"fileVaultEnabled":%s,"sipEnabled":%s,"automaticUpdatesEnabled":%s,"installedApplicationCount":%s,"applicationInventoryHash":"%s","riskyApplications":%s,"xProtectPresent":%s,"xProtectVersion":"%s","malwareRemovalToolPresent":%s,"persistenceItemCount":%s,"persistenceInventoryHash":"%s","unsignedPersistenceItems":%s,"threatLocations":%s}' "$(json_escape "$hostname")" "$(json_escape "$os_version")" "$(json_escape "$architecture")" "$disk_used" "$memory_used" "$firewall" "$gatekeeper" "$filevault" "$sip" "$auto_updates" "$app_count" "$app_hash" "$risky_json" "$xprotect" "$(json_escape "$xprotect_version")" "$mrt" "$persistence_count" "$persistence_hash" "$unsigned_persistence_json" "$threat_locations_json"
 }
 
 check_in() {

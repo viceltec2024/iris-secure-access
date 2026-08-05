@@ -11,6 +11,7 @@ type Telemetry = {
   firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean;
   installedApplicationCount?: number; applicationInventoryHash?: string; riskyApplications?: string[];
   xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; persistenceInventoryHash?: string; unsignedPersistenceItems?: string[];
+  threatLocations?: string[];
   securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string;
 };
 
@@ -68,6 +69,7 @@ function cleanTelemetry(input: Telemetry): Telemetry {
     persistenceItemCount: typeof input.persistenceItemCount === "number" ? Math.max(0, Math.min(1000, Math.round(input.persistenceItemCount))) : undefined,
     persistenceInventoryHash: String(input.persistenceInventoryHash || "").replace(/[^a-f0-9]/gi, "").slice(0, 64) || undefined,
     unsignedPersistenceItems: Array.isArray(input.unsignedPersistenceItems) ? input.unsignedPersistenceItems.slice(0, 20).map(name => String(name).slice(0, 120)) : [],
+    threatLocations: Array.isArray(input.threatLocations) ? input.threatLocations.slice(0, 30).map(path => String(path).slice(0, 300)).filter(path => path.startsWith("/")) : [],
     collectedAt: new Date().toISOString(),
   };
 }
@@ -130,7 +132,7 @@ async function syncAlerts(device: typeof devices.$inferSelect, telemetry: Teleme
   const now = new Date().toISOString();
   for (const code of currentCodes) {
     const prior = existing.find(alert => alert.code === code);
-    const evidence = JSON.stringify({ hostname: telemetry.hostname, applications: code === "UNVERIFIED_APPLICATIONS_FOUND" ? untrustedApps : undefined, startupItems: code === "UNSIGNED_PERSISTENCE_FOUND" ? telemetry.unsignedPersistenceItems : undefined, xProtectVersion: code === "XPROTECT_MISSING" ? telemetry.xProtectVersion : undefined, collectedAt: telemetry.collectedAt });
+    const evidence = JSON.stringify({ hostname: telemetry.hostname, applications: code === "UNVERIFIED_APPLICATIONS_FOUND" ? untrustedApps : undefined, startupItems: code === "UNSIGNED_PERSISTENCE_FOUND" ? telemetry.unsignedPersistenceItems : undefined, locations: telemetry.threatLocations?.length ? telemetry.threatLocations : undefined, xProtectVersion: code === "XPROTECT_MISSING" ? telemetry.xProtectVersion : undefined, collectedAt: telemetry.collectedAt });
     if (prior) {
       await db.update(securityAlerts).set({ status: prior.status === "RESOLVED" ? "NEW" : prior.status, severity: alertSeverity(code), evidence, lastSeenAt: now, resolvedAt: null, updatedBy: prior.status === "RESOLVED" ? "iris.system" : prior.updatedBy }).where(eq(securityAlerts.id, prior.id));
       if (prior.status === "RESOLVED") {
