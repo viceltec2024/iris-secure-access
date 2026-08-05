@@ -53,7 +53,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     })[0];
     if (preferred) utterance.voice = preferred;
     utterance.rate = 0.94; utterance.pitch = 1.01; utterance.volume = 1;
-    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); wakeRecognitionRef.current?.abort(); };
+    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); if (handsFreeRef.current) setTimeout(startWakeRecognition, 150); };
     utterance.onend = () => { speakingRef.current = false; setSpeaking(false); if (handsFreeRef.current) setTimeout(startWakeRecognition, 450); };
     utterance.onerror = () => { speakingRef.current = false; setSpeaking(false); if (handsFreeRef.current) setTimeout(startWakeRecognition, 450); };
     window.speechSynthesis.speak(utterance);
@@ -85,7 +85,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   }
 
   function startWakeRecognition() {
-    if (!handsFreeRef.current || speakingRef.current || wakeRecognitionRef.current) return;
+    if (!handsFreeRef.current || wakeRecognitionRef.current) return;
     const RecognitionApi = recognitionApi();
     if (!RecognitionApi) return;
     const recognition = new RecognitionApi();
@@ -95,6 +95,14 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     recognition.onresult = event => {
       for (let index = event.resultIndex || 0; index < event.results.length; index += 1) {
         const transcript = event.results[index][0]?.transcript?.trim() || "";
+        const normalized = transcript.toLocaleLowerCase().replace(/[.,!?¿¡;:]/g, " ").replace(/\s+/g, " ").trim();
+        const shortCommand = normalized.split(" ").length <= 4;
+        const stopCommand = /^(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|quiet|cancel)(?:\s+iris)?$/.test(normalized);
+        if (speakingRef.current && shortCommand && stopCommand) {
+          stopVoice(); setWakeHeard(true); setListening(false);
+          setTimeout(() => setWakeHeard(false), 700);
+          continue;
+        }
         const wakeMatch = transcript.match(/(?:oye|hey|ok)\s+iris\b/i);
         if (!wakeMatch) continue;
         const command = transcript.slice((wakeMatch.index || 0) + wakeMatch[0].length).replace(/^[,.:;\s]+/, "").trim();
@@ -135,7 +143,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   if (!open) return <button className="iris-chat-launcher" onClick={() => setOpen(true)}><ChatCircleDots weight="fill" /><span>Ask IRIS</span><i /></button>;
 
   return <aside className="iris-chat" aria-label="Ask IRIS assistant">
-    <header><div className={`iris-avatar ${speaking ? "speaking" : ""} ${listening ? "listening" : ""}`} aria-label={speaking ? (language === "es" ? "IRIS está hablando" : "IRIS is speaking") : listening ? (language === "es" ? "IRIS está escuchando" : "IRIS is listening") : "IRIS"}><img src="/assets/iris-avatar.webp" alt="Avatar de IRIS" width="54" height="54" /><span className="iris-avatar-mouth" /></div><div><strong>Ask IRIS</strong><span><i /> {speaking ? (language === "es" ? "Hablando" : "Speaking") : listening ? (language === "es" ? "Escuchando" : "Listening") : (language === "es" ? "Lista para ayudarte" : "Ready to help")}</span><small>ES · EN {language === "es" ? "automático" : "automatic"}</small></div><button onClick={toggleAutoSpeak} aria-label={autoSpeak ? "Silenciar respuestas automáticas" : "Activar respuestas habladas"} title={autoSpeak ? "Silenciar" : "Activar voz"}>{autoSpeak ? <SpeakerHigh /> : <SpeakerSlash />}</button><button onClick={() => { stopVoice(); setOpen(false); }} aria-label="Close Ask IRIS"><X /></button></header>
+    <header><div className={`iris-avatar ${speaking ? "speaking" : ""} ${listening ? "listening" : ""}`} aria-label={speaking ? (language === "es" ? "IRIS está hablando" : "IRIS is speaking") : listening ? (language === "es" ? "IRIS está escuchando" : "IRIS is listening") : "IRIS"}><img src="/assets/iris-avatar.webp" alt="Avatar de IRIS" width="54" height="54" /><span className="iris-avatar-mouth" /></div><div><strong>Ask IRIS</strong><span><i /> {speaking ? (language === "es" ? "Hablando · di Para" : "Speaking · say Stop") : listening ? (language === "es" ? "Escuchando" : "Listening") : (language === "es" ? "Lista para ayudarte" : "Ready to help")}</span><small>ES · EN {language === "es" ? "automático" : "automatic"}</small></div><button onClick={toggleAutoSpeak} aria-label={autoSpeak ? "Silenciar respuestas automáticas" : "Activar respuestas habladas"} title={autoSpeak ? "Silenciar" : "Activar voz"}>{autoSpeak ? <SpeakerHigh /> : <SpeakerSlash />}</button><button onClick={() => { stopVoice(); setOpen(false); }} aria-label="Close Ask IRIS"><X /></button></header>
     <div className="iris-chat-messages" aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p>{message.role === "assistant" && <button onClick={() => speak(message.content)} aria-label="Read this answer aloud"><SpeakerHigh /></button>}</article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>
     <button type="button" className={`iris-wake-mode ${handsFree ? "active" : ""} ${wakeHeard ? "heard" : ""}`} onClick={toggleHandsFree} aria-pressed={handsFree}><Microphone weight="fill" /><span><strong>{handsFree ? (language === "es" ? "Oye IRIS · ACTIVO" : "Hey IRIS · ON") : (language === "es" ? "Activar Oye IRIS" : "Enable Hey IRIS")}</strong><small>{handsFree ? (language === "es" ? "Escuchando la frase de activación" : "Listening for the wake phrase") : (language === "es" ? "Control por voz sin tocar teclas" : "Hands-free voice control")}</small></span><i /></button>
     <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong> · {selectedIncident.id}</div>
