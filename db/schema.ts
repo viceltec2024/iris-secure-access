@@ -90,3 +90,16 @@ export const rateLimits = sqliteTable("rate_limits", {
   count: integer("count").notNull().default(0),
   expiresAt: text("expires_at").notNull(),
 });
+
+export const remediationPlans = sqliteTable("remediation_plans", {
+  id: text("id").primaryKey(),
+  alertId: text("alert_id").notNull(),
+  deviceId: text("device_id").notNull(),
+  ownerEmail: text("owner_email").notNull(),
+  actionCode: text("action_code").notNull(),
+  status: text("status", { enum: ["VERIFYING", "VERIFIED", "CANCELLED"] }).notNull().default("VERIFYING"),
+  approvedBy: text("approved_by").notNull(),
+  approvedAt: text("approved_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastCheckedAt: text("last_checked_at"),
+  verifiedAt: text("verified_at"),
+}, (table) => [uniqueIndex("remediation_plans_alert_unique").on(table.alertId)]);

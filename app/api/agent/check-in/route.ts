@@ -1,6 +1,6 @@
 import { eq, lt } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { agentRequestNonces, devices, rateLimits, securityAlerts, trustedApplications } from "../../../../db/schema";
+import { agentRequestNonces, devices, rateLimits, remediationPlans, securityAlerts, trustedApplications } from "../../../../db/schema";
 
 const MAX_BODY_BYTES = 32_768;
 const TOKEN_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
@@ -115,18 +115,29 @@ async function syncAlerts(device: typeof devices.$inferSelect, telemetry: Teleme
   const findings = (telemetry.securityFindings || []).filter(code => code !== "UNVERIFIED_APPLICATIONS_FOUND" || untrustedApps.length > 0);
   const currentCodes = [...new Set([...findings, ...(telemetry.changes || [])])];
   const existing = await db.select().from(securityAlerts).where(eq(securityAlerts.deviceId, device.id));
+  const plans = await db.select().from(remediationPlans).where(eq(remediationPlans.deviceId, device.id));
   const now = new Date().toISOString();
   for (const code of currentCodes) {
     const prior = existing.find(alert => alert.code === code);
     const evidence = JSON.stringify({ hostname: telemetry.hostname, applications: code === "UNVERIFIED_APPLICATIONS_FOUND" ? untrustedApps : undefined, collectedAt: telemetry.collectedAt });
     if (prior) {
       await db.update(securityAlerts).set({ status: prior.status === "RESOLVED" ? "NEW" : prior.status, severity: alertSeverity(code), evidence, lastSeenAt: now, resolvedAt: null, updatedBy: prior.status === "RESOLVED" ? "iris.system" : prior.updatedBy }).where(eq(securityAlerts.id, prior.id));
+      if (prior.status === "RESOLVED") {
+        const oldPlan = plans.find(item => item.alertId === prior.id);
+        if (oldPlan) await db.update(remediationPlans).set({ status: "CANCELLED", lastCheckedAt: now }).where(eq(remediationPlans.id, oldPlan.id));
+      }
     } else {
       await db.insert(securityAlerts).values({ id: crypto.randomUUID(), deviceId: device.id, ownerEmail: device.ownerEmail, fingerprint: `${device.id}:${code}`, code, severity: alertSeverity(code), evidence, firstSeenAt: now, lastSeenAt: now });
     }
   }
   for (const alert of existing.filter(item => item.status !== "RESOLVED" && !currentCodes.includes(item.code))) {
     await db.update(securityAlerts).set({ status: "RESOLVED", resolvedAt: now, updatedBy: "iris.system" }).where(eq(securityAlerts.id, alert.id));
+    const plan = plans.find(item => item.alertId === alert.id && item.status === "VERIFYING");
+    if (plan) await db.update(remediationPlans).set({ status: "VERIFIED", lastCheckedAt: now, verifiedAt: now }).where(eq(remediationPlans.id, plan.id));
+  }
+  for (const plan of plans.filter(item => item.status === "VERIFYING")) {
+    const alert = existing.find(item => item.id === plan.alertId);
+    if (alert && currentCodes.includes(alert.code)) await db.update(remediationPlans).set({ lastCheckedAt: now }).where(eq(remediationPlans.id, plan.id));
   }
 }
 

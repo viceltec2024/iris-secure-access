@@ -1,7 +1,7 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
-import { agentRequestNonces, devices, incidentStates, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
+import { agentRequestNonces, devices, incidentStates, remediationPlans, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 
 const knownIncidents = new Set(["IR-1042", "IR-1041", "IR-1039", "IR-1036", "IR-1032"]);
@@ -54,9 +54,10 @@ export async function GET() {
     : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt));
   const trustedRows = deviceRows.length ? await db.select().from(trustedApplications).where(inArray(trustedApplications.deviceId, deviceRows.map(device => device.id))) : [];
   const alerts = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(100) : [];
+  const remediations = deviceRows.length ? await db.select().from(remediationPlans).where(inArray(remediationPlans.deviceId, deviceRows.map(device => device.id))).orderBy(desc(remediationPlans.approvedAt)).limit(100) : [];
   const incidents = user.role === "ADMIN" ? await db.select().from(incidentStates) : [];
   const actions = user.role === "ADMIN" ? await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30) : await db.select().from(responseActions).where(eq(responseActions.actorEmail, user.email)).orderBy(desc(responseActions.createdAt)).limit(30);
-  return Response.json({ incidents, actions, alerts, devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))) });
+  return Response.json({ incidents, actions, alerts, remediations, devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))) });
 }
 
 export async function POST(request: Request) {
@@ -108,6 +109,7 @@ export async function DELETE(request: Request) {
 
   await db.delete(trustedApplications).where(eq(trustedApplications.deviceId, device.id));
   await db.delete(securityAlerts).where(eq(securityAlerts.deviceId, device.id));
+  await db.delete(remediationPlans).where(eq(remediationPlans.deviceId, device.id));
   await db.delete(agentRequestNonces).where(eq(agentRequestNonces.deviceId, device.id));
   await db.delete(devices).where(eq(devices.id, device.id));
   await logAudit(user.email, "DEVICE_DELETED", device.id, "SUCCESS", { name: device.name, platform: device.platform });
@@ -118,6 +120,16 @@ export async function PATCH(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
   const body = await request.json().catch(() => ({})) as { type?: string; alertId?: string; alertStatus?: "ACKNOWLEDGED" | "RESOLVED"; incidentId?: string; decision?: "approve" | "reject" };
+  if (body.type === "start_remediation" && body.alertId) {
+    const db = getDb();
+    const [alert] = await db.select().from(securityAlerts).where(eq(securityAlerts.id, body.alertId)).limit(1);
+    if (!alert || alert.status === "RESOLVED" || (user.role !== "ADMIN" && alert.ownerEmail !== user.email)) return Response.json({ error: "Active alert not found" }, { status: 404 });
+    const now = new Date().toISOString();
+    const [plan] = await db.insert(remediationPlans).values({ id: crypto.randomUUID(), alertId: alert.id, deviceId: alert.deviceId, ownerEmail: alert.ownerEmail, actionCode: alert.code, status: "VERIFYING", approvedBy: user.email, approvedAt: now, lastCheckedAt: now }).onConflictDoUpdate({ target: remediationPlans.alertId, set: { status: "VERIFYING", approvedBy: user.email, approvedAt: now, lastCheckedAt: now, verifiedAt: null } }).returning();
+    await db.update(securityAlerts).set({ status: "ACKNOWLEDGED", updatedBy: user.email }).where(eq(securityAlerts.id, alert.id));
+    await logAudit(user.email, "SAFE_REMEDIATION_APPROVED", alert.deviceId, "SUCCESS", { alertId: alert.id, actionCode: alert.code, execution: "USER_GUIDED_AGENT_VERIFIED" });
+    return Response.json({ remediation: plan });
+  }
   if (body.type === "alert_action" && body.alertId && ["ACKNOWLEDGED", "RESOLVED"].includes(body.alertStatus || "")) {
     const db = getDb();
     const [alert] = await db.select().from(securityAlerts).where(eq(securityAlerts.id, body.alertId)).limit(1);

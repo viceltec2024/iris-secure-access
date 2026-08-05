@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, ChartLineUp, CheckCircle, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, UsersThree, Warning, X } from "@phosphor-icons/react";
+import { Bell, ChartLineUp, CheckCircle, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import AskIrisPanel from "./ask-iris-panel";
 import { incidentSpanish, Language, text } from "./dashboard-i18n";
 
@@ -11,6 +11,22 @@ type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: s
 type Device = { id: string; name: string; platform: string; status: "PENDING" | "ONLINE" | "OFFLINE"; risk: "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH"; enrollmentCode: string; lastSeenAt: string | null; telemetry: DeviceTelemetry | null; healthScore: number | null; provenance: "REAL" | "UNVERIFIED" };
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
 type SecurityAlert = { id: string; deviceId: string; ownerEmail: string; fingerprint: string; code: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; status: "NEW" | "ACKNOWLEDGED" | "RESOLVED"; evidence: string; firstSeenAt: string; lastSeenAt: string; resolvedAt: string | null; updatedBy: string | null };
+type RemediationPlan = { id: string; alertId: string; deviceId: string; ownerEmail: string; actionCode: string; status: "VERIFYING" | "VERIFIED" | "CANCELLED"; approvedBy: string; approvedAt: string; lastCheckedAt: string | null; verifiedAt: string | null };
+
+function remediationGuide(code: string, language: Language) {
+  const es = language === "es";
+  const guides: Record<string, { title: string; risk: string; steps: string[] }> = {
+    FIREWALL_DISABLED: { title: es ? "Activar el firewall de macOS" : "Enable the macOS firewall", risk: es ? "Sin firewall, conexiones entrantes no autorizadas tienen menos protección." : "Without the firewall, unauthorized inbound connections have less protection.", steps: es ? ["Abre Configuración del Sistema.", "Selecciona Red y luego Firewall.", "Activa Firewall. No desactives otras protecciones."] : ["Open System Settings.", "Select Network, then Firewall.", "Turn Firewall on. Do not disable other protections."] },
+    GATEKEEPER_DISABLED: { title: es ? "Restaurar Gatekeeper" : "Restore Gatekeeper", risk: es ? "Gatekeeper desactivado permite ejecutar software no verificado con mayor facilidad." : "Disabled Gatekeeper makes unverified software easier to run.", steps: es ? ["Abre Privacidad y seguridad.", "En Seguridad, permite aplicaciones de App Store y desarrolladores identificados.", "No abras aplicaciones cuya procedencia desconozcas."] : ["Open Privacy & Security.", "Under Security, allow apps from the App Store and identified developers.", "Do not open apps from unknown sources."] },
+    FILEVAULT_DISABLED: { title: es ? "Activar FileVault" : "Enable FileVault", risk: es ? "Los datos del disco no están protegidos completamente si el Mac se pierde o es robado." : "Disk data is not fully protected if the Mac is lost or stolen.", steps: es ? ["Conecta el Mac a la corriente.", "Abre Privacidad y seguridad y selecciona FileVault.", "Actívalo y guarda la clave de recuperación en un lugar seguro."] : ["Connect the Mac to power.", "Open Privacy & Security and select FileVault.", "Turn it on and store the recovery key safely."] },
+    SIP_DISABLED: { title: es ? "Restaurar la protección del sistema" : "Restore System Integrity Protection", risk: es ? "SIP desactivado permite cambios profundos en archivos protegidos de macOS." : "Disabled SIP permits deep changes to protected macOS files.", steps: es ? ["Guarda tu trabajo y apaga el Mac.", "Inicia Recuperación de macOS manteniendo presionado el botón de encendido.", "En Utilidades abre Terminal, ejecuta csrutil enable y reinicia."] : ["Save your work and shut down the Mac.", "Start macOS Recovery by holding the power button.", "From Utilities open Terminal, run csrutil enable, and restart."] },
+    AUTOMATIC_UPDATES_DISABLED: { title: es ? "Activar actualizaciones automáticas" : "Enable automatic updates", risk: es ? "El Mac puede permanecer expuesto a fallas que Apple ya corrigió." : "The Mac may remain exposed to flaws Apple has already fixed.", steps: es ? ["Abre General y selecciona Actualización de software.", "Abre Actualizaciones automáticas.", "Activa las actualizaciones de macOS y las respuestas de seguridad."] : ["Open General and select Software Update.", "Open Automatic Updates.", "Enable macOS updates and security responses."] },
+    UNVERIFIED_APPLICATIONS_FOUND: { title: es ? "Revisar aplicaciones no verificadas" : "Review unverified applications", risk: es ? "Una aplicación sin firma válida puede estar modificada o venir de una fuente no confiable." : "An app without a valid signature may be modified or come from an untrusted source.", steps: es ? ["Confirma que reconoces cada aplicación mostrada.", "Descárgala nuevamente desde su sitio oficial o App Store si tienes dudas.", "Elimina cualquier aplicación que no reconozcas."] : ["Confirm that you recognize every listed app.", "Download it again from its official site or the App Store if unsure.", "Remove any app you do not recognize."] },
+    DISK_CRITICALLY_FULL: { title: es ? "Liberar espacio de forma segura" : "Safely free disk space", risk: es ? "Un disco casi lleno puede impedir actualizaciones y afectar la estabilidad." : "A nearly full disk can prevent updates and affect stability.", steps: es ? ["Abre General, Almacenamiento.", "Revisa archivos grandes y descargas.", "Elimina solo archivos que reconozcas y vacía la Papelera."] : ["Open General, Storage.", "Review large files and downloads.", "Delete only files you recognize and empty Trash."] },
+    MEMORY_CRITICALLY_HIGH: { title: es ? "Reducir el uso de memoria" : "Reduce memory usage", risk: es ? "La presión extrema de memoria puede congelar procesos de seguridad." : "Extreme memory pressure can freeze security processes.", steps: es ? ["Guarda tu trabajo.", "Cierra aplicaciones que no estés usando.", "Reinicia el Mac si el uso continúa alto."] : ["Save your work.", "Close apps you are not using.", "Restart the Mac if usage remains high."] },
+  };
+  return guides[code] || { title: es ? "Revisar el cambio detectado" : "Review the detected change", risk: es ? "IRIS detectó un cambio que debe confirmarse antes de cerrarlo." : "IRIS detected a change that should be confirmed before closure.", steps: es ? ["Revisa el control indicado en Configuración del Sistema.", "Confirma que el cambio fue intencional.", "Restaura la configuración anterior si no lo reconoces."] : ["Review the indicated control in System Settings.", "Confirm the change was intentional.", "Restore the previous setting if you do not recognize it."] };
+}
 
 const seedIncidents: Incident[] = [
   { id: "IR-1042", title: "Anomalous outbound connection", subject: "10.0.4.25 → 203.0.113.45", severity: "Critical", status: "Open", time: "2 min ago", source: "Network sensor", summary: "Endpoint WS-1025 started an unusual transfer to a destination never seen before. The pattern may indicate data exfiltration or command-and-control traffic.", cause: "Unknown process executed after a privileged login.", impact: "Possible data exposure and remote control of the affected endpoint.", confidence: 94, evidence: ["First-seen destination", "4.8 GB transferred in 11 minutes", "Connection followed privileged login"], actions: ["Isolate WS-1025 from the network", "Block 203.0.113.45", "Preserve memory and logs", "Open a forensic investigation"], recommendation: "Isolate the endpoint, block the destination, and preserve evidence before closing connections or processes." },
@@ -31,18 +47,25 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [executionNote, setExecutionNote] = useState("");
   const [devices, setDevices] = useState<Device[]>([]);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
+  const [remediations, setRemediations] = useState<RemediationPlan[]>([]);
+  const [remediationAlert, setRemediationAlert] = useState<SecurityAlert | null>(null);
+  const [startingRemediation, setStartingRemediation] = useState(false);
   const [responseHistory, setResponseHistory] = useState<ResponseAction[]>([]);
   const [creatingDevice, setCreatingDevice] = useState(false);
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [approvingApplication, setApprovingApplication] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[]; alerts?: SecurityAlert[] }) => {
+    const loadSecurityState = () => void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[]; alerts?: SecurityAlert[]; remediations?: RemediationPlan[] }) => {
       if (data.incidents?.length) setIncidents(current => current.map(item => ({ ...item, status: data.incidents?.find(saved => saved.incidentId === item.id)?.status || item.status })));
       if (data.devices) setDevices(data.devices);
       if (data.actions) setResponseHistory(data.actions);
       if (data.alerts) setAlerts(data.alerts);
+      if (data.remediations) setRemediations(data.remediations);
     }).catch(() => undefined);
+    loadSecurityState();
+    const refreshTimer = window.setInterval(loadSecurityState, 30_000);
+    return () => window.clearInterval(refreshTimer);
   }, []);
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
@@ -120,6 +143,19 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     if (response.ok && data.alert) setAlerts(current => current.map(alert => alert.id === alertId ? data.alert! : alert));
   }
 
+  async function startRemediation(alert: SecurityAlert) {
+    setStartingRemediation(true);
+    try {
+      const response = await fetch("/api/security-state", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "start_remediation", alertId: alert.id }) });
+      const data = await response.json() as { remediation?: RemediationPlan };
+      if (response.ok && data.remediation) {
+        setRemediations(current => [data.remediation!, ...current.filter(item => item.alertId !== alert.id)]);
+        setAlerts(current => current.map(item => item.id === alert.id ? { ...item, status: "ACKNOWLEDGED", updatedBy: user.email } : item));
+        setRemediationAlert(null);
+      }
+    } finally { setStartingRemediation(false); }
+  }
+
   function evidenceFor(alert: SecurityAlert) {
     try { return JSON.parse(alert.evidence) as { hostname?: string; applications?: string[]; collectedAt?: string }; }
     catch { return {}; }
@@ -177,13 +213,15 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       </>}
 
       {section === "alerts" && <section className="module-panel real-alert-center">
-        <div className="module-toolbar"><div><h2>{language === "es" ? "Alertas del agente de tu Mac" : "Alerts from your Mac agent"}</h2><p>{language === "es" ? "Solo eventos comprobados por un agente autorizado. Puedes reconocerlos o resolverlos." : "Only events verified by an authorized agent. You can acknowledge or resolve them."}</p></div><span className="provenance-badge real">REAL</span></div>
+        <div className="module-toolbar"><div><h2>{language === "es" ? "Alertas y respuesta segura" : "Alerts and safe response"}</h2><p>{language === "es" ? "IRIS te guía, solicita aprobación y espera un nuevo reporte del agente antes de confirmar la corrección." : "IRIS guides you, requests approval, and waits for a new agent report before confirming the fix."}</p></div><span className="provenance-badge real">REAL</span></div>
         <div className="alert-summary"><span><b>{newAlerts.length}</b>{language === "es" ? "Nuevas" : "New"}</span><span><b>{alerts.filter(alert => alert.status === "ACKNOWLEDGED").length}</b>{language === "es" ? "Reconocidas" : "Acknowledged"}</span><span><b>{alerts.filter(alert => alert.status === "RESOLVED").length}</b>{language === "es" ? "Resueltas" : "Resolved"}</span></div>
-        <div className="real-alert-list">{alerts.map(alert => { const evidence = evidenceFor(alert); const device = devices.find(item => item.id === alert.deviceId); return <article className={`real-alert-item severity-${alert.severity.toLowerCase()}`} key={alert.id}>
+        <div className="real-alert-list">{alerts.map(alert => { const evidence = evidenceFor(alert); const device = devices.find(item => item.id === alert.deviceId); const remediation = remediations.find(item => item.alertId === alert.id); return <article className={`real-alert-item severity-${alert.severity.toLowerCase()}`} key={alert.id}>
           <span className="alert-icon"><Warning weight="fill" /></span><div className="alert-copy"><div><strong>{alert.code.replaceAll("_", " ")}</strong><span className={`alert-status ${alert.status.toLowerCase()}`}>{alert.status === "NEW" ? (language === "es" ? "NUEVA" : "NEW") : alert.status === "ACKNOWLEDGED" ? (language === "es" ? "RECONOCIDA" : "ACKNOWLEDGED") : (language === "es" ? "RESUELTA" : "RESOLVED")}</span></div><p>{device?.name || evidence.hostname || (language === "es" ? "Dispositivo" : "Device")} · {alert.severity}</p>{!!evidence.applications?.length && <small>{language === "es" ? "Aplicaciones: " : "Applications: "}{evidence.applications.join(", ")}</small>}<time>{language === "es" ? "Última detección" : "Last detected"}: {new Date(alert.lastSeenAt).toLocaleString(language)}</time></div>
-          <div className="real-alert-actions">{alert.status === "NEW" && <button onClick={() => void updateAlert(alert.id, "ACKNOWLEDGED")}>{language === "es" ? "Reconocer" : "Acknowledge"}</button>}{alert.status !== "RESOLVED" && <button className="resolve-alert" onClick={() => void updateAlert(alert.id, "RESOLVED")}><CheckCircle />{language === "es" ? "Resolver" : "Resolve"}</button>}</div>
+          <div className="real-alert-actions">{remediation?.status === "VERIFIED" ? <span className="remediation-state verified"><CheckCircle weight="fill" />{language === "es" ? "VERIFICADA POR EL AGENTE" : "AGENT VERIFIED"}</span> : remediation?.status === "VERIFYING" ? <span className="remediation-state verifying"><Pulse />{language === "es" ? "ESPERANDO REPORTE" : "AWAITING REPORT"}</span> : alert.status !== "RESOLVED" ? <button className="safe-fix" onClick={() => setRemediationAlert(alert)}><Wrench />{language === "es" ? "Corregir con IRIS" : "Fix with IRIS"}</button> : null}{alert.status === "NEW" && <button onClick={() => void updateAlert(alert.id, "ACKNOWLEDGED")}>{language === "es" ? "Reconocer" : "Acknowledge"}</button>}</div>
         </article>})}{alerts.length === 0 && <div className="empty-alerts"><CheckCircle weight="fill" /><h3>{language === "es" ? "No hay alertas reales" : "No real alerts"}</h3><p>{language === "es" ? "IRIS mostrará aquí cualquier cambio o amenaza comprobada por el agente." : "IRIS will show any agent-verified change or threat here."}</p></div>}</div>
       </section>}
+
+      {remediationAlert && <div className="approval-backdrop" role="presentation" onMouseDown={() => setRemediationAlert(null)}><section className="approval-dialog remediation-dialog" role="dialog" aria-modal="true" aria-labelledby="remediation-title" onMouseDown={event => event.stopPropagation()}><button className="approval-close" aria-label={language === "es" ? "Cerrar" : "Close"} onClick={() => setRemediationAlert(null)}><X /></button><span className="approval-icon"><Wrench weight="duotone" /></span><p>{language === "es" ? "RESPUESTA SEGURA · APROBACIÓN REQUERIDA" : "SAFE RESPONSE · APPROVAL REQUIRED"}</p><h2 id="remediation-title">{remediationGuide(remediationAlert.code, language).title}</h2><div className="remediation-risk"><Warning weight="fill" /><span><strong>{language === "es" ? "Por qué importa" : "Why it matters"}</strong>{remediationGuide(remediationAlert.code, language).risk}</span></div><ol className="remediation-steps">{remediationGuide(remediationAlert.code, language).steps.map((step, index) => <li key={step}><b>{index + 1}</b><span>{step}</span></li>)}</ol><div className="safe-boundary"><ShieldCheck weight="fill" /><span><strong>{language === "es" ? "Control humano" : "Human control"}</strong>{language === "es" ? "IRIS no escribirá tu contraseña ni cambiará macOS silenciosamente. Después de completar los pasos, el agente verificará el resultado en su próximo reporte." : "IRIS will not enter your password or silently change macOS. After you complete the steps, the agent will verify the result in its next report."}</span></div><div className="approval-actions"><button onClick={() => setRemediationAlert(null)}>{language === "es" ? "Cancelar" : "Cancel"}</button><button disabled={startingRemediation} onClick={() => void startRemediation(remediationAlert)}><ShieldCheck />{startingRemediation ? (language === "es" ? "Guardando…" : "Saving…") : (language === "es" ? "Ya lo corregí: verificar" : "I fixed it: verify")}</button></div></section></div>}
 
       {section === "incidents" && <section className="module-panel">
         <div className="module-toolbar"><div><h2>{t("allIncidents")}</h2><p>{t("selectIncident")}</p></div><div className="filters">{["All","Critical","High","Medium"].map(f => <button className={filter === f ? "active" : ""} onClick={() => setFilter(f)} key={f}>{t((`filter${f}`) as "filterAll")}</button>)}</div></div>
