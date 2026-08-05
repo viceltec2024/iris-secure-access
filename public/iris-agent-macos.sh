@@ -1,6 +1,8 @@
 #!/bin/zsh
 set -eu
 
+SCRIPT_PATH="${0:A}"
+
 API_URL="https://iris-secure-access.taylor-667.chatgpt.site/api/agent/check-in"
 AGENT_DIR="$HOME/Library/Application Support/IRIS Agent"
 AGENT_PATH="$AGENT_DIR/iris-agent.sh"
@@ -71,7 +73,7 @@ install_agent() {
   token="$(/usr/bin/plutil -extract agentToken raw -o - "$response_file" 2>/dev/null || true)"
   /bin/rm -f "$response_file"
   [ -n "$token" ] || { echo "IRIS did not return an agent token."; exit 1; }
-  /bin/cp "$0" "$AGENT_PATH"
+  /bin/cp "$SCRIPT_PATH" "$AGENT_PATH"
   /bin/chmod 700 "$AGENT_PATH"
   printf '%s' "$token" > "$TOKEN_PATH"
   /bin/chmod 600 "$TOKEN_PATH"

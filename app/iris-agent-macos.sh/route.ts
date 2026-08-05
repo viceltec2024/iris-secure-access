@@ -5,7 +5,7 @@ export async function GET() {
     headers: {
       "Content-Type": "text/x-shellscript; charset=utf-8",
       "Content-Disposition": 'attachment; filename="iris-agent-macos.sh"',
-      "Cache-Control": "public, max-age=300",
+      "Cache-Control": "no-store, max-age=0",
       "X-Content-Type-Options": "nosniff",
     },
   });
