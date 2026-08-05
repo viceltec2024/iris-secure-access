@@ -7,7 +7,7 @@ import { logAudit, provisionIrisUser } from "../../../lib/authz";
 const knownIncidents = new Set(["IR-1042", "IR-1041", "IR-1039", "IR-1036", "IR-1032"]);
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
-type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; collectedAt?: string };
+type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
 
 function deviceView(device: typeof devices.$inferSelect) {
   let telemetry: AgentTelemetry | null = null;
@@ -21,6 +21,11 @@ function deviceView(device: typeof devices.$inferSelect) {
   let healthScore: number | null = telemetry ? 100 : null;
   if (healthScore !== null) {
     if (telemetry!.firewallEnabled === false) healthScore -= 30;
+    if (telemetry!.gatekeeperEnabled === false) healthScore -= 20;
+    if (telemetry!.fileVaultEnabled === false) healthScore -= 25;
+    if (telemetry!.sipEnabled === false) healthScore -= 25;
+    if (telemetry!.automaticUpdatesEnabled === false) healthScore -= 10;
+    if (telemetry!.riskyApplications?.length) healthScore -= Math.min(20, telemetry!.riskyApplications.length * 5);
     if ((telemetry!.diskUsedPercent ?? 0) >= 95) healthScore -= 30; else if ((telemetry!.diskUsedPercent ?? 0) >= 85) healthScore -= 15;
     if ((telemetry!.memoryUsedPercent ?? 0) >= 95) healthScore -= 20; else if ((telemetry!.memoryUsedPercent ?? 0) >= 85) healthScore -= 10;
     if (!fresh) healthScore -= 20;

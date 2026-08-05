@@ -20,6 +20,8 @@
 * { box-sizing: border-box; }
 
 body { margin: 0; min-width: 320px; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+.device-grid>article>.security-controls{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.security-controls dd{font-size:13px!important}.security-controls dd:not(:empty){color:#78d9b0}.real-alerts,.security-findings,.risky-apps{grid-column:1/-1;display:flex;flex-direction:column;align-items:flex-start!important;gap:7px!important;padding:12px;border-radius:8px}.real-alerts{border:1px solid #936c27;background:#2e220f;color:#f1bd5d}.security-findings,.risky-apps{border:1px solid #713b45;background:#2b151b;color:#ff9ba4}.real-alerts strong,.security-findings strong,.risky-apps strong{font-size:9px;letter-spacing:.08em}.real-alerts span,.security-findings span,.risky-apps span{display:flex;align-items:center;gap:6px;color:inherit!important;font-size:9px!important}.real-alerts svg,.security-findings svg{width:13px;flex:0 0 13px}@media(max-width:520px){.device-grid>article>.security-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 button, input { font: inherit; }
 button { cursor: pointer; }
 a { color: inherit; }
