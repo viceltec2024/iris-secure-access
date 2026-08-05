@@ -15,7 +15,7 @@ PLIST_PATH="$HOME/Library/LaunchAgents/com.iris.security-agent.plist"
 json_escape() { printf '%s' "$1" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 telemetry_json() {
-  local hostname os_version architecture disk_used total_pages used_pages memory_used firewall gatekeeper filevault sip auto_updates app_count app_hash risky_json
+  local hostname os_version architecture disk_used total_pages used_pages memory_used firewall gatekeeper filevault sip auto_updates app_count app_hash risky_json xprotect mrt xprotect_version persistence_count persistence_hash unsigned_persistence_json
   hostname="$(/bin/hostname -s)"
   os_version="$(/usr/bin/sw_vers -productVersion)"
   architecture="$(/usr/bin/uname -m)"
@@ -30,6 +30,28 @@ telemetry_json() {
   if /usr/sbin/softwareupdate --schedule 2>/dev/null | /usr/bin/grep -qi "on"; then auto_updates=true; else auto_updates=false; fi
   app_count="$(/usr/bin/find /Applications -maxdepth 1 -type d -name '*.app' 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
   app_hash="$(/usr/bin/find /Applications -maxdepth 1 -type d -name '*.app' -print 2>/dev/null | /usr/bin/sort | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+  local xprotect_path="/Library/Apple/System/Library/CoreServices/XProtect.bundle"
+  [ -e "$xprotect_path" ] || xprotect_path="/Library/Apple/System/Library/CoreServices/XProtect.app"
+  if [ -e "$xprotect_path" ]; then xprotect=true; else xprotect=false; fi
+  if [ -e "/Library/Apple/System/Library/CoreServices/MRT.app" ]; then mrt=true; else mrt=false; fi
+  xprotect_version="$(/usr/bin/defaults read "$xprotect_path/Contents/Info" CFBundleShortVersionString 2>/dev/null || /usr/bin/defaults read "$xprotect_path/Contents/Info" CFBundleVersion 2>/dev/null || echo unknown)"
+  local persistence_list
+  persistence_list="$(/usr/bin/find "$HOME/Library/LaunchAgents" /Library/LaunchAgents /Library/LaunchDaemons -maxdepth 1 -type f -name '*.plist' -print 2>/dev/null | /usr/bin/sort)"
+  persistence_count="$(printf '%s\n' "$persistence_list" | /usr/bin/awk 'NF {count++} END {print count+0}')"
+  persistence_hash="$(printf '%s\n' "$persistence_list" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+  unsigned_persistence_json="["
+  local persistence_separator="" plist executable item_name persistence_checked=0
+  while IFS= read -r plist && [ "$persistence_checked" -lt 100 ]; do
+    [ -n "$plist" ] || continue
+    persistence_checked=$((persistence_checked + 1))
+    executable="$(/usr/bin/plutil -extract Program raw -o - "$plist" 2>/dev/null || /usr/bin/plutil -extract ProgramArguments.0 raw -o - "$plist" 2>/dev/null || true)"
+    if [ -n "$executable" ] && [ -f "$executable" ] && /usr/bin/file "$executable" 2>/dev/null | /usr/bin/grep -q 'Mach-O' && ! /usr/bin/codesign --verify --strict "$executable" >/dev/null 2>&1; then
+      item_name="${plist:t:r}"
+      unsigned_persistence_json="${unsigned_persistence_json}${persistence_separator}\"$(json_escape "$item_name")\""
+      persistence_separator=","
+    fi
+  done <<< "$persistence_list"
+  unsigned_persistence_json="${unsigned_persistence_json}]"
   risky_json="["
   local separator="" app app_name checked=0
   while IFS= read -r app && [ "$checked" -lt 80 ]; do
@@ -41,7 +63,7 @@ telemetry_json() {
     fi
   done < <(/usr/bin/find /Applications -maxdepth 1 -type d -name '*.app' -print 2>/dev/null | /usr/bin/sort)
   risky_json="${risky_json}]"
-  printf '{"hostname":"%s","osVersion":"macOS %s","architecture":"%s","diskUsedPercent":%s,"memoryUsedPercent":%s,"firewallEnabled":%s,"gatekeeperEnabled":%s,"fileVaultEnabled":%s,"sipEnabled":%s,"automaticUpdatesEnabled":%s,"installedApplicationCount":%s,"applicationInventoryHash":"%s","riskyApplications":%s}' "$(json_escape "$hostname")" "$(json_escape "$os_version")" "$(json_escape "$architecture")" "$disk_used" "$memory_used" "$firewall" "$gatekeeper" "$filevault" "$sip" "$auto_updates" "$app_count" "$app_hash" "$risky_json"
+  printf '{"hostname":"%s","osVersion":"macOS %s","architecture":"%s","diskUsedPercent":%s,"memoryUsedPercent":%s,"firewallEnabled":%s,"gatekeeperEnabled":%s,"fileVaultEnabled":%s,"sipEnabled":%s,"automaticUpdatesEnabled":%s,"installedApplicationCount":%s,"applicationInventoryHash":"%s","riskyApplications":%s,"xProtectPresent":%s,"xProtectVersion":"%s","malwareRemovalToolPresent":%s,"persistenceItemCount":%s,"persistenceInventoryHash":"%s","unsignedPersistenceItems":%s}' "$(json_escape "$hostname")" "$(json_escape "$os_version")" "$(json_escape "$architecture")" "$disk_used" "$memory_used" "$firewall" "$gatekeeper" "$filevault" "$sip" "$auto_updates" "$app_count" "$app_hash" "$risky_json" "$xprotect" "$(json_escape "$xprotect_version")" "$mrt" "$persistence_count" "$persistence_hash" "$unsigned_persistence_json"
 }
 
 check_in() {
@@ -66,7 +88,7 @@ check_in() {
 
 install_agent() {
   echo "IRIS Agent for macOS"
-  echo "This read-only agent reports security controls, system health, and application signature results."
+  echo "This read-only agent reports security controls, XProtect, startup persistence, system health, and application signature results."
   printf "Enter a NEW IRIS enrollment code: "
   read -r enrollment_code
   enrollment_code="$(printf '%s' "$enrollment_code" | /usr/bin/tr '[:lower:]' '[:upper:]' | /usr/bin/tr -d '[:space:]')"

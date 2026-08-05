@@ -7,7 +7,7 @@ import { logAudit, provisionIrisUser } from "../../../lib/authz";
 const knownIncidents = new Set(["IR-1042", "IR-1041", "IR-1039", "IR-1036", "IR-1032"]);
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
-type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
+type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; unsignedPersistenceItems?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
 
 function deviceView(device: typeof devices.$inferSelect, trustedNames: string[] = []) {
   let telemetry: AgentTelemetry | null = null;
@@ -30,6 +30,9 @@ function deviceView(device: typeof devices.$inferSelect, trustedNames: string[] 
     if (telemetry!.fileVaultEnabled === false) healthScore -= 25;
     if (telemetry!.sipEnabled === false) healthScore -= 25;
     if (telemetry!.automaticUpdatesEnabled === false) healthScore -= 10;
+    if (telemetry!.xProtectPresent === false) healthScore -= 30;
+    if (telemetry!.malwareRemovalToolPresent === false) healthScore -= 15;
+    if (telemetry!.unsignedPersistenceItems?.length) healthScore -= Math.min(30, telemetry!.unsignedPersistenceItems.length * 10);
     if (telemetry!.riskyApplications?.length) healthScore -= Math.min(20, telemetry!.riskyApplications.length * 5);
     if ((telemetry!.diskUsedPercent ?? 0) >= 95) healthScore -= 30; else if ((telemetry!.diskUsedPercent ?? 0) >= 85) healthScore -= 15;
     if ((telemetry!.memoryUsedPercent ?? 0) >= 95) healthScore -= 20; else if ((telemetry!.memoryUsedPercent ?? 0) >= 85) healthScore -= 10;

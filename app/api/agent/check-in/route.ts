@@ -10,6 +10,7 @@ type Telemetry = {
   hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number;
   firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean;
   installedApplicationCount?: number; applicationInventoryHash?: string; riskyApplications?: string[];
+  xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; persistenceInventoryHash?: string; unsignedPersistenceItems?: string[];
   securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string;
 };
 
@@ -61,6 +62,12 @@ function cleanTelemetry(input: Telemetry): Telemetry {
     installedApplicationCount: typeof input.installedApplicationCount === "number" ? Math.max(0, Math.min(10000, Math.round(input.installedApplicationCount))) : undefined,
     applicationInventoryHash: String(input.applicationInventoryHash || "").replace(/[^a-f0-9]/gi, "").slice(0, 64) || undefined,
     riskyApplications: Array.isArray(input.riskyApplications) ? input.riskyApplications.slice(0, 20).map(name => String(name).slice(0, 100)) : [],
+    xProtectPresent: flag(input.xProtectPresent),
+    xProtectVersion: String(input.xProtectVersion || "unknown").slice(0, 80),
+    malwareRemovalToolPresent: flag(input.malwareRemovalToolPresent),
+    persistenceItemCount: typeof input.persistenceItemCount === "number" ? Math.max(0, Math.min(1000, Math.round(input.persistenceItemCount))) : undefined,
+    persistenceInventoryHash: String(input.persistenceInventoryHash || "").replace(/[^a-f0-9]/gi, "").slice(0, 64) || undefined,
+    unsignedPersistenceItems: Array.isArray(input.unsignedPersistenceItems) ? input.unsignedPersistenceItems.slice(0, 20).map(name => String(name).slice(0, 120)) : [],
     collectedAt: new Date().toISOString(),
   };
 }
@@ -73,6 +80,9 @@ function enrichTelemetry(current: Telemetry, previous?: Telemetry): Telemetry {
   if (current.sipEnabled === false) securityFindings.push("SIP_DISABLED");
   if (current.automaticUpdatesEnabled === false) securityFindings.push("AUTOMATIC_UPDATES_DISABLED");
   if (current.riskyApplications?.length) securityFindings.push("UNVERIFIED_APPLICATIONS_FOUND");
+  if (current.xProtectPresent === false) securityFindings.push("XPROTECT_MISSING");
+  if (current.malwareRemovalToolPresent === false) securityFindings.push("MALWARE_REMOVAL_TOOL_MISSING");
+  if (current.unsignedPersistenceItems?.length) securityFindings.push("UNSIGNED_PERSISTENCE_FOUND");
   if ((current.diskUsedPercent || 0) >= 95) securityFindings.push("DISK_CRITICALLY_FULL");
   if ((current.memoryUsedPercent || 0) >= 98) securityFindings.push("MEMORY_CRITICALLY_HIGH");
 
@@ -85,6 +95,7 @@ function enrichTelemetry(current: Telemetry, previous?: Telemetry): Telemetry {
     if (changed("sipEnabled")) changes.push("SIP_STATE_CHANGED");
     if (changed("automaticUpdatesEnabled")) changes.push("AUTOMATIC_UPDATES_STATE_CHANGED");
     if (previous.applicationInventoryHash && current.applicationInventoryHash && previous.applicationInventoryHash !== current.applicationInventoryHash) changes.push("APPLICATION_INVENTORY_CHANGED");
+    if (previous.persistenceInventoryHash && current.persistenceInventoryHash && previous.persistenceInventoryHash !== current.persistenceInventoryHash) changes.push("STARTUP_PERSISTENCE_CHANGED");
   }
   let changeDetectedAt: string | undefined;
   if (changes.length) changeDetectedAt = new Date().toISOString();
@@ -96,13 +107,13 @@ function enrichTelemetry(current: Telemetry, previous?: Telemetry): Telemetry {
 }
 
 function calculateRisk(telemetry: Telemetry): "LOW" | "MEDIUM" | "HIGH" {
-  if ((telemetry.diskUsedPercent || 0) >= 95 || (telemetry.memoryUsedPercent || 0) >= 98 || telemetry.sipEnabled === false || telemetry.fileVaultEnabled === false) return "HIGH";
-  if (telemetry.firewallEnabled === false || telemetry.gatekeeperEnabled === false || telemetry.automaticUpdatesEnabled === false || telemetry.riskyApplications?.length || (telemetry.diskUsedPercent || 0) >= 85) return "MEDIUM";
+  if ((telemetry.diskUsedPercent || 0) >= 95 || (telemetry.memoryUsedPercent || 0) >= 98 || telemetry.sipEnabled === false || telemetry.fileVaultEnabled === false || telemetry.xProtectPresent === false || telemetry.unsignedPersistenceItems?.length) return "HIGH";
+  if (telemetry.firewallEnabled === false || telemetry.gatekeeperEnabled === false || telemetry.automaticUpdatesEnabled === false || telemetry.malwareRemovalToolPresent === false || telemetry.riskyApplications?.length || (telemetry.diskUsedPercent || 0) >= 85) return "MEDIUM";
   return "LOW";
 }
 
 function alertSeverity(code: string): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
-  if (["SIP_DISABLED", "FILEVAULT_DISABLED", "DISK_CRITICALLY_FULL", "MEMORY_CRITICALLY_HIGH"].includes(code)) return "HIGH";
+  if (["SIP_DISABLED", "FILEVAULT_DISABLED", "DISK_CRITICALLY_FULL", "MEMORY_CRITICALLY_HIGH", "XPROTECT_MISSING", "UNSIGNED_PERSISTENCE_FOUND"].includes(code)) return "HIGH";
   if (["FIREWALL_DISABLED", "GATEKEEPER_DISABLED", "AUTOMATIC_UPDATES_DISABLED", "UNVERIFIED_APPLICATIONS_FOUND"].includes(code)) return "MEDIUM";
   return "LOW";
 }
@@ -119,7 +130,7 @@ async function syncAlerts(device: typeof devices.$inferSelect, telemetry: Teleme
   const now = new Date().toISOString();
   for (const code of currentCodes) {
     const prior = existing.find(alert => alert.code === code);
-    const evidence = JSON.stringify({ hostname: telemetry.hostname, applications: code === "UNVERIFIED_APPLICATIONS_FOUND" ? untrustedApps : undefined, collectedAt: telemetry.collectedAt });
+    const evidence = JSON.stringify({ hostname: telemetry.hostname, applications: code === "UNVERIFIED_APPLICATIONS_FOUND" ? untrustedApps : undefined, startupItems: code === "UNSIGNED_PERSISTENCE_FOUND" ? telemetry.unsignedPersistenceItems : undefined, xProtectVersion: code === "XPROTECT_MISSING" ? telemetry.xProtectVersion : undefined, collectedAt: telemetry.collectedAt });
     if (prior) {
       await db.update(securityAlerts).set({ status: prior.status === "RESOLVED" ? "NEW" : prior.status, severity: alertSeverity(code), evidence, lastSeenAt: now, resolvedAt: null, updatedBy: prior.status === "RESOLVED" ? "iris.system" : prior.updatedBy }).where(eq(securityAlerts.id, prior.id));
       if (prior.status === "RESOLVED") {
