@@ -7,7 +7,7 @@ import { incidentSpanish, Language, text } from "./dashboard-i18n";
 
 type Incident = { id: string; title: string; subject: string; severity: "Critical" | "High" | "Medium" | "Low"; status: "Open" | "Investigating" | "Contained"; time: string; source: string; summary: string; cause: string; impact: string; confidence: number; evidence: string[]; actions: string[]; recommendation: string };
 type Section = "operations" | "incidents" | "intelligence" | "devices" | "approvals" | "audit";
-type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
+type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
 type Device = { id: string; name: string; platform: string; status: "PENDING" | "ONLINE" | "OFFLINE"; risk: "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH"; enrollmentCode: string; lastSeenAt: string | null; telemetry: DeviceTelemetry | null; healthScore: number | null; provenance: "REAL" | "UNVERIFIED" };
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
 
@@ -34,6 +34,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [responseHistory, setResponseHistory] = useState<ResponseAction[]>([]);
   const [creatingDevice, setCreatingDevice] = useState(false);
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
+  const [approvingApplication, setApprovingApplication] = useState<string | null>(null);
 
   useEffect(() => {
     void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[] }) => {
@@ -99,6 +100,17 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     } finally {
       setDeletingDeviceId(null);
     }
+  }
+
+  async function trustApplication(deviceId: string, appName: string) {
+    const confirmed = window.confirm(language === "es" ? `¿Confirmas que instalaste ${appName} desde una fuente oficial y confías en esta aplicación?` : `Do you confirm that you installed ${appName} from an official source and trust this application?`);
+    if (!confirmed) return;
+    setApprovingApplication(`${deviceId}:${appName}`);
+    try {
+      const response = await fetch("/api/security-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "trust_application", deviceId, appName }) });
+      const data = await response.json() as { device?: Device };
+      if (response.ok && data.device) setDevices(current => current.map(device => device.id === deviceId ? data.device! : device));
+    } finally { setApprovingApplication(null); }
   }
 
   function selectIncident(incident: Incident) {
@@ -186,7 +198,8 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           </dl>
           {!!device.telemetry?.changes?.length && <div className="real-alerts"><strong>{language === "es" ? "CAMBIOS DETECTADOS" : "CHANGES DETECTED"}</strong>{device.telemetry.changes.map(change => <span key={change}><Warning weight="fill" />{change.replaceAll("_", " ")}</span>)}</div>}
           {!!device.telemetry?.securityFindings?.length && <div className="security-findings"><strong>{language === "es" ? "ATENCIÓN REQUERIDA" : "ATTENTION REQUIRED"}</strong>{device.telemetry.securityFindings.map(finding => <span key={finding}><Warning weight="fill" />{finding.replaceAll("_", " ")}</span>)}</div>}
-          {!!device.telemetry?.riskyApplications?.length && <div className="risky-apps"><strong>{language === "es" ? "Aplicaciones sin firma válida" : "Applications without a valid signature"}</strong><span>{device.telemetry.riskyApplications.join(", ")}</span></div>}
+          {!!device.telemetry?.riskyApplications?.length && <div className="risky-apps"><strong>{language === "es" ? "Aplicaciones pendientes de revisión" : "Applications awaiting review"}</strong>{device.telemetry.riskyApplications.map(appName => <span className="app-review-row" key={appName}><b>{appName}</b><button disabled={approvingApplication === `${device.id}:${appName}`} onClick={() => void trustApplication(device.id, appName)}>{approvingApplication === `${device.id}:${appName}` ? (language === "es" ? "Guardando…" : "Saving…") : (language === "es" ? "Marcar como confiable" : "Mark as trusted")}</button></span>)}</div>}
+          {!!device.telemetry?.trustedApplications?.length && <div className="trusted-apps"><strong>{language === "es" ? "APLICACIONES APROBADAS" : "APPROVED APPLICATIONS"}</strong><span><CheckCircle weight="fill" />{device.telemetry.trustedApplications.join(", ")}</span></div>}
           <div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div>
           <div className="device-actions"><a href="/iris-agent-macos.sh?v=23" download>{language === "es" ? "Descargar agente nuevo" : "Download new agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div>
           <p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Protección real activa. El agente revisa cada 2 minutos." : "Real protection active. The agent checks every 2 minutes.") : device.status === "OFFLINE" ? (language === "es" ? "Alerta: el agente dejó de reportar hace más de 5 minutos." : "Alert: the agent stopped reporting more than 5 minutes ago.") : (language === "es" ? "Instala el agente nuevo para comenzar la protección real." : "Install the new agent to start real protection.")}</p>

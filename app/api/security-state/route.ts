@@ -1,15 +1,15 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
-import { devices, incidentStates, responseActions } from "../../../db/schema";
+import { devices, incidentStates, responseActions, trustedApplications } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 
 const knownIncidents = new Set(["IR-1042", "IR-1041", "IR-1039", "IR-1036", "IR-1032"]);
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
-type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
+type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
 
-function deviceView(device: typeof devices.$inferSelect) {
+function deviceView(device: typeof devices.$inferSelect, trustedNames: string[] = []) {
   let telemetry: AgentTelemetry | null = null;
   try {
     const parsed = JSON.parse(device.telemetry || "{}");
@@ -18,6 +18,11 @@ function deviceView(device: typeof devices.$inferSelect) {
   const reportedAt = device.lastSeenAt ? Date.parse(device.lastSeenAt) : Number.NaN;
   const fresh = Number.isFinite(reportedAt) && Date.now() - reportedAt <= ONLINE_WINDOW_MS;
   const enrolled = Boolean(device.agentTokenHash);
+  if (telemetry) {
+    telemetry.trustedApplications = trustedNames;
+    telemetry.riskyApplications = (telemetry.riskyApplications || []).filter(name => !trustedNames.includes(name));
+    if (!telemetry.riskyApplications.length) telemetry.securityFindings = (telemetry.securityFindings || []).filter(finding => finding !== "UNVERIFIED_APPLICATIONS_FOUND");
+  }
   let healthScore: number | null = telemetry ? 100 : null;
   if (healthScore !== null) {
     if (telemetry!.firewallEnabled === false) healthScore -= 30;
@@ -47,13 +52,27 @@ export async function GET() {
   const deviceRows = user.role === "ADMIN"
     ? await db.select().from(devices).orderBy(desc(devices.createdAt))
     : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt));
-  return Response.json({ incidents: await db.select().from(incidentStates), actions: await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30), devices: deviceRows.map(deviceView) });
+  const trustedRows = deviceRows.length ? await db.select().from(trustedApplications).where(inArray(trustedApplications.deviceId, deviceRows.map(device => device.id))) : [];
+  return Response.json({ incidents: await db.select().from(incidentStates), actions: await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30), devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))) });
 }
 
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await request.json().catch(() => ({})) as { type?: string; name?: string; platform?: string; deviceId?: string };
+  const body = await request.json().catch(() => ({})) as { type?: string; name?: string; platform?: string; deviceId?: string; appName?: string };
+  if (body.type === "trust_application" && body.deviceId && body.appName) {
+    const db = getDb();
+    const [device] = await db.select().from(devices).where(eq(devices.id, body.deviceId)).limit(1);
+    if (!device || (user.role !== "ADMIN" && device.ownerEmail !== user.email)) return Response.json({ error: "Device not found" }, { status: 404 });
+    let telemetry: AgentTelemetry = {};
+    try { telemetry = JSON.parse(device.telemetry || "{}"); } catch { telemetry = {}; }
+    const appName = String(body.appName).trim().slice(0, 100);
+    if (!(telemetry.riskyApplications || []).includes(appName)) return Response.json({ error: "Application is not awaiting review" }, { status: 400 });
+    await db.insert(trustedApplications).values({ id: crypto.randomUUID(), deviceId: device.id, appName, approvedBy: user.email }).onConflictDoNothing();
+    await logAudit(user.email, "APPLICATION_TRUSTED", device.id, "SUCCESS", { appName });
+    const trustedRows = await db.select().from(trustedApplications).where(eq(trustedApplications.deviceId, device.id));
+    return Response.json({ device: deviceView(device, trustedRows.map(row => row.appName)) });
+  }
   if (body.type === "rotate_device_code" && body.deviceId) {
     const [device] = await getDb().select().from(devices).where(eq(devices.id, body.deviceId)).limit(1);
     if (!device || (user.role !== "ADMIN" && device.ownerEmail !== user.email)) return Response.json({ error: "Device not found" }, { status: 404 });
@@ -84,6 +103,7 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "Device not found" }, { status: 404 });
   }
 
+  await db.delete(trustedApplications).where(eq(trustedApplications.deviceId, device.id));
   await db.delete(devices).where(eq(devices.id, device.id));
   await logAudit(user.email, "DEVICE_DELETED", device.id, "SUCCESS", { name: device.name, platform: device.platform });
   return Response.json({ deleted: true, deviceId: device.id });

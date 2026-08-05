@@ -51,3 +51,11 @@ export const devices = sqliteTable("devices", {
   lastSeenAt: text("last_seen_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("devices_enrollment_code_unique").on(table.enrollmentCode)]);
+
+export const trustedApplications = sqliteTable("trusted_applications", {
+  id: text("id").primaryKey(),
+  deviceId: text("device_id").notNull(),
+  appName: text("app_name").notNull(),
+  approvedBy: text("approved_by").notNull(),
+  approvedAt: text("approved_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [uniqueIndex("trusted_applications_device_app_unique").on(table.deviceId, table.appName)]);
