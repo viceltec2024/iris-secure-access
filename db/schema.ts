@@ -18,6 +18,8 @@ export const auditEvents = sqliteTable("audit_events", {
   resource: text("resource").notNull(),
   outcome: text("outcome", { enum: ["SUCCESS", "DENIED"] }).notNull(),
   metadata: text("metadata").notNull().default("{}"),
+  previousHash: text("previous_hash"),
+  eventHash: text("event_hash"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -47,6 +49,8 @@ export const devices = sqliteTable("devices", {
   risk: text("risk", { enum: ["UNKNOWN", "LOW", "MEDIUM", "HIGH"] }).notNull().default("UNKNOWN"),
   enrollmentCode: text("enrollment_code").notNull(),
   agentTokenHash: text("agent_token_hash"),
+  agentTokenIssuedAt: text("agent_token_issued_at"),
+  agentTokenExpiresAt: text("agent_token_expires_at"),
   telemetry: text("telemetry").notNull().default("{}"),
   lastSeenAt: text("last_seen_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -74,3 +78,15 @@ export const securityAlerts = sqliteTable("security_alerts", {
   resolvedAt: text("resolved_at"),
   updatedBy: text("updated_by"),
 }, (table) => [uniqueIndex("security_alerts_fingerprint_unique").on(table.fingerprint)]);
+
+export const agentRequestNonces = sqliteTable("agent_request_nonces", {
+  nonce: text("nonce").primaryKey(),
+  deviceId: text("device_id").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const rateLimits = sqliteTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
+  expiresAt: text("expires_at").notNull(),
+});

@@ -16,15 +16,22 @@ export async function provisionIrisUser(identity: ChatGPTUser) {
     return { ...existing[0], displayName: identity.fullName, lastSeenAt: new Date().toISOString() };
   }
 
-  const [{ value: userCount }] = await db.select({ value: count() }).from(users);
-  const role: IrisRole = userCount === 0 ? "ADMIN" : "USER";
+  const configuredOwner = String(process.env.IRIS_OWNER_EMAIL || "").trim().toLowerCase();
+  const role: IrisRole = configuredOwner && normalizedEmail === configuredOwner ? "ADMIN" : "USER";
   const [created] = await db.insert(users).values({ email: normalizedEmail, displayName: identity.fullName, role }).returning();
   await logAudit(normalizedEmail, "USER_PROVISIONED", "iris_workspace", "SUCCESS", { role });
   return created;
 }
 
 export async function logAudit(actorEmail: string, action: string, resource: string, outcome: "SUCCESS" | "DENIED", metadata: Record<string, unknown> = {}) {
-  await getDb().insert(auditEvents).values({ actorEmail, action, resource, outcome, metadata: JSON.stringify(metadata) });
+  const db = getDb();
+  const normalizedMetadata = JSON.stringify(metadata);
+  const [previous] = await db.select().from(auditEvents).orderBy(desc(auditEvents.id)).limit(1);
+  const previousHash = previous?.eventHash || "GENESIS";
+  const material = JSON.stringify({ previousHash, actorEmail, action, resource, outcome, metadata: normalizedMetadata });
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
+  const eventHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+  await db.insert(auditEvents).values({ actorEmail, action, resource, outcome, metadata: normalizedMetadata, previousHash, eventHash });
 }
 
 export async function listRecentAudit(actorEmail: string, role: IrisRole) {

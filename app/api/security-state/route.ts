@@ -1,7 +1,7 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
-import { devices, incidentStates, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
+import { agentRequestNonces, devices, incidentStates, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 
 const knownIncidents = new Set(["IR-1042", "IR-1041", "IR-1039", "IR-1036", "IR-1032"]);
@@ -54,7 +54,9 @@ export async function GET() {
     : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt));
   const trustedRows = deviceRows.length ? await db.select().from(trustedApplications).where(inArray(trustedApplications.deviceId, deviceRows.map(device => device.id))) : [];
   const alerts = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(100) : [];
-  return Response.json({ incidents: await db.select().from(incidentStates), actions: await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30), alerts, devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))) });
+  const incidents = user.role === "ADMIN" ? await db.select().from(incidentStates) : [];
+  const actions = user.role === "ADMIN" ? await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30) : await db.select().from(responseActions).where(eq(responseActions.actorEmail, user.email)).orderBy(desc(responseActions.createdAt)).limit(30);
+  return Response.json({ incidents, actions, alerts, devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))) });
 }
 
 export async function POST(request: Request) {
@@ -78,7 +80,7 @@ export async function POST(request: Request) {
     const [device] = await getDb().select().from(devices).where(eq(devices.id, body.deviceId)).limit(1);
     if (!device || (user.role !== "ADMIN" && device.ownerEmail !== user.email)) return Response.json({ error: "Device not found" }, { status: 404 });
     const enrollmentCode = crypto.randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase();
-    const [updated] = await getDb().update(devices).set({ enrollmentCode, agentTokenHash: null, status: "PENDING", risk: "UNKNOWN", lastSeenAt: null, telemetry: "{}" }).where(eq(devices.id, device.id)).returning();
+    const [updated] = await getDb().update(devices).set({ enrollmentCode, agentTokenHash: null, agentTokenIssuedAt: null, agentTokenExpiresAt: null, status: "PENDING", risk: "UNKNOWN", lastSeenAt: null, telemetry: "{}" }).where(eq(devices.id, device.id)).returning();
     await logAudit(user.email, "DEVICE_ENROLLMENT_ROTATED", device.id, "SUCCESS");
     return Response.json({ device: deviceView(updated) });
   }
@@ -106,6 +108,7 @@ export async function DELETE(request: Request) {
 
   await db.delete(trustedApplications).where(eq(trustedApplications.deviceId, device.id));
   await db.delete(securityAlerts).where(eq(securityAlerts.deviceId, device.id));
+  await db.delete(agentRequestNonces).where(eq(agentRequestNonces.deviceId, device.id));
   await db.delete(devices).where(eq(devices.id, device.id));
   await logAudit(user.email, "DEVICE_DELETED", device.id, "SUCCESS", { name: device.name, platform: device.platform });
   return Response.json({ deleted: true, deviceId: device.id });

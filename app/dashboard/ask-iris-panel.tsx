@@ -10,7 +10,7 @@ type DeviceContext = { id: string; name: string; platform: string; status: strin
 
 const welcomeMessage = (language: Language, userName: string): ChatMessage => ({ role: "assistant", content: language === "es" ? `Hola, ${userName}. Soy IRIS. Estoy lista para revisar contigo lo que ocurre en el sistema. Puedes preguntarme con tus propias palabras.` : `Hi, ${userName}. I'm IRIS. I'm ready to review what's happening in the system with you. Ask me anything in your own words.` });
 
-export default function AskIrisPanel({ section, selectedIncident, incidents, devices, userRole, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {
+export default function AskIrisPanel({ section, selectedIncident, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {
   const [open, setOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(language, userName)]);
   const [input, setInput] = useState("");
@@ -51,7 +51,7 @@ export default function AskIrisPanel({ section, selectedIncident, incidents, dev
     const nextMessages = [...messages, { role: "user" as const, content: clean }];
     setMessages(nextMessages); setInput(""); setLoading(true);
     try {
-      const response = await fetch("/api/ask-iris", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: nextMessages.slice(-12), context: { language, section, userRole, userName, selectedIncident, incidents: incidents.map(({ id, title, subject, severity, status, source }) => ({ id, title, subject, severity, status, source })), devices: devices.map(({ id, name, platform, status, risk, lastSeenAt, telemetry }) => ({ id, name, platform, status, risk, lastSeenAt, telemetry })) } }) });
+      const response = await fetch("/api/ask-iris", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: nextMessages.slice(-12), context: { language, section } }) });
       const data = await response.json() as { answer?: string; error?: string };
       if (!response.ok || !data.answer) throw new Error(data.error || (language === "es" ? "IRIS no pudo completar el análisis." : "IRIS could not complete the analysis."));
       setMessages(current => [...current, { role: "assistant", content: data.answer! }]);

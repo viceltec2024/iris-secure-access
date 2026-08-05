@@ -7,6 +7,8 @@ API_URL="https://iris-secure-access.taylor-667.chatgpt.site/api/agent/check-in"
 AGENT_DIR="$HOME/Library/Application Support/IRIS Agent"
 AGENT_PATH="$AGENT_DIR/iris-agent.sh"
 TOKEN_PATH="$AGENT_DIR/agent-token"
+KEYCHAIN_SERVICE="com.iris.security-agent"
+KEYCHAIN_ACCOUNT="agent-token"
 LOG_PATH="$AGENT_DIR/agent.log"
 PLIST_PATH="$HOME/Library/LaunchAgents/com.iris.security-agent.plist"
 
@@ -43,12 +45,17 @@ telemetry_json() {
 }
 
 check_in() {
-  [ -f "$TOKEN_PATH" ] || { echo "IRIS Agent is not enrolled."; exit 1; }
-  local token payload response_file
-  token="$(/bin/cat "$TOKEN_PATH")"
+  /usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w >/dev/null 2>&1 || { echo "IRIS Agent is not enrolled."; exit 1; }
+  local token payload request_body response_file timestamp nonce signature signing_input
+  token="$(/usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w)"
   payload="$(telemetry_json)"
+  request_body="{\"telemetry\":$payload}"
+  timestamp="$(/bin/date +%s)"
+  nonce="$(/usr/bin/uuidgen | /usr/bin/tr -d '-' | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  signing_input="${timestamp}.${nonce}.${request_body}"
+  signature="$(printf '%s' "$signing_input" | /usr/bin/openssl dgst -sha256 -hmac "$token" | /usr/bin/awk '{print $NF}')"
   response_file="$(/usr/bin/mktemp -t iris-agent)"
-  if /usr/bin/curl --fail --silent --show-error --retry 2 --retry-delay 5 --connect-timeout 15 --max-time 45 -H "Authorization: Bearer $token" -H "Content-Type: application/json" --data "{\"telemetry\":$payload}" "$API_URL" > "$response_file"; then
+  if /usr/bin/curl --fail --silent --show-error --retry 2 --retry-delay 5 --connect-timeout 15 --max-time 45 -H "Authorization: Bearer $token" -H "X-IRIS-Timestamp: $timestamp" -H "X-IRIS-Nonce: $nonce" -H "X-IRIS-Signature: $signature" -H "Content-Type: application/json" --data-binary "$request_body" "$API_URL" > "$response_file"; then
     echo "$(/bin/date -u +%FT%TZ) check-in succeeded" >> "$LOG_PATH"
   else
     echo "$(/bin/date -u +%FT%TZ) check-in failed" >> "$LOG_PATH"
@@ -75,8 +82,9 @@ install_agent() {
   [ -n "$token" ] || { echo "IRIS did not return an agent token."; exit 1; }
   /bin/cp "$SCRIPT_PATH" "$AGENT_PATH"
   /bin/chmod 700 "$AGENT_PATH"
-  printf '%s' "$token" > "$TOKEN_PATH"
-  /bin/chmod 600 "$TOKEN_PATH"
+  /usr/bin/security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" >/dev/null 2>&1 || true
+  /usr/bin/security add-generic-password -U -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w "$token" >/dev/null
+  /bin/rm -f "$TOKEN_PATH"
   /bin/cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -100,6 +108,7 @@ PLIST
 uninstall_agent() {
   /bin/launchctl bootout "gui/$(/usr/bin/id -u)/com.iris.security-agent" 2>/dev/null || true
   /bin/rm -f "$PLIST_PATH"
+  /usr/bin/security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" >/dev/null 2>&1 || true
   /bin/rm -rf "$AGENT_DIR"
   echo "IRIS Agent removed from this Mac."
 }

@@ -10,7 +10,7 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
     "build": "bash scripts/build-verified.sh",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run build && node --experimental-loader ./scripts/cloudflare-validation-loader.mjs --test tests/rendered-html.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
@@ -18,7 +18,7 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
+    "next": "^16.2.11",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -32,13 +32,22 @@
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "^16.2.11",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.0.13",
     "wrangler": "4.92.0"
+  },
+  "overrides": {
+    "postcss": "8.5.23",
+    "next": {
+      "sharp": "0.35.0"
+    },
+    "miniflare": {
+      "sharp": "0.35.0"
+    }
   },
   "type": "module",
   "displayName": "IRIS Secure Access"

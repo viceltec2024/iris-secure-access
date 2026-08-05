@@ -1,6 +1,10 @@
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { devices, securityAlerts, trustedApplications } from "../../../../db/schema";
+import { agentRequestNonces, devices, rateLimits, securityAlerts, trustedApplications } from "../../../../db/schema";
+
+const MAX_BODY_BYTES = 32_768;
+const TOKEN_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
+const SIGNATURE_SKEW_MS = 5 * 60 * 1000;
 
 type Telemetry = {
   hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number;
@@ -12,6 +16,32 @@ type Telemetry = {
 async function sha256(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha256(secret: string, value: string) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function secureEqual(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let index = 0; index < a.length; index += 1) difference |= a.charCodeAt(index) ^ b.charCodeAt(index);
+  return difference === 0;
+}
+
+async function enforceRateLimit(key: string, limit: number, windowMs: number) {
+  const db = getDb();
+  const now = new Date();
+  const [row] = await db.select().from(rateLimits).where(eq(rateLimits.key, key)).limit(1);
+  if (!row || Date.parse(row.expiresAt) <= now.getTime()) {
+    await db.insert(rateLimits).values({ key, count: 1, expiresAt: new Date(now.getTime() + windowMs).toISOString() }).onConflictDoUpdate({ target: rateLimits.key, set: { count: 1, expiresAt: new Date(now.getTime() + windowMs).toISOString() } });
+    return true;
+  }
+  if (row.count >= limit) return false;
+  await db.update(rateLimits).set({ count: row.count + 1 }).where(eq(rateLimits.key, key));
+  return true;
 }
 
 function cleanTelemetry(input: Telemetry): Telemetry {
@@ -101,18 +131,26 @@ async function syncAlerts(device: typeof devices.$inferSelect, telemetry: Teleme
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({})) as { enrollmentCode?: string; telemetry?: Telemetry };
+  const declaredLength = Number(request.headers.get("content-length") || 0);
+  if (declaredLength > MAX_BODY_BYTES) return Response.json({ error: "Request too large" }, { status: 413 });
+  const rawBody = await request.text().catch(() => "");
+  if (!rawBody || new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) return Response.json({ error: "Invalid or oversized request" }, { status: 400 });
+  let body: { enrollmentCode?: string; telemetry?: Telemetry };
+  try { body = JSON.parse(rawBody); } catch { return Response.json({ error: "Invalid JSON" }, { status: 400 }); }
   const db = getDb();
   let telemetry = cleanTelemetry(body.telemetry || {});
   const authorization = request.headers.get("authorization") || "";
 
   if (body.enrollmentCode) {
+    const ip = request.headers.get("cf-connecting-ip") || "unknown";
+    if (!(await enforceRateLimit(`enroll:${ip}`, 12, 10 * 60 * 1000))) return Response.json({ error: "Too many enrollment attempts" }, { status: 429, headers: { "Retry-After": "600" } });
     const code = body.enrollmentCode.trim().toUpperCase();
     const [device] = await db.select().from(devices).where(eq(devices.enrollmentCode, code)).limit(1);
     if (!device || device.agentTokenHash) return Response.json({ error: "Invalid or already-used enrollment code" }, { status: 401 });
     telemetry = enrichTelemetry(telemetry);
     const token = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
-    await db.update(devices).set({ agentTokenHash: await sha256(token), status: "ONLINE", risk: calculateRisk(telemetry), telemetry: JSON.stringify(telemetry), lastSeenAt: new Date().toISOString() }).where(eq(devices.id, device.id));
+    const issuedAt = new Date();
+    await db.update(devices).set({ agentTokenHash: await sha256(token), agentTokenIssuedAt: issuedAt.toISOString(), agentTokenExpiresAt: new Date(issuedAt.getTime() + TOKEN_LIFETIME_MS).toISOString(), status: "ONLINE", risk: calculateRisk(telemetry), telemetry: JSON.stringify(telemetry), lastSeenAt: issuedAt.toISOString() }).where(eq(devices.id, device.id));
     await syncAlerts(device, telemetry);
     return Response.json({ agentToken: token, deviceId: device.id, status: "ONLINE", intervalSeconds: 120 });
   }
@@ -121,6 +159,20 @@ export async function POST(request: Request) {
   const tokenHash = await sha256(authorization.slice(7));
   const [device] = await db.select().from(devices).where(eq(devices.agentTokenHash, tokenHash)).limit(1);
   if (!device) return Response.json({ error: "Invalid agent token" }, { status: 401 });
+  if (!device.agentTokenExpiresAt || Date.parse(device.agentTokenExpiresAt) <= Date.now()) return Response.json({ error: "Agent token expired; enroll the device again" }, { status: 401 });
+  if (!(await enforceRateLimit(`checkin:${device.id}`, 90, 10 * 60 * 1000))) return Response.json({ error: "Too many check-ins" }, { status: 429, headers: { "Retry-After": "120" } });
+  const timestamp = request.headers.get("x-iris-timestamp") || "";
+  const nonce = request.headers.get("x-iris-nonce") || "";
+  const signature = (request.headers.get("x-iris-signature") || "").toLowerCase();
+  if (!/^\d{10,13}$/.test(timestamp) || !/^[a-f0-9]{32,64}$/i.test(nonce) || !/^[a-f0-9]{64}$/.test(signature)) return Response.json({ error: "Missing or invalid request signature" }, { status: 401 });
+  const timestampMs = timestamp.length === 10 ? Number(timestamp) * 1000 : Number(timestamp);
+  if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > SIGNATURE_SKEW_MS) return Response.json({ error: "Expired request timestamp" }, { status: 401 });
+  const expectedSignature = await hmacSha256(authorization.slice(7), `${timestamp}.${nonce}.${rawBody}`);
+  if (!secureEqual(signature, expectedSignature)) return Response.json({ error: "Invalid request signature" }, { status: 401 });
+  const [usedNonce] = await db.select().from(agentRequestNonces).where(eq(agentRequestNonces.nonce, nonce)).limit(1);
+  if (usedNonce) return Response.json({ error: "Repeated request" }, { status: 409 });
+  await db.insert(agentRequestNonces).values({ nonce, deviceId: device.id });
+  await db.delete(agentRequestNonces).where(lt(agentRequestNonces.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()));
   let previous: Telemetry | undefined;
   try { previous = JSON.parse(device.telemetry || "{}"); } catch { previous = undefined; }
   telemetry = enrichTelemetry(telemetry, previous);

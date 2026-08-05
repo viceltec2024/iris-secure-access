@@ -1,6 +1,9 @@
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
+import { desc, eq, inArray } from "drizzle-orm";
+import { getDb } from "../../../db";
+import { devices, securityAlerts } from "../../../db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +23,18 @@ export async function POST(request: Request) {
   const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
   if (!apiKey) return Response.json({ error: "Ask IRIS is not configured yet." }, { status: 503 });
 
-  const safeContext = JSON.stringify(body.context ?? {}).slice(0, 12000);
+  const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown } : {};
+  const db = getDb();
+  const deviceRows = user.role === "ADMIN" ? await db.select().from(devices).orderBy(desc(devices.createdAt)).limit(25) : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt)).limit(25);
+  const alertRows = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(50) : [];
+  const trustedContext = {
+    language: preferences.language === "en" ? "en" : "es",
+    section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
+    user: { role: user.role, name: user.displayName || user.email },
+    devices: deviceRows.map(device => ({ id: device.id, name: device.name, platform: device.platform, status: device.status, risk: device.risk, lastSeenAt: device.lastSeenAt, telemetry: JSON.parse(device.telemetry || "{}") })),
+    alerts: alertRows.map(alert => ({ deviceId: alert.deviceId, code: alert.code, severity: alert.severity, status: alert.status, evidence: JSON.parse(alert.evidence || "{}"), firstSeenAt: alert.firstSeenAt, lastSeenAt: alert.lastSeenAt })),
+  };
+  const safeContext = JSON.stringify(trustedContext).slice(0, 24000);
   const transcript = messages.map(message => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
   const input = `CURRENT IRIS CONTEXT\n${safeContext}\n\nCONVERSATION\n${transcript}`;
 
@@ -36,8 +50,8 @@ Analyze only the supplied IRIS context. Device telemetry marked ONLINE with a re
     if (!answer) throw new Error("IRIS returned an empty analysis.");
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "gpt-5.6-sol" });
     return Response.json({ answer });
-  } catch (error) {
+  } catch {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "DENIED", { reason: "provider_error" });
-    return Response.json({ error: error instanceof Error ? error.message : "IRIS is temporarily unavailable." }, { status: 502 });
+    return Response.json({ error: "IRIS is temporarily unavailable." }, { status: 502 });
   }
 }

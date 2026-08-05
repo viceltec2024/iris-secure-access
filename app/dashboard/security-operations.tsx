@@ -20,8 +20,6 @@ const seedIncidents: Incident[] = [
   { id: "IR-1032", title: "Policy check completed", subject: "Data Loss Prevention Policy", severity: "Low", status: "Contained", time: "1 hr ago", source: "Compliance", summary: "The DLP assessment completed without critical failures. Two controls produced warnings that require scheduled review.", cause: "Two configurations do not fully meet the recommended level.", impact: "No active impact; a minor compliance gap remains.", confidence: 97, evidence: ["148 controls evaluated", "2 warnings recorded", "No critical failure"], actions: ["Review the two controls", "Assign an owner", "Validate again in the next cycle"], recommendation: "Review the warnings during the next policy cycle." },
 ];
 
-const severityRank = { Critical: 4, High: 3, Medium: 2, Low: 1 };
-
 export default function SecurityOperations({ user, auditCount, signOutPath }: { user: { email: string; displayName: string; role: string }, auditCount: number, signOutPath: string }) {
   const [language, setLanguage] = useState<Language>(() => typeof window === "undefined" ? "en" : (localStorage.getItem("iris-language") === "es" ? "es" : "en"));
   const [incidents, setIncidents] = useState(seedIncidents);
@@ -49,8 +47,6 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
   const open = incidents.filter(i => i.status !== "Contained").length;
-  const critical = incidents.filter(i => i.severity === "Critical" && i.status !== "Contained").length;
-  const risk = Math.min(99, incidents.reduce((sum, i) => sum + (i.status === "Contained" ? 0 : severityRank[i.severity] * 7), 18));
   const verifiedDevices = devices.filter(device => device.provenance === "REAL");
   const onlineDevices = verifiedDevices.filter(device => device.status === "ONLINE");
   const measuredHealth = verifiedDevices.map(device => device.healthScore).filter((score): score is number => score !== null);
@@ -227,7 +223,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           {!!device.telemetry?.riskyApplications?.length && <div className="risky-apps"><strong>{language === "es" ? "Aplicaciones pendientes de revisión" : "Applications awaiting review"}</strong>{device.telemetry.riskyApplications.map(appName => <span className="app-review-row" key={appName}><b>{appName}</b><button disabled={approvingApplication === `${device.id}:${appName}`} onClick={() => void trustApplication(device.id, appName)}>{approvingApplication === `${device.id}:${appName}` ? (language === "es" ? "Guardando…" : "Saving…") : (language === "es" ? "Marcar como confiable" : "Mark as trusted")}</button></span>)}</div>}
           {!!device.telemetry?.trustedApplications?.length && <div className="trusted-apps"><strong>{language === "es" ? "APLICACIONES APROBADAS" : "APPROVED APPLICATIONS"}</strong><span><CheckCircle weight="fill" />{device.telemetry.trustedApplications.join(", ")}</span></div>}
           <div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div>
-          <div className="device-actions"><a href="/iris-agent-macos.sh?v=23" download>{language === "es" ? "Descargar agente nuevo" : "Download new agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div>
+          <div className="device-actions"><a href="/iris-agent-macos.sh?v=26" download>{language === "es" ? "Descargar agente seguro" : "Download secure agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div>
           <p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Protección real activa. El agente revisa cada 2 minutos." : "Real protection active. The agent checks every 2 minutes.") : device.status === "OFFLINE" ? (language === "es" ? "Alerta: el agente dejó de reportar hace más de 5 minutos." : "Alert: the agent stopped reporting more than 5 minutes ago.") : (language === "es" ? "Instala el agente nuevo para comenzar la protección real." : "Install the new agent to start real protection.")}</p>
         </article>)}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra tu Mac e instala el agente para comenzar la protección real." : "Register your Mac and install the agent to begin real protection."}</p></div>}</div>
       </section>}
