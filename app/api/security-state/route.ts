@@ -1,7 +1,7 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
-import { devices, incidentStates, responseActions, trustedApplications } from "../../../db/schema";
+import { devices, incidentStates, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 
 const knownIncidents = new Set(["IR-1042", "IR-1041", "IR-1039", "IR-1036", "IR-1032"]);
@@ -53,7 +53,8 @@ export async function GET() {
     ? await db.select().from(devices).orderBy(desc(devices.createdAt))
     : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt));
   const trustedRows = deviceRows.length ? await db.select().from(trustedApplications).where(inArray(trustedApplications.deviceId, deviceRows.map(device => device.id))) : [];
-  return Response.json({ incidents: await db.select().from(incidentStates), actions: await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30), devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))) });
+  const alerts = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(100) : [];
+  return Response.json({ incidents: await db.select().from(incidentStates), actions: await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30), alerts, devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))) });
 }
 
 export async function POST(request: Request) {
@@ -104,6 +105,7 @@ export async function DELETE(request: Request) {
   }
 
   await db.delete(trustedApplications).where(eq(trustedApplications.deviceId, device.id));
+  await db.delete(securityAlerts).where(eq(securityAlerts.deviceId, device.id));
   await db.delete(devices).where(eq(devices.id, device.id));
   await logAudit(user.email, "DEVICE_DELETED", device.id, "SUCCESS", { name: device.name, platform: device.platform });
   return Response.json({ deleted: true, deviceId: device.id });
@@ -112,7 +114,16 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await request.json().catch(() => ({})) as { incidentId?: string; decision?: "approve" | "reject" };
+  const body = await request.json().catch(() => ({})) as { type?: string; alertId?: string; alertStatus?: "ACKNOWLEDGED" | "RESOLVED"; incidentId?: string; decision?: "approve" | "reject" };
+  if (body.type === "alert_action" && body.alertId && ["ACKNOWLEDGED", "RESOLVED"].includes(body.alertStatus || "")) {
+    const db = getDb();
+    const [alert] = await db.select().from(securityAlerts).where(eq(securityAlerts.id, body.alertId)).limit(1);
+    if (!alert || (user.role !== "ADMIN" && alert.ownerEmail !== user.email)) return Response.json({ error: "Alert not found" }, { status: 404 });
+    const now = new Date().toISOString();
+    const [updated] = await db.update(securityAlerts).set({ status: body.alertStatus!, updatedBy: user.email, resolvedAt: body.alertStatus === "RESOLVED" ? now : null }).where(eq(securityAlerts.id, alert.id)).returning();
+    await logAudit(user.email, body.alertStatus === "RESOLVED" ? "SECURITY_ALERT_RESOLVED" : "SECURITY_ALERT_ACKNOWLEDGED", alert.deviceId, "SUCCESS", { alertId: alert.id, code: alert.code });
+    return Response.json({ alert: updated });
+  }
   if (!body.incidentId || !knownIncidents.has(body.incidentId) || !["approve", "reject"].includes(body.decision || "")) return Response.json({ error: "Invalid action" }, { status: 400 });
   const approved = body.decision === "approve";
   const now = new Date().toISOString();

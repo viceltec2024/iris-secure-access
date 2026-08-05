@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { devices } from "../../../../db/schema";
+import { devices, securityAlerts, trustedApplications } from "../../../../db/schema";
 
 type Telemetry = {
   hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number;
@@ -71,6 +71,35 @@ function calculateRisk(telemetry: Telemetry): "LOW" | "MEDIUM" | "HIGH" {
   return "LOW";
 }
 
+function alertSeverity(code: string): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
+  if (["SIP_DISABLED", "FILEVAULT_DISABLED", "DISK_CRITICALLY_FULL", "MEMORY_CRITICALLY_HIGH"].includes(code)) return "HIGH";
+  if (["FIREWALL_DISABLED", "GATEKEEPER_DISABLED", "AUTOMATIC_UPDATES_DISABLED", "UNVERIFIED_APPLICATIONS_FOUND"].includes(code)) return "MEDIUM";
+  return "LOW";
+}
+
+async function syncAlerts(device: typeof devices.$inferSelect, telemetry: Telemetry) {
+  const db = getDb();
+  const trusted = await db.select().from(trustedApplications).where(eq(trustedApplications.deviceId, device.id));
+  const trustedNames = trusted.map(row => row.appName);
+  const untrustedApps = (telemetry.riskyApplications || []).filter(name => !trustedNames.includes(name));
+  const findings = (telemetry.securityFindings || []).filter(code => code !== "UNVERIFIED_APPLICATIONS_FOUND" || untrustedApps.length > 0);
+  const currentCodes = [...new Set([...findings, ...(telemetry.changes || [])])];
+  const existing = await db.select().from(securityAlerts).where(eq(securityAlerts.deviceId, device.id));
+  const now = new Date().toISOString();
+  for (const code of currentCodes) {
+    const prior = existing.find(alert => alert.code === code);
+    const evidence = JSON.stringify({ hostname: telemetry.hostname, applications: code === "UNVERIFIED_APPLICATIONS_FOUND" ? untrustedApps : undefined, collectedAt: telemetry.collectedAt });
+    if (prior) {
+      await db.update(securityAlerts).set({ status: prior.status === "RESOLVED" ? "NEW" : prior.status, severity: alertSeverity(code), evidence, lastSeenAt: now, resolvedAt: null, updatedBy: prior.status === "RESOLVED" ? "iris.system" : prior.updatedBy }).where(eq(securityAlerts.id, prior.id));
+    } else {
+      await db.insert(securityAlerts).values({ id: crypto.randomUUID(), deviceId: device.id, ownerEmail: device.ownerEmail, fingerprint: `${device.id}:${code}`, code, severity: alertSeverity(code), evidence, firstSeenAt: now, lastSeenAt: now });
+    }
+  }
+  for (const alert of existing.filter(item => item.status !== "RESOLVED" && !currentCodes.includes(item.code))) {
+    await db.update(securityAlerts).set({ status: "RESOLVED", resolvedAt: now, updatedBy: "iris.system" }).where(eq(securityAlerts.id, alert.id));
+  }
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { enrollmentCode?: string; telemetry?: Telemetry };
   const db = getDb();
@@ -84,6 +113,7 @@ export async function POST(request: Request) {
     telemetry = enrichTelemetry(telemetry);
     const token = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
     await db.update(devices).set({ agentTokenHash: await sha256(token), status: "ONLINE", risk: calculateRisk(telemetry), telemetry: JSON.stringify(telemetry), lastSeenAt: new Date().toISOString() }).where(eq(devices.id, device.id));
+    await syncAlerts(device, telemetry);
     return Response.json({ agentToken: token, deviceId: device.id, status: "ONLINE", intervalSeconds: 120 });
   }
 
@@ -96,5 +126,6 @@ export async function POST(request: Request) {
   telemetry = enrichTelemetry(telemetry, previous);
   const risk = calculateRisk(telemetry);
   await db.update(devices).set({ status: "ONLINE", risk, telemetry: JSON.stringify(telemetry), lastSeenAt: new Date().toISOString() }).where(eq(devices.id, device.id));
+  await syncAlerts(device, telemetry);
   return Response.json({ deviceId: device.id, status: "ONLINE", risk, intervalSeconds: 120 });
 }

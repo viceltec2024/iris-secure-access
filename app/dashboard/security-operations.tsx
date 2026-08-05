@@ -6,10 +6,11 @@ import AskIrisPanel from "./ask-iris-panel";
 import { incidentSpanish, Language, text } from "./dashboard-i18n";
 
 type Incident = { id: string; title: string; subject: string; severity: "Critical" | "High" | "Medium" | "Low"; status: "Open" | "Investigating" | "Contained"; time: string; source: string; summary: string; cause: string; impact: string; confidence: number; evidence: string[]; actions: string[]; recommendation: string };
-type Section = "operations" | "incidents" | "intelligence" | "devices" | "approvals" | "audit";
+type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "approvals" | "audit";
 type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
 type Device = { id: string; name: string; platform: string; status: "PENDING" | "ONLINE" | "OFFLINE"; risk: "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH"; enrollmentCode: string; lastSeenAt: string | null; telemetry: DeviceTelemetry | null; healthScore: number | null; provenance: "REAL" | "UNVERIFIED" };
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
+type SecurityAlert = { id: string; deviceId: string; ownerEmail: string; fingerprint: string; code: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; status: "NEW" | "ACKNOWLEDGED" | "RESOLVED"; evidence: string; firstSeenAt: string; lastSeenAt: string; resolvedAt: string | null; updatedBy: string | null };
 
 const seedIncidents: Incident[] = [
   { id: "IR-1042", title: "Anomalous outbound connection", subject: "10.0.4.25 → 203.0.113.45", severity: "Critical", status: "Open", time: "2 min ago", source: "Network sensor", summary: "Endpoint WS-1025 started an unusual transfer to a destination never seen before. The pattern may indicate data exfiltration or command-and-control traffic.", cause: "Unknown process executed after a privileged login.", impact: "Possible data exposure and remote control of the affected endpoint.", confidence: 94, evidence: ["First-seen destination", "4.8 GB transferred in 11 minutes", "Connection followed privileged login"], actions: ["Isolate WS-1025 from the network", "Block 203.0.113.45", "Preserve memory and logs", "Open a forensic investigation"], recommendation: "Isolate the endpoint, block the destination, and preserve evidence before closing connections or processes." },
@@ -31,16 +32,18 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [executionNote, setExecutionNote] = useState("");
   const [devices, setDevices] = useState<Device[]>([]);
+  const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [responseHistory, setResponseHistory] = useState<ResponseAction[]>([]);
   const [creatingDevice, setCreatingDevice] = useState(false);
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [approvingApplication, setApprovingApplication] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[] }) => {
+    void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[]; alerts?: SecurityAlert[] }) => {
       if (data.incidents?.length) setIncidents(current => current.map(item => ({ ...item, status: data.incidents?.find(saved => saved.incidentId === item.id)?.status || item.status })));
       if (data.devices) setDevices(data.devices);
       if (data.actions) setResponseHistory(data.actions);
+      if (data.alerts) setAlerts(data.alerts);
     }).catch(() => undefined);
   }, []);
 
@@ -53,6 +56,8 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const measuredHealth = verifiedDevices.map(device => device.healthScore).filter((score): score is number => score !== null);
   const averageHealth = measuredHealth.length ? Math.round(measuredHealth.reduce((sum, score) => sum + score, 0) / measuredHealth.length) : null;
   const firewallProtected = verifiedDevices.filter(device => device.telemetry?.firewallEnabled === true).length;
+  const activeAlerts = alerts.filter(alert => alert.status !== "RESOLVED");
+  const newAlerts = alerts.filter(alert => alert.status === "NEW");
   const t = (key: Parameters<typeof text>[0]) => text(key, language);
   const localized = (incident: Incident): Incident => language === "es" ? { ...incident, ...incidentSpanish[incident.id] } : incident;
   const selectedView = localized(selected);
@@ -113,6 +118,17 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     } finally { setApprovingApplication(null); }
   }
 
+  async function updateAlert(alertId: string, alertStatus: "ACKNOWLEDGED" | "RESOLVED") {
+    const response = await fetch("/api/security-state", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "alert_action", alertId, alertStatus }) });
+    const data = await response.json() as { alert?: SecurityAlert };
+    if (response.ok && data.alert) setAlerts(current => current.map(alert => alert.id === alertId ? data.alert! : alert));
+  }
+
+  function evidenceFor(alert: SecurityAlert) {
+    try { return JSON.parse(alert.evidence) as { hostname?: string; applications?: string[]; collectedAt?: string }; }
+    catch { return {}; }
+  }
+
   function selectIncident(incident: Incident) {
     setSelected(incident);
     setExecutionNote("");
@@ -124,6 +140,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       <div className="soc-brand"><ShieldCheck weight="duotone" /><div><strong>IRIS</strong><span>SECURITY AI</span></div></div>
       <nav aria-label="IRIS modules">
         <button className={section === "operations" ? "active" : ""} onClick={() => setSection("operations")}><Pulse /> {t("operations")}</button>
+        <button className={section === "alerts" ? "active" : ""} onClick={() => setSection("alerts")}><Bell /> {language === "es" ? "Alertas reales" : "Real alerts"} <b>{activeAlerts.length}</b></button>
         <button className={section === "incidents" ? "active" : ""} onClick={() => setSection("incidents")}><Siren /> {t("incidents")} <b>{open}</b></button>
         <button className={section === "intelligence" ? "active" : ""} onClick={() => setSection("intelligence")}><ChartLineUp /> {t("intelligence")}</button>
         <button className={section === "devices" ? "active" : ""} onClick={() => setSection("devices")}><Desktop /> {language === "es" ? "Dispositivos" : "Devices"} <b>{devices.length}</b></button>
@@ -135,13 +152,13 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     </aside>
 
     <section className="soc-main">
-      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {t("connected")} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => setLastUpdate(t("now"))}><Pulse /></button><button aria-label="Open approvals" onClick={() => setSection("approvals")}><Bell /><b>{open}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
+      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {t("connected")} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => setLastUpdate(t("now"))}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
 
       {section === "operations" && <><section className="metric-row">
         <article><span>{language === "es" ? "Salud real" : "Real health"}</span><strong>{averageHealth ?? "—"}{averageHealth !== null && <small>/100</small>}</strong><em className={averageHealth === null ? "" : "healthy"}>{averageHealth === null ? (language === "es" ? "NO VERIFICADO" : "UNVERIFIED") : "REAL"}</em></article>
         <article><span>{language === "es" ? "Agentes conectados" : "Connected agents"}</span><strong>{onlineDevices.length}<small>/{devices.length}</small></strong><em>{language === "es" ? "telemetría reciente" : "recent telemetry"}</em></article>
         <article><span>{language === "es" ? "Firewall activo" : "Firewall enabled"}</span><strong>{firewallProtected}<small>/{verifiedDevices.length || "—"}</small></strong><em className={firewallProtected === verifiedDevices.length && verifiedDevices.length ? "healthy" : ""}>REAL</em></article>
-        <article><span>{language === "es" ? "Incidentes de práctica" : "Training incidents"}</span><strong>{open}</strong><em>SIMULATION · {critical} {t("critical")}</em></article>
+        <article><span>{language === "es" ? "Alertas reales activas" : "Active real alerts"}</span><strong>{activeAlerts.length}</strong><em className={activeAlerts.length ? "" : "healthy"}>REAL · {newAlerts.length} {language === "es" ? "nuevas" : "new"}</em></article>
       </section>
 
       <div className="provenance-legend"><span><b>REAL</b>{language === "es" ? "Reportado por un agente autorizado" : "Reported by an authorized agent"}</span><span><b>SIMULATION</b>{language === "es" ? "Datos de entrenamiento" : "Training data"}</span><span><b>NO VERIFICADO</b>{language === "es" ? "Sin reporte del agente" : "No agent report"}</span></div>
@@ -162,6 +179,15 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       </section>
 
       </>}
+
+      {section === "alerts" && <section className="module-panel real-alert-center">
+        <div className="module-toolbar"><div><h2>{language === "es" ? "Alertas del agente de tu Mac" : "Alerts from your Mac agent"}</h2><p>{language === "es" ? "Solo eventos comprobados por un agente autorizado. Puedes reconocerlos o resolverlos." : "Only events verified by an authorized agent. You can acknowledge or resolve them."}</p></div><span className="provenance-badge real">REAL</span></div>
+        <div className="alert-summary"><span><b>{newAlerts.length}</b>{language === "es" ? "Nuevas" : "New"}</span><span><b>{alerts.filter(alert => alert.status === "ACKNOWLEDGED").length}</b>{language === "es" ? "Reconocidas" : "Acknowledged"}</span><span><b>{alerts.filter(alert => alert.status === "RESOLVED").length}</b>{language === "es" ? "Resueltas" : "Resolved"}</span></div>
+        <div className="real-alert-list">{alerts.map(alert => { const evidence = evidenceFor(alert); const device = devices.find(item => item.id === alert.deviceId); return <article className={`real-alert-item severity-${alert.severity.toLowerCase()}`} key={alert.id}>
+          <span className="alert-icon"><Warning weight="fill" /></span><div className="alert-copy"><div><strong>{alert.code.replaceAll("_", " ")}</strong><span className={`alert-status ${alert.status.toLowerCase()}`}>{alert.status === "NEW" ? (language === "es" ? "NUEVA" : "NEW") : alert.status === "ACKNOWLEDGED" ? (language === "es" ? "RECONOCIDA" : "ACKNOWLEDGED") : (language === "es" ? "RESUELTA" : "RESOLVED")}</span></div><p>{device?.name || evidence.hostname || (language === "es" ? "Dispositivo" : "Device")} · {alert.severity}</p>{!!evidence.applications?.length && <small>{language === "es" ? "Aplicaciones: " : "Applications: "}{evidence.applications.join(", ")}</small>}<time>{language === "es" ? "Última detección" : "Last detected"}: {new Date(alert.lastSeenAt).toLocaleString(language)}</time></div>
+          <div className="real-alert-actions">{alert.status === "NEW" && <button onClick={() => void updateAlert(alert.id, "ACKNOWLEDGED")}>{language === "es" ? "Reconocer" : "Acknowledge"}</button>}{alert.status !== "RESOLVED" && <button className="resolve-alert" onClick={() => void updateAlert(alert.id, "RESOLVED")}><CheckCircle />{language === "es" ? "Resolver" : "Resolve"}</button>}</div>
+        </article>})}{alerts.length === 0 && <div className="empty-alerts"><CheckCircle weight="fill" /><h3>{language === "es" ? "No hay alertas reales" : "No real alerts"}</h3><p>{language === "es" ? "IRIS mostrará aquí cualquier cambio o amenaza comprobada por el agente." : "IRIS will show any agent-verified change or threat here."}</p></div>}</div>
+      </section>}
 
       {section === "incidents" && <section className="module-panel">
         <div className="module-toolbar"><div><h2>{t("allIncidents")}</h2><p>{t("selectIncident")}</p></div><div className="filters">{["All","Critical","High","Medium"].map(f => <button className={filter === f ? "active" : ""} onClick={() => setFilter(f)} key={f}>{t((`filter${f}`) as "filterAll")}</button>)}</div></div>

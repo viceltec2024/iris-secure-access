@@ -59,3 +59,18 @@ export const trustedApplications = sqliteTable("trusted_applications", {
   approvedBy: text("approved_by").notNull(),
   approvedAt: text("approved_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("trusted_applications_device_app_unique").on(table.deviceId, table.appName)]);
+
+export const securityAlerts = sqliteTable("security_alerts", {
+  id: text("id").primaryKey(),
+  deviceId: text("device_id").notNull(),
+  ownerEmail: text("owner_email").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  code: text("code").notNull(),
+  severity: text("severity", { enum: ["CRITICAL", "HIGH", "MEDIUM", "LOW"] }).notNull(),
+  status: text("status", { enum: ["NEW", "ACKNOWLEDGED", "RESOLVED"] }).notNull().default("NEW"),
+  evidence: text("evidence").notNull().default("{}"),
+  firstSeenAt: text("first_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  resolvedAt: text("resolved_at"),
+  updatedBy: text("updated_by"),
+}, (table) => [uniqueIndex("security_alerts_fingerprint_unique").on(table.fingerprint)]);
