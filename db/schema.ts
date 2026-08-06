@@ -132,3 +132,12 @@ export const biometricSessions = sqliteTable("biometric_sessions", {
   expiresAt: text("expires_at").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const userPasswords = sqliteTable("user_passwords", {
+  ownerEmail: text("owner_email").primaryKey(),
+  passwordHash: text("password_hash").notNull(),
+  salt: text("salt").notNull(),
+  iterations: integer("iterations").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

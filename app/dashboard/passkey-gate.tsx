@@ -1,61 +1,56 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
-import { Fingerprint, LockKey, ShieldCheck } from "@phosphor-icons/react";
+import { Fingerprint, Key, LockKey, ShieldCheck } from "@phosphor-icons/react";
 
-type Props = { enrolled: boolean; verified: boolean; signOutPath: string; children: ReactNode };
+type Props = { passkeyEnrolled: boolean; passwordConfigured: boolean; verified: boolean; signOutPath: string; children: ReactNode };
 
-export default function PasskeyGate({ enrolled, verified, signOutPath, children }: Props) {
+export default function PasskeyGate({ passkeyEnrolled, passwordConfigured, verified, signOutPath, children }: Props) {
   const [supported, setSupported] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(setSupported).catch(() => setSupported(false));
-  }, []);
+  const [showPasswordSetup, setShowPasswordSetup] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  useEffect(() => { PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(setSupported).catch(() => setSupported(false)); }, []);
 
-  async function run(mode: "register" | "auth") {
+  async function runPasskey(mode: "register" | "auth") {
     setBusy(true); setError("");
     try {
       const optionsResponse = await fetch(`/api/passkeys/${mode === "register" ? "register" : "auth"}/options`, { method: "POST" });
       const options = await optionsResponse.json();
       if (!optionsResponse.ok) throw new Error(options.error || "No se pudo iniciar Touch ID");
-      const credential = mode === "register"
-        ? await startRegistration({ optionsJSON: options })
-        : await startAuthentication({ optionsJSON: options });
-      const verifyResponse = await fetch(`/api/passkeys/${mode === "register" ? "register" : "auth"}/verify`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(credential),
-      });
+      const credential = mode === "register" ? await startRegistration({ optionsJSON: options }) : await startAuthentication({ optionsJSON: options });
+      const verifyResponse = await fetch(`/api/passkeys/${mode === "register" ? "register" : "auth"}/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(credential) });
       const result = await verifyResponse.json();
       if (!verifyResponse.ok || !result.verified) throw new Error(result.error || "Touch ID no pudo verificarse");
       window.location.reload();
     } catch (cause) {
-      setError(cause instanceof Error && cause.name !== "NotAllowedError" ? cause.message : "La verificación fue cancelada o no se completó.");
-      setBusy(false);
+      setError(cause instanceof Error && cause.name !== "NotAllowedError" ? cause.message : "La verificación fue cancelada o no se completó."); setBusy(false);
     }
   }
 
-  if (enrolled && !verified) return (
-    <main className="passkey-lock">
-      <section className="passkey-card">
-        <div className="passkey-mark"><LockKey weight="fill" /></div>
-        <span>IRIS · ACCESO PROTEGIDO</span>
-        <h1>Verifica que eres tú</h1>
-        <p>Usa Touch ID en tu Mac para abrir el centro de seguridad.</p>
-        <button onClick={() => run("auth")} disabled={busy || supported === false}><Fingerprint weight="bold" />{busy ? "Verificando…" : "Verificar con Touch ID"}</button>
-        {supported === false && <small>Touch ID no está disponible en este navegador. Usa Safari o Chrome en tu Mac.</small>}
-        {error && <small className="passkey-error">{error}</small>}
-        <a href={signOutPath}>Recuperar acceso con otra cuenta de ChatGPT</a>
-      </section>
-    </main>
-  );
+  async function submitPassword(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      const response = await fetch(passwordConfigured ? "/api/password/verify" : "/api/password/setup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(passwordConfigured ? { password } : { password, confirmation }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "No se pudo verificar la contraseña.");
+      window.location.reload();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo verificar la contraseña."); setBusy(false); }
+  }
 
-  return <>
-    {!enrolled && <aside className="passkey-enroll">
-      <ShieldCheck weight="fill" />
-      <div><strong>Protege IRIS con Touch ID</strong><span>Tu huella permanece en tu Mac. IRIS solo recibe una prueba criptográfica.</span>{error && <small>{error}</small>}</div>
-      <button onClick={() => run("register")} disabled={busy || supported === false}><Fingerprint weight="bold" />{busy ? "Configurando…" : "Configurar Touch ID"}</button>
-    </aside>}
-    {children}
-  </>;
+  if ((passkeyEnrolled || passwordConfigured) && !verified) return <main className="passkey-lock"><section className="passkey-card">
+    <div className="passkey-mark"><LockKey weight="fill" /></div><span>IRIS · ACCESO PROTEGIDO</span><h1>Verifica que eres tú</h1>
+    {passwordConfigured && <form className="iris-password-form" onSubmit={submitPassword}><label htmlFor="iris-password">Contraseña de IRIS</label><input id="iris-password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required maxLength={128} autoFocus /><button type="submit" disabled={busy}><Key weight="bold" />{busy ? "Verificando…" : "Entrar con contraseña"}</button></form>}
+    {passkeyEnrolled && <><div className="passkey-divider"><span>o</span></div><button onClick={() => runPasskey("auth")} disabled={busy || supported === false}><Fingerprint weight="bold" />Verificar con Touch ID</button></>}
+    {error && <small className="passkey-error">{error}</small>}<a href={signOutPath}>Cerrar sesión de ChatGPT</a>
+  </section></main>;
+
+  return <>{!passkeyEnrolled && !passwordConfigured && <aside className={`passkey-enroll ${showPasswordSetup ? "password-open" : ""}`}>
+    <ShieldCheck weight="fill" /><div><strong>Protege el acceso a IRIS</strong><span>Elige Touch ID o crea una contraseña privada de IRIS.</span>{error && <small>{error}</small>}</div>
+    {!showPasswordSetup ? <div className="passkey-choice"><button onClick={() => runPasskey("register")} disabled={busy || supported === false}><Fingerprint weight="bold" />Touch ID</button><button onClick={() => { setError(""); setShowPasswordSetup(true); }}><Key weight="bold" />Crear contraseña</button></div>
+    : <form className="password-setup-form" onSubmit={submitPassword}><input type="password" autoComplete="new-password" placeholder="Contraseña (mínimo 12 caracteres)" minLength={12} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} required /><input type="password" autoComplete="new-password" placeholder="Repetir contraseña" minLength={12} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} required /><button type="submit" disabled={busy}><Key weight="bold" />{busy ? "Guardando…" : "Guardar contraseña"}</button><button type="button" className="password-cancel" onClick={() => setShowPasswordSetup(false)}>Cancelar</button></form>}
+  </aside>}{children}</>;
 }

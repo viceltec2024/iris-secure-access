@@ -57,6 +57,13 @@
       "when": 1785975892545,
       "tag": "0007_keen_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785981103777,
+      "tag": "0008_cold_captain_midlands",
+      "breakpoints": true
     }
   ]
 }

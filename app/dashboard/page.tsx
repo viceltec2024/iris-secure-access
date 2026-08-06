@@ -4,6 +4,7 @@ import { ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 import SecurityOperations from "./security-operations";
 import PasskeyGate from "./passkey-gate";
 import { isBiometricVerified, passkeysFor } from "../../lib/passkeys";
+import { passwordConfigured } from "../../lib/passwords";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,11 @@ export default async function Dashboard() {
   }
 
   const events = await listRecentAudit(user.email, user.role);
-  const enrolled = (await passkeysFor(user.email)).length > 0;
-  const verified = enrolled ? await isBiometricVerified(user.email) : false;
+  const passkeyEnrolled = (await passkeysFor(user.email)).length > 0;
+  const hasPassword = await passwordConfigured(user.email);
+  const verified = passkeyEnrolled || hasPassword ? await isBiometricVerified(user.email) : false;
   const signOutPath = chatGPTSignOutPath("/");
-  return <PasskeyGate enrolled={enrolled} verified={verified} signOutPath={signOutPath}>
+  return <PasskeyGate passkeyEnrolled={passkeyEnrolled} passwordConfigured={hasPassword} verified={verified} signOutPath={signOutPath}>
     <SecurityOperations user={{ email: user.email, displayName: user.displayName || user.email, role: user.role }} auditCount={events.length} signOutPath={signOutPath} />
   </PasskeyGate>;
 }
