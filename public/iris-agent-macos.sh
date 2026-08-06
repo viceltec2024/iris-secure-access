@@ -74,22 +74,39 @@ telemetry_json() {
 
 check_in() {
   /usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w >/dev/null 2>&1 || { echo "IRIS Agent is not enrolled."; exit 1; }
-  local token payload request_body response_file timestamp nonce signature signing_input
+  local token payload request_body response_file timestamp nonce signature signing_input encryption_key authentication_key iv ciphertext encrypted_tag
   token="$(/usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w)"
   payload="$(telemetry_json)"
-  request_body="{\"telemetry\":$payload}"
+  encryption_key="$(printf '%s' 'iris-report-encryption-v1' | /usr/bin/openssl dgst -sha256 -hmac "$token" | /usr/bin/awk '{print $NF}')"
+  authentication_key="$(printf '%s' 'iris-report-authentication-v1' | /usr/bin/openssl dgst -sha256 -hmac "$token" | /usr/bin/awk '{print $NF}')"
+  iv="$(/usr/bin/openssl rand -hex 16)"
+  ciphertext="$(printf '%s' "$payload" | /usr/bin/openssl enc -aes-256-cbc -K "$encryption_key" -iv "$iv" -base64 -A)"
+  encrypted_tag="$(printf '%s' "${iv}.${ciphertext}" | /usr/bin/openssl dgst -sha256 -hmac "$authentication_key" | /usr/bin/awk '{print $NF}')"
+  request_body="{\"encryptedTelemetry\":{\"version\":1,\"algorithm\":\"AES-256-CBC+HMAC-SHA256\",\"iv\":\"$iv\",\"ciphertext\":\"$ciphertext\",\"tag\":\"$encrypted_tag\"}}"
   timestamp="$(/bin/date +%s)"
   nonce="$(/usr/bin/uuidgen | /usr/bin/tr -d '-' | /usr/bin/tr '[:upper:]' '[:lower:]')"
   signing_input="${timestamp}.${nonce}.${request_body}"
   signature="$(printf '%s' "$signing_input" | /usr/bin/openssl dgst -sha256 -hmac "$token" | /usr/bin/awk '{print $NF}')"
   response_file="$(/usr/bin/mktemp -t iris-agent)"
   if /usr/bin/curl --fail --silent --show-error --retry 2 --retry-delay 5 --connect-timeout 15 --max-time 45 -H "Authorization: Bearer $token" -H "X-IRIS-Timestamp: $timestamp" -H "X-IRIS-Nonce: $nonce" -H "X-IRIS-Signature: $signature" -H "Content-Type: application/json" --data-binary "$request_body" "$API_URL" > "$response_file"; then
-    echo "$(/bin/date -u +%FT%TZ) check-in succeeded" >> "$LOG_PATH"
+    echo "$(/bin/date -u +%FT%TZ) encrypted check-in succeeded" >> "$LOG_PATH"
   else
     echo "$(/bin/date -u +%FT%TZ) check-in failed" >> "$LOG_PATH"
   fi
   /bin/rm -f "$response_file"
   if [ -f "$LOG_PATH" ] && [ "$(/usr/bin/wc -c < "$LOG_PATH")" -gt 1048576 ]; then /usr/bin/tail -n 1000 "$LOG_PATH" > "$LOG_PATH.tmp" && /bin/mv "$LOG_PATH.tmp" "$LOG_PATH"; fi
+}
+
+upgrade_agent() {
+  /usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w >/dev/null 2>&1 || { echo "IRIS Agent is not enrolled. Use install with a new enrollment code."; exit 1; }
+  /bin/mkdir -p "$AGENT_DIR" "$HOME/Library/LaunchAgents"
+  /bin/chmod 700 "$AGENT_DIR"
+  /bin/cp "$SCRIPT_PATH" "$AGENT_PATH"
+  /bin/chmod 700 "$AGENT_PATH"
+  /bin/launchctl bootout "gui/$(/usr/bin/id -u)/com.iris.security-agent" 2>/dev/null || true
+  /bin/launchctl bootstrap "gui/$(/usr/bin/id -u)" "$PLIST_PATH"
+  "$AGENT_PATH" run
+  echo "IRIS Agent upgraded. Encrypted reports are now active."
 }
 
 install_agent() {
@@ -143,8 +160,9 @@ uninstall_agent() {
 
 case "${1:-install}" in
   install) install_agent ;;
+  upgrade) upgrade_agent ;;
   run) check_in ;;
   status) /bin/launchctl print "gui/$(/usr/bin/id -u)/com.iris.security-agent" >/dev/null 2>&1 && echo "IRIS Agent is running." || echo "IRIS Agent is not running." ;;
   uninstall) uninstall_agent ;;
-  *) echo "Usage: $0 [install|run|status|uninstall]"; exit 2 ;;
+  *) echo "Usage: $0 [install|upgrade|run|status|uninstall]"; exit 2 ;;
 esac
