@@ -2,6 +2,8 @@ import { requireChatGPTUser, chatGPTSignOutPath } from "../chatgpt-auth";
 import { listRecentAudit, provisionIrisUser } from "../../lib/authz";
 import { ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 import SecurityOperations from "./security-operations";
+import PasskeyGate from "./passkey-gate";
+import { isBiometricVerified, passkeysFor } from "../../lib/passkeys";
 
 export const dynamic = "force-dynamic";
 
@@ -14,5 +16,10 @@ export default async function Dashboard() {
   }
 
   const events = await listRecentAudit(user.email, user.role);
-  return <SecurityOperations user={{ email: user.email, displayName: user.displayName || user.email, role: user.role }} auditCount={events.length} signOutPath={chatGPTSignOutPath("/")} />;
+  const enrolled = (await passkeysFor(user.email)).length > 0;
+  const verified = enrolled ? await isBiometricVerified(user.email) : false;
+  const signOutPath = chatGPTSignOutPath("/");
+  return <PasskeyGate enrolled={enrolled} verified={verified} signOutPath={signOutPath}>
+    <SecurityOperations user={{ email: user.email, displayName: user.displayName || user.email, role: user.role }} auditCount={events.length} signOutPath={signOutPath} />
+  </PasskeyGate>;
 }

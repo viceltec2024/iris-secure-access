@@ -103,3 +103,32 @@ export const remediationPlans = sqliteTable("remediation_plans", {
   lastCheckedAt: text("last_checked_at"),
   verifiedAt: text("verified_at"),
 }, (table) => [uniqueIndex("remediation_plans_alert_unique").on(table.alertId)]);
+
+export const passkeyCredentials = sqliteTable("passkey_credentials", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  publicKey: text("public_key").notNull(),
+  counter: integer("counter").notNull().default(0),
+  transports: text("transports").notNull().default("[]"),
+  deviceType: text("device_type").notNull(),
+  backedUp: integer("backed_up", { mode: "boolean" }).notNull().default(false),
+  label: text("label").notNull().default("Touch ID"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastUsedAt: text("last_used_at"),
+}, (table) => [uniqueIndex("passkey_owner_credential_unique").on(table.ownerEmail, table.id)]);
+
+export const passkeyChallenges = sqliteTable("passkey_challenges", {
+  id: text("id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  purpose: text("purpose", { enum: ["REGISTER", "AUTHENTICATE"] }).notNull(),
+  challenge: text("challenge").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const biometricSessions = sqliteTable("biometric_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
