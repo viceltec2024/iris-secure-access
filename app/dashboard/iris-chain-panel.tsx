@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowSquareOut, ArrowUp, CheckCircle, Coins, Cube, Link, Plus, Pulse, QrCode, RocketLaunch, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
+import { ArrowDown, ArrowSquareOut, ArrowUp, ChartLineUp, CheckCircle, Coins, Cube, Link, Plus, Pulse, QrCode, RocketLaunch, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
 import QRCode from "qrcode";
 import type { Language } from "./dashboard-i18n";
 import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient, subscribeMetaMaskDisplayUri } from "./metamask-client";
@@ -13,8 +13,16 @@ type ChainState = { consensus: string; status: string; blocks: Block[]; transact
 type WalletMovement = { hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number; status: string; method: string };
 type WalletLiveState = { balance: string; blockNumber: number; transactions: WalletMovement[]; updatedAt: string; explorerUrl: string };
 type TransactionReceipt = { contractAddress?: string | null; status?: string };
+type ActivitySample = { time: number; height: number; transactions: number; pending: number; latency: number };
 
 function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
+function chartPoints(values: number[], width = 360, height = 92) {
+  if (!values.length) return "";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(max - min, 1);
+  return values.map((value, index) => `${values.length === 1 ? width : (index / (values.length - 1)) * width},${height - 8 - ((value - min) / range) * (height - 22)}`).join(" ");
+}
 
 export default function IrisChainPanel({ language, isAdmin }: { language: Language; isAdmin: boolean }) {
   const [state, setState] = useState<ChainState | null>(null);
@@ -30,9 +38,18 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [tokenDeployOpen, setTokenDeployOpen] = useState(false);
   const [tokenDeploying, setTokenDeploying] = useState(false);
   const [tokenStatus, setTokenStatus] = useState("");
+  const [activityHistory, setActivityHistory] = useState<ActivitySample[]>([]);
   const [notice, setNotice] = useState("");
   const es = language === "es";
-  async function refresh() { const response = await fetch("/api/iris-chain"); if (response.ok) setState(await response.json() as ChainState); }
+  async function refresh() {
+    const started = performance.now();
+    const response = await fetch("/api/iris-chain", { cache: "no-store" });
+    if (response.ok) {
+      const next = await response.json() as ChainState;
+      setState(next);
+      setActivityHistory(history => [...history, { time: Date.now(), height: next.blocks[0]?.height ?? 0, transactions: next.transactions.length, pending: next.pending, latency: Math.round(performance.now() - started) }].slice(-24));
+    }
+  }
   useEffect(() => {
     const unsubscribe = subscribeMetaMaskDisplayUri(uri => {
       setShowWalletQr(true);
@@ -44,12 +61,13 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       }).then(setWalletQrImage).catch(() => setWalletQrImage(""));
     });
     void refresh();
+    const chainTimer = window.setInterval(() => void refresh(), 5_000);
     void fetch("/api/iris-token").then(response => response.ok ? response.json() : null).then(data => setTokenAddress(data?.address || "")).catch(() => undefined);
     void getMetaMaskClient().then(client => {
       setWallet(client.getAccount() || "");
       setWalletChain(client.getChainId() || "");
     }).catch(() => undefined);
-    return unsubscribe;
+    return () => { unsubscribe(); window.clearInterval(chainTimer); };
   }, []);
   useEffect(() => {
     if (!wallet) { setWalletLive(null); return; }
@@ -180,6 +198,14 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <article><span>Base wallet</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={walletChain === BASE_MAINNET_CHAIN_ID ? "wallet-network-ready" : ""}><i />{wallet ? (walletChain === BASE_MAINNET_CHAIN_ID ? "Base Mainnet · 8453" : (es ? "Red incorrecta" : "Wrong network")) : (es ? "Extensión · QR · móvil" : "Extension · QR · mobile")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : (es ? "Conectar MetaMask" : "Connect MetaMask")}</button></article>
     </div>
     <section className="iris-token-panel"><div className="iris-token-mark"><Coins weight="duotone" /></div><div className="iris-token-copy"><span>IRIS TOKEN · BASE MAINNET</span><h3>{tokenAddress ? (es ? "Token oficial conectado" : "Official token connected") : (es ? "Preparado para desplegar" : "Ready to deploy")}</h3><p>{tokenAddress ? shortHash(tokenAddress) : (es ? "1,000,000,000 IRIS · suministro fijo · 18 decimales" : "1,000,000,000 IRIS · fixed supply · 18 decimals")}</p></div><div className="iris-token-actions">{tokenAddress ? <><a href={`https://basescan.org/token/${tokenAddress}`} target="_blank" rel="noreferrer">BaseScan <ArrowSquareOut /></a><button disabled={!wallet} onClick={() => void addIrisToken()}><Wallet />{es ? "Agregar a MetaMask" : "Add to MetaMask"}</button></> : isAdmin ? <button disabled={!wallet || walletChain !== BASE_MAINNET_CHAIN_ID} onClick={() => setTokenDeployOpen(true)}><RocketLaunch />{wallet ? (es ? "Desplegar IRIS" : "Deploy IRIS") : (es ? "Conecta MetaMask primero" : "Connect MetaMask first")}</button> : <span>{es ? "Pendiente del administrador" : "Waiting for administrator"}</span>}</div></section>
+    <section className="chain-live-charts">
+      <div className="chain-live-title"><div><ChartLineUp /><span><b>{es ? "GRÁFICOS EN VIVO" : "LIVE CHARTS"}</b><small>{es ? "Actualización cada 5 segundos" : "Refreshes every 5 seconds"}</small></span></div><em><i />{es ? "SINCRONIZADO" : "SYNCED"}</em></div>
+      <div className="chain-chart-grid">
+        <article><header><span>{es ? "Altura de la cadena" : "Chain height"}</span><strong>#{latest?.height ?? 0}</strong></header><svg viewBox="0 0 360 100" preserveAspectRatio="none" role="img" aria-label={es ? "Altura de bloques en vivo" : "Live block height"}><defs><linearGradient id="heightFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#35d5fb" stopOpacity=".35"/><stop offset="1" stopColor="#35d5fb" stopOpacity="0"/></linearGradient></defs><path className="chart-grid-lines" d="M0 25H360M0 50H360M0 75H360"/><polyline className="chart-area height" points={`0,100 ${chartPoints(activityHistory.map(item => item.height))} 360,100`}/><polyline className="chart-line height" points={chartPoints(activityHistory.map(item => item.height))}/></svg><footer><span>{es ? "Inicio" : "Start"}</span><b>{activityHistory.length ? new Date(activityHistory[activityHistory.length - 1].time).toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}</b></footer></article>
+        <article><header><span>{es ? "Actividad de transacciones" : "Transaction activity"}</span><strong>{state.transactions.length} TX</strong></header><svg viewBox="0 0 360 100" preserveAspectRatio="none" role="img" aria-label={es ? "Transacciones en vivo" : "Live transactions"}><path className="chart-grid-lines" d="M0 25H360M0 50H360M0 75H360"/><polyline className="chart-area tx" points={`0,100 ${chartPoints(activityHistory.map(item => item.transactions))} 360,100`}/><polyline className="chart-line tx" points={chartPoints(activityHistory.map(item => item.transactions))}/><polyline className="chart-line pending" points={chartPoints(activityHistory.map(item => item.pending))}/></svg><footer><span><i className="tx-dot" />TX</span><span><i className="pending-dot" />{es ? "Pendientes" : "Pending"}</span></footer></article>
+        <article className="network-pulse-chart"><header><span>{es ? "Pulso de la red" : "Network pulse"}</span><strong>{activityHistory.at(-1)?.latency ?? 0} ms</strong></header><div className="network-radar"><i/><i/><i/><span><Pulse weight="bold" /></span></div><footer><span>{state.consensus}</span><b>{state.status}</b></footer></article>
+      </div>
+    </section>
     {wallet && <section className="wallet-live-panel">
       <div className="wallet-live-head"><div><span><i /> LIVE · BASE MAINNET</span><h3>{es ? "Movimientos de la wallet" : "Wallet movements"}</h3><p>{es ? "Actualización automática cada 15 segundos" : "Automatically refreshes every 15 seconds"}</p></div><div className="wallet-balance"><span>{es ? "Saldo actual" : "Current balance"}</span><strong>{walletLive?.balance ?? "—"} ETH</strong><small>{es ? "Bloque" : "Block"} #{walletLive?.blockNumber?.toLocaleString() ?? "—"}</small></div></div>
       <div className="wallet-movement-list">{walletLive?.transactions.map(tx => { const incoming = tx.to.toLowerCase() === wallet.toLowerCase(); return <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noreferrer" key={tx.hash}><span className={`movement-direction ${incoming ? "incoming" : "outgoing"}`}>{incoming ? <ArrowDown /> : <ArrowUp />}</span><div><strong>{incoming ? (es ? "Recibido" : "Received") : (es ? "Enviado" : "Sent")} · {tx.method || "transfer"}</strong><code>{shortHash(tx.hash)}</code><small>{tx.timestamp ? new Date(tx.timestamp).toLocaleString(language) : `${es ? "Bloque" : "Block"} #${tx.blockNumber}`}</small></div><span className="movement-value">{incoming ? "+" : "−"}{tx.value} ETH<small>{tx.status}</small></span><ArrowSquareOut className="movement-open" /></a>})}{walletLive && walletLive.transactions.length === 0 && <div className="wallet-empty"><Pulse /><strong>{es ? "Wallet conectada y monitoreada" : "Wallet connected and monitored"}</strong><span>{es ? "Los movimientos nuevos aparecerán aquí automáticamente." : "New movements will appear here automatically."}</span></div>}{!walletLive && <div className="wallet-empty"><Pulse /><strong>{es ? "Cargando actividad en vivo…" : "Loading live activity…"}</strong></div>}</div>
