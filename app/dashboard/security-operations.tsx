@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, ChartLineUp, CheckCircle, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
+import { Bell, ChartLineUp, CheckCircle, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import AskIrisPanel from "./ask-iris-panel";
+import IrisChainPanel from "./iris-chain-panel";
 import { incidentSpanish, Language, text } from "./dashboard-i18n";
 
 type Incident = { id: string; title: string; subject: string; severity: "Critical" | "High" | "Medium" | "Low"; status: "Open" | "Investigating" | "Contained"; time: string; source: string; summary: string; cause: string; impact: string; confidence: number; evidence: string[]; actions: string[]; recommendation: string };
-type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "approvals" | "audit";
+type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "approvals" | "audit";
 type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; unsignedPersistenceItems?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string; transportEncryption?: "TLS+HMAC" | "AES-256-CBC+HMAC-SHA256" };
 type Device = { id: string; name: string; platform: string; status: "PENDING" | "ONLINE" | "OFFLINE"; risk: "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH"; enrollmentCode: string; lastSeenAt: string | null; telemetry: DeviceTelemetry | null; healthScore: number | null; provenance: "REAL" | "UNVERIFIED" };
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
@@ -179,6 +180,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
         <button className={section === "incidents" ? "active" : ""} onClick={() => setSection("incidents")}><Siren /> {t("incidents")} <b>{open}</b></button>
         <button className={section === "intelligence" ? "active" : ""} onClick={() => setSection("intelligence")}><ChartLineUp /> {t("intelligence")}</button>
         <button className={section === "devices" ? "active" : ""} onClick={() => setSection("devices")}><Desktop /> {language === "es" ? "Dispositivos" : "Devices"} <b>{devices.length}</b></button>
+        <button className={section === "chain" ? "active" : ""} onClick={() => setSection("chain")}><Cube /> IRIS Chain</button>
         <button className={section === "approvals" ? "active" : ""} onClick={() => setSection("approvals")}><ShieldCheck /> {t("approvals")} <b>{open}</b></button>
         <button className={section === "audit" ? "active" : ""} onClick={() => setSection("audit")}><LockKey /> {t("audit")} <b>{auditCount}</b></button>
         {user.role === "ADMIN" && <a href="/admin/users"><UsersThree /> {t("access")}</a>}
@@ -187,7 +189,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     </aside>
 
     <section className="soc-main">
-      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {t("connected")} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => setLastUpdate(t("now"))}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
+      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {t("connected")} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => setLastUpdate(t("now"))}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
 
       {section === "operations" && <><section className="metric-row">
         <article><span>{language === "es" ? "Salud real" : "Real health"}</span><strong>{averageHealth ?? "—"}{averageHealth !== null && <small>/100</small>}</strong><em className={averageHealth === null ? "" : "healthy"}>{averageHealth === null ? (language === "es" ? "NO VERIFICADO" : "UNVERIFIED") : "REAL"}</em></article>
@@ -291,6 +293,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           ["1 hr ago","iris.system","POLICY_CHECK","DLP-policy","SUCCESS"]
         ].map(row=><div className="audit-table-row" role="row" key={row.join("-")}><span>{row[0]}</span><span>{row[1]}</span><span>{row[2].replaceAll("_"," ")}</span><span>{row[3]}</span><span className="audit-success"><CheckCircle weight="fill" />{row[4]}</span></div>)}{responseHistory.slice(0,8).map(row=><div className="audit-table-row" role="row" key={`response-${row.id}`}><span>{new Date(row.createdAt).toLocaleString(language)}</span><span>{row.actorEmail}</span><span>{row.action.replaceAll("_"," ")}</span><span>{row.incidentId}</span><span className="audit-success"><CheckCircle weight="fill" />{row.outcome}</span></div>)}</div>
       </section>}
+      {section === "chain" && <IrisChainPanel language={language} isAdmin={user.role === "ADMIN"} />}
       <AskIrisPanel section={section} selectedIncident={selectedView} incidents={incidents.map(localized)} devices={devices} userRole={user.role} userName={user.displayName.split(" ")[0]} language={language} />
     </section>
   </main>;

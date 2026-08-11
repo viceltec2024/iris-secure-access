@@ -64,6 +64,13 @@
       "when": 1785981103777,
       "tag": "0008_cold_captain_midlands",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786451061868,
+      "tag": "0009_sour_vampiro",
+      "breakpoints": true
     }
   ]
 }

@@ -141,3 +141,24 @@ export const userPasswords = sqliteTable("user_passwords", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const irisChainBlocks = sqliteTable("iris_chain_blocks", {
+  height: integer("height").primaryKey(),
+  hash: text("hash").notNull(),
+  previousHash: text("previous_hash").notNull(),
+  merkleRoot: text("merkle_root").notNull(),
+  transactionCount: integer("transaction_count").notNull().default(0),
+  validator: text("validator").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [uniqueIndex("iris_chain_blocks_hash_unique").on(table.hash)]);
+
+export const irisChainTransactions = sqliteTable("iris_chain_transactions", {
+  id: text("id").primaryKey(),
+  blockHeight: integer("block_height"),
+  actorEmail: text("actor_email").notNull(),
+  type: text("type").notNull(),
+  payload: text("payload").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  status: text("status", { enum: ["PENDING", "CONFIRMED"] }).notNull().default("PENDING"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
