@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">IRIS Token</title><desc id="desc">IRIS shield emblem on a violet and cyan token</desc>
+  <defs>
+    <radialGradient id="bg" cx="32%" cy="24%" r="86%"><stop offset="0" stop-color="#5636a7"/><stop offset=".58" stop-color="#211a4f"/><stop offset="1" stop-color="#071725"/></radialGradient>
+    <linearGradient id="ring" x1="72" y1="54" x2="438" y2="458" gradientUnits="userSpaceOnUse"><stop stop-color="#b99cff"/><stop offset=".48" stop-color="#7257da"/><stop offset="1" stop-color="#29c4e8"/></linearGradient>
+    <linearGradient id="shield" x1="164" y1="133" x2="355" y2="383" gradientUnits="userSpaceOnUse"><stop stop-color="#d9ceff"/><stop offset=".52" stop-color="#9c87f5"/><stop offset="1" stop-color="#48c9e8"/></linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="9" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <circle cx="256" cy="256" r="242" fill="#050d18"/><circle cx="256" cy="256" r="226" fill="url(#bg)" stroke="url(#ring)" stroke-width="12"/><circle cx="256" cy="256" r="195" fill="none" stroke="#fff" stroke-opacity=".09" stroke-width="2"/>
+  <path d="M256 123 356 160v82c0 70-39 126-100 153-61-27-100-83-100-153v-82l100-37Z" fill="#090f24" fill-opacity=".72" stroke="url(#shield)" stroke-width="16" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M256 158 323 183v60c0 50-25 91-67 114-42-23-67-64-67-114v-60l67-25Z" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="4"/>
+  <path d="M256 190v132M226 190h60M226 322h60" fill="none" stroke="url(#shield)" stroke-width="22" stroke-linecap="round"/><circle cx="382" cy="137" r="13" fill="#4ce1ef" opacity=".9" filter="url(#glow)"/>
+</svg>

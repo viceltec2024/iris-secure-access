@@ -130,7 +130,8 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     if (!address) return;
     const client = await getMetaMaskClient();
     const provider = client.getProvider() as unknown as { request(args: { method: string; params?: unknown }): Promise<unknown> };
-    await provider.request({ method: "wallet_watchAsset", params: { type: "ERC20", options: { address, symbol: "IRIS", decimals: 18 } } });
+    const image = `${window.location.origin}/assets/iris-token.svg`;
+    await provider.request({ method: "wallet_watchAsset", params: { type: "ERC20", options: { address, symbol: "IRIS", decimals: 18, image } } });
     setNotice(es ? "IRIS Token fue agregado a MetaMask." : "IRIS Token was added to MetaMask.");
   }
   async function deployIrisToken() {
