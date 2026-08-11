@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowSquareOut, ArrowUp, CheckCircle, Cube, Link, Plus, Pulse, ShieldCheck, Wallet } from "@phosphor-icons/react";
+import { ArrowDown, ArrowSquareOut, ArrowUp, CheckCircle, Cube, Link, Plus, Pulse, QrCode, ShieldCheck, Wallet, X } from "@phosphor-icons/react";
+import QRCode from "qrcode";
 import type { Language } from "./dashboard-i18n";
-import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient } from "./metamask-client";
+import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient, subscribeMetaMaskDisplayUri } from "./metamask-client";
 
 type Block = { height: number; hash: string; transactionCount: number; validator: string };
 type ChainTransaction = { id: string; blockHeight: number | null; type: string; payloadHash: string; status: "PENDING" | "CONFIRMED" };
@@ -21,15 +22,27 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [walletChain, setWalletChain] = useState("");
   const [walletBusy, setWalletBusy] = useState(false);
   const [walletLive, setWalletLive] = useState<WalletLiveState | null>(null);
+  const [showWalletQr, setShowWalletQr] = useState(false);
+  const [walletQrImage, setWalletQrImage] = useState("");
   const [notice, setNotice] = useState("");
   const es = language === "es";
   async function refresh() { const response = await fetch("/api/iris-chain"); if (response.ok) setState(await response.json() as ChainState); }
   useEffect(() => {
+    const unsubscribe = subscribeMetaMaskDisplayUri(uri => {
+      setShowWalletQr(true);
+      void QRCode.toDataURL(uri, {
+        width: 300,
+        margin: 2,
+        errorCorrectionLevel: "M",
+        color: { dark: "#06111d", light: "#ffffff" },
+      }).then(setWalletQrImage).catch(() => setWalletQrImage(""));
+    });
     void refresh();
     void getMetaMaskClient().then(client => {
       setWallet(client.getAccount() || "");
       setWalletChain(client.getChainId() || "");
     }).catch(() => undefined);
+    return unsubscribe;
   }, []);
   useEffect(() => {
     if (!wallet) { setWalletLive(null); return; }
@@ -56,7 +69,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     setBusy(false);
   }
   async function connectWallet() {
-    setWalletBusy(true); setNotice("");
+    setWalletBusy(true); setShowWalletQr(true); setWalletQrImage(""); setNotice("");
     try {
       const client = await getMetaMaskClient();
       const { accounts } = await client.connect({ chainIds: [BASE_MAINNET_CHAIN_ID] });
@@ -72,11 +85,16 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       });
       setWallet(accounts[0] || client.getAccount() || "");
       setWalletChain(BASE_MAINNET_CHAIN_ID);
+      setShowWalletQr(false); setWalletQrImage("");
       setNotice(es ? "MetaMask conectado a Base Mainnet." : "MetaMask connected to Base Mainnet.");
     } catch (error) {
       const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
       setNotice(code === 4001 ? (es ? "Conexión cancelada en MetaMask." : "Connection cancelled in MetaMask.") : code === -32002 ? (es ? "Ya hay una solicitud abierta en MetaMask." : "A MetaMask request is already open.") : (es ? "No se pudo conectar con MetaMask." : "Could not connect to MetaMask."));
     } finally { setWalletBusy(false); }
+  }
+  async function cancelWalletQr() {
+    setShowWalletQr(false); setWalletQrImage(""); setWalletBusy(false);
+    try { const client = await getMetaMaskClient(); await client.disconnect(); } catch { /* Session may not exist yet. */ }
   }
   async function disconnectWallet() {
     setWalletBusy(true);
@@ -86,6 +104,16 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   if (!state) return <section className="module-panel chain-loading"><Pulse /> {es ? "Sincronizando IRIS Chain…" : "Syncing IRIS Chain…"}</section>;
   const latest = state.blocks[0];
   return <section className="module-panel chain-panel">
+    {showWalletQr && <div className="wallet-qr-backdrop" role="presentation"><div className="wallet-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-qr-title">
+      <button className="wallet-qr-close" aria-label={es ? "Cerrar" : "Close"} onClick={() => void cancelWalletQr()}><X /></button>
+      <div className="wallet-qr-brand"><QrCode weight="duotone" /></div>
+      <p>METAMASK CONNECT</p>
+      <h2 id="wallet-qr-title">{es ? "Escanea para conectar" : "Scan to connect"}</h2>
+      <span className="wallet-qr-help">{es ? "Abre MetaMask en tu teléfono, toca el escáner y apunta a este código." : "Open MetaMask on your phone, tap the scanner, and point it at this code."}</span>
+      <div className="wallet-qr-frame">{walletQrImage ? <img src={walletQrImage} alt={es ? "Código QR para conectar MetaMask" : "QR code to connect MetaMask"} /> : <div className="wallet-qr-loading"><Pulse /><strong>{es ? "Generando QR seguro…" : "Generating secure QR…"}</strong></div>}</div>
+      <div className="wallet-qr-status"><i />{es ? "Esperando confirmación en MetaMask" : "Waiting for confirmation in MetaMask"}</div>
+      <small>{es ? "El código es temporal. IRIS nunca solicita tu frase secreta." : "The code is temporary. IRIS never asks for your secret phrase."}</small>
+    </div></div>}
     <div className="module-toolbar"><div><h2>IRIS Chain</h2><p>{es ? "Registro inmutable de eventos, aprobaciones y evidencia de seguridad." : "Immutable ledger for security events, approvals, and evidence."}</p></div><span className="chain-online"><i />{state.status}</span></div>
     <div className="chain-metrics">
       <article><span>{es ? "Altura" : "Block height"}</span><strong>{latest?.height ?? 0}</strong><small><Cube /> {state.blocks.length} {es ? "bloques recientes" : "recent blocks"}</small></article>

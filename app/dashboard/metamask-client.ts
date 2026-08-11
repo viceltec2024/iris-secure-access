@@ -3,6 +3,12 @@ import { createEVMClient } from "@metamask/connect-evm";
 export const BASE_MAINNET_CHAIN_ID = "0x2105" as const;
 
 let clientPromise: ReturnType<typeof createEVMClient> | null = null;
+const displayUriListeners = new Set<(uri: string) => void>();
+
+export function subscribeMetaMaskDisplayUri(listener: (uri: string) => void) {
+  displayUriListeners.add(listener);
+  return () => displayUriListeners.delete(listener);
+}
 
 export function getMetaMaskClient() {
   if (!clientPromise) {
@@ -18,15 +24,20 @@ export function getMetaMaskClient() {
         },
       },
       ui: {
-        headless: false,
+        headless: true,
         preferExtension: false,
-        showInstallModal: true,
+        showInstallModal: false,
       },
       mobile: {
         useDeeplink: true,
       },
       analytics: {
         enabled: false,
+      },
+      eventHandlers: {
+        displayUri: (uri) => {
+          displayUriListeners.forEach(listener => listener(uri));
+        },
       },
     });
   }
