@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowSquareOut, ArrowUp, CheckCircle, Cube, Link, Plus, Pulse, QrCode, ShieldCheck, Wallet, X } from "@phosphor-icons/react";
+import { ArrowDown, ArrowSquareOut, ArrowUp, CheckCircle, Coins, Cube, Link, Plus, Pulse, QrCode, RocketLaunch, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
 import QRCode from "qrcode";
 import type { Language } from "./dashboard-i18n";
 import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient, subscribeMetaMaskDisplayUri } from "./metamask-client";
+import { IRIS_TOKEN_BYTECODE } from "./iris-token-artifact";
 
 type Block = { height: number; hash: string; transactionCount: number; validator: string };
 type ChainTransaction = { id: string; blockHeight: number | null; type: string; payloadHash: string; status: "PENDING" | "CONFIRMED" };
 type ChainState = { consensus: string; status: string; blocks: Block[]; transactions: ChainTransaction[]; pending: number };
 type WalletMovement = { hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number; status: string; method: string };
 type WalletLiveState = { balance: string; blockNumber: number; transactions: WalletMovement[]; updatedAt: string; explorerUrl: string };
+type TransactionReceipt = { contractAddress?: string | null; status?: string };
 
 function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
 
@@ -24,6 +26,10 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [walletLive, setWalletLive] = useState<WalletLiveState | null>(null);
   const [showWalletQr, setShowWalletQr] = useState(false);
   const [walletQrImage, setWalletQrImage] = useState("");
+  const [tokenAddress, setTokenAddress] = useState("");
+  const [tokenDeployOpen, setTokenDeployOpen] = useState(false);
+  const [tokenDeploying, setTokenDeploying] = useState(false);
+  const [tokenStatus, setTokenStatus] = useState("");
   const [notice, setNotice] = useState("");
   const es = language === "es";
   async function refresh() { const response = await fetch("/api/iris-chain"); if (response.ok) setState(await response.json() as ChainState); }
@@ -38,6 +44,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       }).then(setWalletQrImage).catch(() => setWalletQrImage(""));
     });
     void refresh();
+    void fetch("/api/iris-token").then(response => response.ok ? response.json() : null).then(data => setTokenAddress(data?.address || "")).catch(() => undefined);
     void getMetaMaskClient().then(client => {
       setWallet(client.getAccount() || "");
       setWalletChain(client.getChainId() || "");
@@ -101,9 +108,60 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     try { const client = await getMetaMaskClient(); await client.disconnect(); setWallet(""); setWalletChain(""); setNotice(es ? "Wallet desconectada." : "Wallet disconnected."); }
     finally { setWalletBusy(false); }
   }
+  async function addIrisToken(address = tokenAddress) {
+    if (!address) return;
+    const client = await getMetaMaskClient();
+    const provider = client.getProvider() as unknown as { request(args: { method: string; params?: unknown }): Promise<unknown> };
+    await provider.request({ method: "wallet_watchAsset", params: { type: "ERC20", options: { address, symbol: "IRIS", decimals: 18 } } });
+    setNotice(es ? "IRIS Token fue agregado a MetaMask." : "IRIS Token was added to MetaMask.");
+  }
+  async function deployIrisToken() {
+    if (!wallet || !isAdmin || tokenAddress) return;
+    setTokenDeploying(true); setTokenStatus(es ? "Abre MetaMask y confirma la transacción…" : "Open MetaMask and confirm the transaction…"); setNotice("");
+    try {
+      const client = await getMetaMaskClient();
+      await client.switchChain({
+        chainId: BASE_MAINNET_CHAIN_ID,
+        chainConfiguration: {
+          chainId: BASE_MAINNET_CHAIN_ID,
+          chainName: "Base Mainnet",
+          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+          rpcUrls: ["https://mainnet.base.org"],
+          blockExplorerUrls: ["https://basescan.org"],
+        },
+      });
+      const provider = client.getProvider() as unknown as { request(args: { method: string; params?: unknown }): Promise<unknown> };
+      const transactionHash = await provider.request({ method: "eth_sendTransaction", params: [{ from: wallet, data: IRIS_TOKEN_BYTECODE }] }) as string;
+      setTokenStatus(es ? "Transacción enviada. Esperando confirmación de Base…" : "Transaction sent. Waiting for Base confirmation…");
+      let receipt: TransactionReceipt | null = null;
+      for (let attempt = 0; attempt < 80 && !receipt; attempt += 1) {
+        if (attempt) await new Promise(resolve => window.setTimeout(resolve, 3_000));
+        receipt = await provider.request({ method: "eth_getTransactionReceipt", params: [transactionHash] }) as TransactionReceipt | null;
+      }
+      if (!receipt?.contractAddress || receipt.status !== "0x1") throw new Error("DEPLOYMENT_NOT_CONFIRMED");
+      const response = await fetch("/api/iris-token", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: receipt.contractAddress, transactionHash }) });
+      if (!response.ok) throw new Error("DEPLOYMENT_RECORD_FAILED");
+      setTokenAddress(receipt.contractAddress); setTokenDeployOpen(false); setTokenStatus("");
+      await addIrisToken(receipt.contractAddress);
+      setNotice(es ? "IRIS Token fue creado en Base Mainnet y agregado a MetaMask." : "IRIS Token was created on Base Mainnet and added to MetaMask.");
+    } catch (error) {
+      const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
+      setTokenStatus(code === 4001 ? (es ? "Cancelaste la transacción en MetaMask." : "You cancelled the transaction in MetaMask.") : (es ? "No se completó el despliegue. No se guardó ninguna dirección." : "Deployment did not complete. No address was saved."));
+    } finally { setTokenDeploying(false); }
+  }
   if (!state) return <section className="module-panel chain-loading"><Pulse /> {es ? "Sincronizando IRIS Chain…" : "Syncing IRIS Chain…"}</section>;
   const latest = state.blocks[0];
   return <section className="module-panel chain-panel">
+    {tokenDeployOpen && <div className="approval-backdrop" role="presentation"><section className="approval-dialog token-deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="token-deploy-title">
+      <button className="approval-close" aria-label={es ? "Cerrar" : "Close"} disabled={tokenDeploying} onClick={() => setTokenDeployOpen(false)}><X /></button>
+      <span className="approval-icon"><RocketLaunch weight="duotone" /></span>
+      <p>{es ? "BASE MAINNET · TRANSACCIÓN REAL" : "BASE MAINNET · REAL TRANSACTION"}</p>
+      <h2 id="token-deploy-title">{es ? "Crear IRIS Token" : "Create IRIS Token"}</h2>
+      <div className="token-deploy-summary"><span><b>1,000,000,000</b> IRIS</span><span>{es ? "Suministro fijo" : "Fixed supply"}</span><span>{es ? "18 decimales" : "18 decimals"}</span></div>
+      <div className="token-gas-warning"><Warning weight="fill" /><span><strong>{es ? "MetaMask cobrará gas real" : "MetaMask will charge real gas"}</strong>{es ? "Revisa el costo que muestra MetaMask antes de confirmar. Los tokens se enviarán a tu wallet conectada." : "Review the cost shown by MetaMask before confirming. The tokens will be sent to your connected wallet."}</span></div>
+      {tokenStatus && <div className="token-deploy-status"><Pulse />{tokenStatus}</div>}
+      <div className="approval-actions"><button disabled={tokenDeploying} onClick={() => setTokenDeployOpen(false)}>{es ? "Cancelar" : "Cancel"}</button><button disabled={tokenDeploying} onClick={() => void deployIrisToken()}><RocketLaunch />{tokenDeploying ? (es ? "Procesando…" : "Processing…") : (es ? "Continuar en MetaMask" : "Continue in MetaMask")}</button></div>
+    </section></div>}
     {showWalletQr && <div className="wallet-qr-backdrop" role="presentation"><div className="wallet-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-qr-title">
       <button className="wallet-qr-close" aria-label={es ? "Cerrar" : "Close"} onClick={() => void cancelWalletQr()}><X /></button>
       <div className="wallet-qr-brand"><QrCode weight="duotone" /></div>
@@ -121,6 +179,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <article><span>{es ? "Consenso" : "Consensus"}</span><strong className="chain-consensus">PoA</strong><small><ShieldCheck />{state.consensus}</small></article>
       <article><span>Base wallet</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={walletChain === BASE_MAINNET_CHAIN_ID ? "wallet-network-ready" : ""}><i />{wallet ? (walletChain === BASE_MAINNET_CHAIN_ID ? "Base Mainnet · 8453" : (es ? "Red incorrecta" : "Wrong network")) : (es ? "Extensión · QR · móvil" : "Extension · QR · mobile")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : (es ? "Conectar MetaMask" : "Connect MetaMask")}</button></article>
     </div>
+    <section className="iris-token-panel"><div className="iris-token-mark"><Coins weight="duotone" /></div><div className="iris-token-copy"><span>IRIS TOKEN · BASE MAINNET</span><h3>{tokenAddress ? (es ? "Token oficial conectado" : "Official token connected") : (es ? "Preparado para desplegar" : "Ready to deploy")}</h3><p>{tokenAddress ? shortHash(tokenAddress) : (es ? "1,000,000,000 IRIS · suministro fijo · 18 decimales" : "1,000,000,000 IRIS · fixed supply · 18 decimals")}</p></div><div className="iris-token-actions">{tokenAddress ? <><a href={`https://basescan.org/token/${tokenAddress}`} target="_blank" rel="noreferrer">BaseScan <ArrowSquareOut /></a><button disabled={!wallet} onClick={() => void addIrisToken()}><Wallet />{es ? "Agregar a MetaMask" : "Add to MetaMask"}</button></> : isAdmin ? <button disabled={!wallet || walletChain !== BASE_MAINNET_CHAIN_ID} onClick={() => setTokenDeployOpen(true)}><RocketLaunch />{wallet ? (es ? "Desplegar IRIS" : "Deploy IRIS") : (es ? "Conecta MetaMask primero" : "Connect MetaMask first")}</button> : <span>{es ? "Pendiente del administrador" : "Waiting for administrator"}</span>}</div></section>
     {wallet && <section className="wallet-live-panel">
       <div className="wallet-live-head"><div><span><i /> LIVE · BASE MAINNET</span><h3>{es ? "Movimientos de la wallet" : "Wallet movements"}</h3><p>{es ? "Actualización automática cada 15 segundos" : "Automatically refreshes every 15 seconds"}</p></div><div className="wallet-balance"><span>{es ? "Saldo actual" : "Current balance"}</span><strong>{walletLive?.balance ?? "—"} ETH</strong><small>{es ? "Bloque" : "Block"} #{walletLive?.blockNumber?.toLocaleString() ?? "—"}</small></div></div>
       <div className="wallet-movement-list">{walletLive?.transactions.map(tx => { const incoming = tx.to.toLowerCase() === wallet.toLowerCase(); return <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noreferrer" key={tx.hash}><span className={`movement-direction ${incoming ? "incoming" : "outgoing"}`}>{incoming ? <ArrowDown /> : <ArrowUp />}</span><div><strong>{incoming ? (es ? "Recibido" : "Received") : (es ? "Enviado" : "Sent")} · {tx.method || "transfer"}</strong><code>{shortHash(tx.hash)}</code><small>{tx.timestamp ? new Date(tx.timestamp).toLocaleString(language) : `${es ? "Bloque" : "Block"} #${tx.blockNumber}`}</small></div><span className="movement-value">{incoming ? "+" : "−"}{tx.value} ETH<small>{tx.status}</small></span><ArrowSquareOut className="movement-open" /></a>})}{walletLive && walletLive.transactions.length === 0 && <div className="wallet-empty"><Pulse /><strong>{es ? "Wallet conectada y monitoreada" : "Wallet connected and monitored"}</strong><span>{es ? "Los movimientos nuevos aparecerán aquí automáticamente." : "New movements will appear here automatically."}</span></div>}{!walletLive && <div className="wallet-empty"><Pulse /><strong>{es ? "Cargando actividad en vivo…" : "Loading live activity…"}</strong></div>}</div>

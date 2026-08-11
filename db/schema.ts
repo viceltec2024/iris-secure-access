@@ -162,3 +162,10 @@ export const irisChainTransactions = sqliteTable("iris_chain_transactions", {
   status: text("status", { enum: ["PENDING", "CONFIRMED"] }).notNull().default("PENDING"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

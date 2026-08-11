@@ -14,9 +14,11 @@
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    ,"token:compile": "node scripts/compile-iris-token.mjs"
   },
   "dependencies": {
     "@metamask/connect-evm": "^2.1.1",
+    "@openzeppelin/contracts": "^5.6.1",
     "@phosphor-icons/react": "^2.1.10",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
@@ -39,6 +41,7 @@
     "eslint": "9.39.4",
     "eslint-config-next": "^16.2.11",
     "react-server-dom-webpack": "19.2.6",
+    "solc": "^0.8.36",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",

@@ -71,6 +71,13 @@
       "when": 1786451061868,
       "tag": "0009_sour_vampiro",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1786453854315,
+      "tag": "0010_faulty_glorian",
+      "breakpoints": true
     }
   ]
 }
