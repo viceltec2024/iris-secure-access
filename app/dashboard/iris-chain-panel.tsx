@@ -14,6 +14,7 @@ type WalletMovement = { hash: string; from: string; to: string; value: string; t
 type WalletLiveState = { balance: string; blockNumber: number; transactions: WalletMovement[]; updatedAt: string; explorerUrl: string };
 type TransactionReceipt = { contractAddress?: string | null; status?: string };
 type ActivitySample = { time: number; height: number; transactions: number; pending: number; latency: number };
+type TokenOperations = { contract: string; network: string; chainId: number; blockNumber: number; contractLive: boolean; totalSupply: string; walletBalance: string; holders: number; transfers: Array<{ hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number }>; verified: boolean; distribution: Array<{ label: string; percent: number; amount: string }>; readiness: { contract: boolean; metadata: boolean; treasuryMultisig: boolean; vesting: boolean; liquidity: boolean }; updatedAt: string };
 
 function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
 function chartPoints(values: number[], width = 360, height = 92) {
@@ -38,6 +39,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [tokenDeployOpen, setTokenDeployOpen] = useState(false);
   const [tokenDeploying, setTokenDeploying] = useState(false);
   const [tokenStatus, setTokenStatus] = useState("");
+  const [tokenOperations, setTokenOperations] = useState<TokenOperations | null>(null);
   const [activityHistory, setActivityHistory] = useState<ActivitySample[]>([]);
   const [notice, setNotice] = useState("");
   const es = language === "es";
@@ -77,6 +79,14 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     const timer = window.setInterval(load, 15_000);
     return () => { active = false; window.clearInterval(timer); };
   }, [wallet]);
+  useEffect(() => {
+    if (!tokenAddress) { setTokenOperations(null); return; }
+    let active = true;
+    const load = () => void fetch(`/api/iris-token-operations${wallet ? `?wallet=${encodeURIComponent(wallet)}` : ""}`, { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setTokenOperations(data as TokenOperations); }).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [tokenAddress, wallet]);
   async function submitTransaction() {
     if (!payload.trim()) return;
     setBusy(true); setNotice("");
@@ -188,6 +198,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <h2 id="wallet-qr-title">{es ? "Escanea para conectar" : "Scan to connect"}</h2>
       <span className="wallet-qr-help">{es ? "Abre MetaMask en tu teléfono, toca el escáner y apunta a este código." : "Open MetaMask on your phone, tap the scanner, and point it at this code."}</span>
       <div className="wallet-qr-frame">{walletQrImage ? <img src={walletQrImage} alt={es ? "Código QR para conectar MetaMask" : "QR code to connect MetaMask"} /> : <div className="wallet-qr-loading"><Pulse /><strong>{es ? "Generando QR seguro…" : "Generating secure QR…"}</strong></div>}</div>
+      <a className="wallet-mobile-deeplink" href={`https://metamask.app.link/dapp/${typeof window === "undefined" ? "iris-secure-access.taylor-667.chatgpt.site/dashboard" : `${window.location.host}/dashboard`}`}>{es ? "Abrir MetaMask en este teléfono" : "Open MetaMask on this phone"}</a>
       <div className="wallet-qr-status"><i />{es ? "Esperando confirmación en MetaMask" : "Waiting for confirmation in MetaMask"}</div>
       <small>{es ? "El código es temporal. IRIS nunca solicita tu frase secreta." : "The code is temporary. IRIS never asks for your secret phrase."}</small>
     </div></div>}
@@ -199,6 +210,12 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <article><span>Base wallet</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={walletChain === BASE_MAINNET_CHAIN_ID ? "wallet-network-ready" : ""}><i />{wallet ? (walletChain === BASE_MAINNET_CHAIN_ID ? "Base Mainnet · 8453" : (es ? "Red incorrecta" : "Wrong network")) : (es ? "Extensión · QR · móvil" : "Extension · QR · mobile")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : (es ? "Conectar MetaMask" : "Connect MetaMask")}</button></article>
     </div>
     <section className="iris-token-panel"><div className="iris-token-mark"><Coins weight="duotone" /></div><div className="iris-token-copy"><span>IRIS TOKEN · BASE MAINNET</span><h3>{tokenAddress ? (es ? "Token oficial conectado" : "Official token connected") : (es ? "Preparado para desplegar" : "Ready to deploy")}</h3><p>{tokenAddress ? shortHash(tokenAddress) : (es ? "1,000,000,000 IRIS · suministro fijo · 18 decimales" : "1,000,000,000 IRIS · fixed supply · 18 decimals")}</p></div><div className="iris-token-actions">{tokenAddress ? <><a href={`https://basescan.org/token/${tokenAddress}`} target="_blank" rel="noreferrer">BaseScan <ArrowSquareOut /></a><button disabled={!wallet} onClick={() => void addIrisToken()}><Wallet />{es ? "Agregar a MetaMask" : "Add to MetaMask"}</button></> : isAdmin ? <button disabled={!wallet || walletChain !== BASE_MAINNET_CHAIN_ID} onClick={() => setTokenDeployOpen(true)}><RocketLaunch />{wallet ? (es ? "Desplegar IRIS" : "Deploy IRIS") : (es ? "Conecta MetaMask primero" : "Connect MetaMask first")}</button> : <span>{es ? "Pendiente del administrador" : "Waiting for administrator"}</span>}</div></section>
+    {tokenAddress && <section className="token-operations-center">
+      <div className="token-ops-head"><div><span><i />{es ? "DATOS REALES · BASE" : "LIVE DATA · BASE"}</span><h3>{es ? "Centro de Operaciones IRIS Token" : "IRIS Token Operations Center"}</h3><p>{es ? "Contrato, balances, distribución y preparación de tesorería." : "Contract, balances, distribution, and treasury readiness."}</p></div><a href="/token" target="_blank">{es ? "Ficha oficial" : "Official profile"}<ArrowSquareOut /></a></div>
+      <div className="token-ops-metrics"><article><span>{es ? "Tu balance" : "Your balance"}</span><strong>{wallet ? `${tokenOperations?.walletBalance ?? "—"} IRIS` : "—"}</strong><small>{wallet ? shortHash(wallet) : (es ? "Conecta MetaMask" : "Connect MetaMask")}</small></article><article><span>{es ? "Suministro total" : "Total supply"}</span><strong>{tokenOperations ? Number(tokenOperations.totalSupply).toLocaleString(language) : "—"}</strong><small>IRIS · 18 {es ? "decimales" : "decimals"}</small></article><article><span>{es ? "Titulares indexados" : "Indexed holders"}</span><strong>{tokenOperations?.holders || "—"}</strong><small>{es ? "Datos del explorador" : "Explorer data"}</small></article><article><span>{es ? "Estado del contrato" : "Contract status"}</span><strong className="token-live-state">{tokenOperations?.contractLive ? (es ? "ACTIVO" : "LIVE") : (es ? "CARGANDO" : "LOADING")}</strong><small>{es ? "Bloque" : "Block"} #{tokenOperations?.blockNumber?.toLocaleString() ?? "—"}</small></article></div>
+      <div className="token-ops-grid"><div className="token-distribution"><h4>{es ? "Distribución aprobada" : "Approved distribution"}</h4>{tokenOperations?.distribution.map(item => <div key={item.label}><span><b>{item.percent}%</b>{item.label}<em>{item.amount} IRIS</em></span><i><u style={{ width: `${item.percent}%` }} /></i></div>) ?? <p>{es ? "Sincronizando distribución…" : "Syncing distribution…"}</p>}</div><div className="token-readiness"><h4>{es ? "Preparación institucional" : "Institutional readiness"}</h4>{tokenOperations && Object.entries(tokenOperations.readiness).map(([key, ready]) => <div key={key} className={ready ? "ready" : "pending"}><CheckCircle weight="fill" /><span>{({ contract: es ? "Contrato en Base" : "Base contract", metadata: es ? "Logo y metadatos" : "Logo and metadata", treasuryMultisig: es ? "Tesorería multifirma" : "Multisig treasury", vesting: es ? "Vesting del equipo" : "Team vesting", liquidity: es ? "Liquidez IRIS" : "IRIS liquidity" } as Record<string,string>)[key]}</span><b>{ready ? (es ? "LISTO" : "READY") : (es ? "REQUIERE FIRMA" : "SIGNATURE REQUIRED")}</b></div>)}</div></div>
+      <div className="token-transfer-head"><h4>{es ? "Transferencias recientes de IRIS" : "Recent IRIS transfers"}</h4><span>{es ? "Actualización cada 15 segundos" : "Refreshes every 15 seconds"}</span></div><div className="token-transfer-list">{tokenOperations?.transfers.map(tx => <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noreferrer" key={tx.hash}><Coins /><div><strong>{tx.value} IRIS</strong><code>{shortHash(tx.from)} → {shortHash(tx.to)}</code></div><small>{tx.timestamp ? new Date(tx.timestamp).toLocaleString(language) : `#${tx.blockNumber}`}</small><ArrowSquareOut /></a>)}{tokenOperations && !tokenOperations.transfers.length && <p>{es ? "El explorador todavía está indexando las transferencias de IRIS." : "The explorer is still indexing IRIS transfers."}</p>}</div>
+    </section>}
     <section className="chain-live-charts">
       <div className="chain-live-title"><div><ChartLineUp /><span><b>{es ? "GRÁFICOS EN VIVO" : "LIVE CHARTS"}</b><small>{es ? "Actualización cada 5 segundos" : "Refreshes every 5 seconds"}</small></span></div><em><i />{es ? "SINCRONIZADO" : "SYNCED"}</em></div>
       <div className="chain-chart-grid">
