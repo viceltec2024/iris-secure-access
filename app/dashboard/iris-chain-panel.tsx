@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Cube, Link, Plus, Pulse, ShieldCheck, Wallet } from "@phosphor-icons/react";
+import { ArrowDown, ArrowSquareOut, ArrowUp, CheckCircle, Cube, Link, Plus, Pulse, ShieldCheck, Wallet } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient } from "./metamask-client";
 
 type Block = { height: number; hash: string; transactionCount: number; validator: string };
 type ChainTransaction = { id: string; blockHeight: number | null; type: string; payloadHash: string; status: "PENDING" | "CONFIRMED" };
 type ChainState = { consensus: string; status: string; blocks: Block[]; transactions: ChainTransaction[]; pending: number };
+type WalletMovement = { hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number; status: string; method: string };
+type WalletLiveState = { balance: string; blockNumber: number; transactions: WalletMovement[]; updatedAt: string; explorerUrl: string };
 
 function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
 
@@ -18,6 +20,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [wallet, setWallet] = useState("");
   const [walletChain, setWalletChain] = useState("");
   const [walletBusy, setWalletBusy] = useState(false);
+  const [walletLive, setWalletLive] = useState<WalletLiveState | null>(null);
   const [notice, setNotice] = useState("");
   const es = language === "es";
   async function refresh() { const response = await fetch("/api/iris-chain"); if (response.ok) setState(await response.json() as ChainState); }
@@ -28,6 +31,14 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       setWalletChain(client.getChainId() || "");
     }).catch(() => undefined);
   }, []);
+  useEffect(() => {
+    if (!wallet) { setWalletLive(null); return; }
+    let active = true;
+    const load = () => void fetch(`/api/base-wallet?address=${encodeURIComponent(wallet)}`).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setWalletLive(data as WalletLiveState); }).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [wallet]);
   async function submitTransaction() {
     if (!payload.trim()) return;
     setBusy(true); setNotice("");
@@ -82,6 +93,11 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <article><span>{es ? "Consenso" : "Consensus"}</span><strong className="chain-consensus">PoA</strong><small><ShieldCheck />{state.consensus}</small></article>
       <article><span>Base wallet</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={walletChain === BASE_MAINNET_CHAIN_ID ? "wallet-network-ready" : ""}><i />{wallet ? (walletChain === BASE_MAINNET_CHAIN_ID ? "Base Mainnet · 8453" : (es ? "Red incorrecta" : "Wrong network")) : (es ? "Extensión · QR · móvil" : "Extension · QR · mobile")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : (es ? "Conectar MetaMask" : "Connect MetaMask")}</button></article>
     </div>
+    {wallet && <section className="wallet-live-panel">
+      <div className="wallet-live-head"><div><span><i /> LIVE · BASE MAINNET</span><h3>{es ? "Movimientos de la wallet" : "Wallet movements"}</h3><p>{es ? "Actualización automática cada 15 segundos" : "Automatically refreshes every 15 seconds"}</p></div><div className="wallet-balance"><span>{es ? "Saldo actual" : "Current balance"}</span><strong>{walletLive?.balance ?? "—"} ETH</strong><small>{es ? "Bloque" : "Block"} #{walletLive?.blockNumber?.toLocaleString() ?? "—"}</small></div></div>
+      <div className="wallet-movement-list">{walletLive?.transactions.map(tx => { const incoming = tx.to.toLowerCase() === wallet.toLowerCase(); return <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noreferrer" key={tx.hash}><span className={`movement-direction ${incoming ? "incoming" : "outgoing"}`}>{incoming ? <ArrowDown /> : <ArrowUp />}</span><div><strong>{incoming ? (es ? "Recibido" : "Received") : (es ? "Enviado" : "Sent")} · {tx.method || "transfer"}</strong><code>{shortHash(tx.hash)}</code><small>{tx.timestamp ? new Date(tx.timestamp).toLocaleString(language) : `${es ? "Bloque" : "Block"} #${tx.blockNumber}`}</small></div><span className="movement-value">{incoming ? "+" : "−"}{tx.value} ETH<small>{tx.status}</small></span><ArrowSquareOut className="movement-open" /></a>})}{walletLive && walletLive.transactions.length === 0 && <div className="wallet-empty"><Pulse /><strong>{es ? "Wallet conectada y monitoreada" : "Wallet connected and monitored"}</strong><span>{es ? "Los movimientos nuevos aparecerán aquí automáticamente." : "New movements will appear here automatically."}</span></div>}{!walletLive && <div className="wallet-empty"><Pulse /><strong>{es ? "Cargando actividad en vivo…" : "Loading live activity…"}</strong></div>}</div>
+      {walletLive && <a className="wallet-explorer-link" href={walletLive.explorerUrl} target="_blank" rel="noreferrer">{es ? "Ver historial completo en BaseScan" : "View complete history on BaseScan"}<ArrowSquareOut /></a>}
+    </section>}
     <div className="chain-grid">
       <div className="chain-card"><div className="chain-card-title"><div><h3>{es ? "Explorador de bloques" : "Block explorer"}</h3><p>{es ? "Cadena SHA-256 verificable" : "Verifiable SHA-256 chain"}</p></div>{isAdmin && <button disabled={busy || state.pending === 0} onClick={() => void sealBlock()}><Plus />{es ? "Sellar bloque" : "Seal block"}</button>}</div>
         <div className="block-list">{state.blocks.map(block => <article key={block.height}><span className="block-cube"><Cube weight="duotone" /></span><div><strong>Block #{block.height}</strong><code>{shortHash(block.hash)}</code></div><dl><div><dt>TX</dt><dd>{block.transactionCount}</dd></div><div><dt>{es ? "Validador" : "Validator"}</dt><dd>{block.validator === "iris-genesis" ? "IRIS" : block.validator.split("@")[0]}</dd></div></dl></article>)}</div>
