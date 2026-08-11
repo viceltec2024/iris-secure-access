@@ -18,6 +18,7 @@
 @media(max-width:520px){.device-grid>article>.device-card-head{grid-template-columns:44px minmax(0,1fr)}.device-grid>article>.device-card-head .provenance-badge{grid-column:1/-1;justify-self:start;margin-top:3px}.device-grid>article>.device-status-line{align-items:flex-start;flex-direction:column!important}.device-grid>article>.device-status-line>strong{margin-left:0}}
 
 * { box-sizing: border-box; }
+.chain-metrics small i{width:7px;height:7px;border-radius:50%;background:#738a9d}.chain-metrics small.wallet-network-ready i{background:#4edca4;box-shadow:0 0 7px #4edca4}.chain-metrics article:last-child small{margin-top:0}
 
 /* IRIS Chain */
 .chain-loading{display:flex;align-items:center;justify-content:center;gap:10px;color:#47d8ff}.chain-loading svg{width:22px;animation:chain-spin 1.2s linear infinite}@keyframes chain-spin{to{transform:rotate(360deg)}}

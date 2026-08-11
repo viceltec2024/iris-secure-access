@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle, Cube, Link, Plus, Pulse, ShieldCheck, Wallet } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
+import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient } from "./metamask-client";
 
 type Block = { height: number; hash: string; transactionCount: number; validator: string };
 type ChainTransaction = { id: string; blockHeight: number | null; type: string; payloadHash: string; status: "PENDING" | "CONFIRMED" };
@@ -15,10 +16,18 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [payload, setPayload] = useState("");
   const [busy, setBusy] = useState(false);
   const [wallet, setWallet] = useState("");
+  const [walletChain, setWalletChain] = useState("");
+  const [walletBusy, setWalletBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const es = language === "es";
   async function refresh() { const response = await fetch("/api/iris-chain"); if (response.ok) setState(await response.json() as ChainState); }
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    void getMetaMaskClient().then(client => {
+      setWallet(client.getAccount() || "");
+      setWalletChain(client.getChainId() || "");
+    }).catch(() => undefined);
+  }, []);
   async function submitTransaction() {
     if (!payload.trim()) return;
     setBusy(true); setNotice("");
@@ -36,10 +45,32 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     setBusy(false);
   }
   async function connectWallet() {
-    const ethereum = (window as typeof window & { ethereum?: { request(args: { method: string }): Promise<string[]> } }).ethereum;
-    if (!ethereum) { setNotice(es ? "Instala MetaMask para conectar una wallet de Base." : "Install MetaMask to connect a Base wallet."); return; }
-    try { const accounts = await ethereum.request({ method: "eth_requestAccounts" }); setWallet(accounts[0] || ""); }
-    catch { setNotice(es ? "Conexión de wallet cancelada." : "Wallet connection cancelled."); }
+    setWalletBusy(true); setNotice("");
+    try {
+      const client = await getMetaMaskClient();
+      const { accounts } = await client.connect({ chainIds: [BASE_MAINNET_CHAIN_ID] });
+      await client.switchChain({
+        chainId: BASE_MAINNET_CHAIN_ID,
+        chainConfiguration: {
+          chainId: BASE_MAINNET_CHAIN_ID,
+          chainName: "Base Mainnet",
+          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+          rpcUrls: ["https://mainnet.base.org"],
+          blockExplorerUrls: ["https://basescan.org"],
+        },
+      });
+      setWallet(accounts[0] || client.getAccount() || "");
+      setWalletChain(BASE_MAINNET_CHAIN_ID);
+      setNotice(es ? "MetaMask conectado a Base Mainnet." : "MetaMask connected to Base Mainnet.");
+    } catch (error) {
+      const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
+      setNotice(code === 4001 ? (es ? "Conexión cancelada en MetaMask." : "Connection cancelled in MetaMask.") : code === -32002 ? (es ? "Ya hay una solicitud abierta en MetaMask." : "A MetaMask request is already open.") : (es ? "No se pudo conectar con MetaMask." : "Could not connect to MetaMask."));
+    } finally { setWalletBusy(false); }
+  }
+  async function disconnectWallet() {
+    setWalletBusy(true);
+    try { const client = await getMetaMaskClient(); await client.disconnect(); setWallet(""); setWalletChain(""); setNotice(es ? "Wallet desconectada." : "Wallet disconnected."); }
+    finally { setWalletBusy(false); }
   }
   if (!state) return <section className="module-panel chain-loading"><Pulse /> {es ? "Sincronizando IRIS Chain…" : "Syncing IRIS Chain…"}</section>;
   const latest = state.blocks[0];
@@ -49,7 +80,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <article><span>{es ? "Altura" : "Block height"}</span><strong>{latest?.height ?? 0}</strong><small><Cube /> {state.blocks.length} {es ? "bloques recientes" : "recent blocks"}</small></article>
       <article><span>{es ? "Transacciones" : "Transactions"}</span><strong>{state.transactions.length}</strong><small><CheckCircle /> {state.pending} {es ? "pendientes" : "pending"}</small></article>
       <article><span>{es ? "Consenso" : "Consensus"}</span><strong className="chain-consensus">PoA</strong><small><ShieldCheck />{state.consensus}</small></article>
-      <article><span>Base wallet</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><button onClick={() => void connectWallet()}><Wallet />{wallet ? (es ? "Conectada" : "Connected") : (es ? "Conectar" : "Connect")}</button></article>
+      <article><span>Base wallet</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={walletChain === BASE_MAINNET_CHAIN_ID ? "wallet-network-ready" : ""}><i />{wallet ? (walletChain === BASE_MAINNET_CHAIN_ID ? "Base Mainnet · 8453" : (es ? "Red incorrecta" : "Wrong network")) : (es ? "Extensión · QR · móvil" : "Extension · QR · mobile")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : (es ? "Conectar MetaMask" : "Connect MetaMask")}</button></article>
     </div>
     <div className="chain-grid">
       <div className="chain-card"><div className="chain-card-title"><div><h3>{es ? "Explorador de bloques" : "Block explorer"}</h3><p>{es ? "Cadena SHA-256 verificable" : "Verifiable SHA-256 chain"}</p></div>{isAdmin && <button disabled={busy || state.pending === 0} onClick={() => void sealBlock()}><Plus />{es ? "Sellar bloque" : "Seal block"}</button>}</div>
