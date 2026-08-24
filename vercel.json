@@ -1,5 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
-  "buildCommand": "npx next build"
+  "framework": null,
+  "buildCommand": null,
+  "outputDirectory": "public",
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://iris-secure-access.taylor-667.chatgpt.site/$1",
+      "permanent": false
+    }
+  ]
 }
