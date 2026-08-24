@@ -14,7 +14,7 @@ export async function POST() {
     userDisplayName: user.displayName || user.email,
     attestationType: "none",
     excludeCredentials: existing.map(item => ({ id: item.id, transports: JSON.parse(item.transports) })),
-    authenticatorSelection: { authenticatorAttachment: "platform", residentKey: "required", userVerification: "required" },
+    authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
   });
   await storeChallenge(user.email, "REGISTER", options.challenge);
   return Response.json(options);
