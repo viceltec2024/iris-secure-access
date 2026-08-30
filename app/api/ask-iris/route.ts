@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
+import { enforceRateLimit } from "../../../lib/rate-limit";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { devices, securityAlerts } from "../../../db/schema";
@@ -14,6 +15,11 @@ export async function POST(request: Request) {
   if (!identity) return Response.json({ error: "Your IRIS session has expired. Sign in again." }, { status: 401 });
   const user = await provisionIrisUser(identity);
   if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
+
+  if (!(await enforceRateLimit(`ask-iris:${user.email}`, 20, 60 * 1000))) {
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "DENIED", { reason: "rate_limited" });
+    return Response.json({ error: "Demasiadas consultas. Espera un momento." }, { status: 429, headers: { "Retry-After": "60" } });
+  }
 
   let body: { messages?: IncomingMessage[]; context?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid request." }, { status: 400 }); }

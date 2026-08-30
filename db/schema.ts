@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -21,7 +21,10 @@ export const auditEvents = sqliteTable("audit_events", {
   previousHash: text("previous_hash"),
   eventHash: text("event_hash"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [
+  index("audit_events_actor_email_idx").on(table.actorEmail),
+  index("audit_events_created_at_idx").on(table.createdAt),
+]);
 
 export const incidentStates = sqliteTable("incident_states", {
   incidentId: text("incident_id").primaryKey(),
@@ -54,7 +57,11 @@ export const devices = sqliteTable("devices", {
   telemetry: text("telemetry").notNull().default("{}"),
   lastSeenAt: text("last_seen_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [uniqueIndex("devices_enrollment_code_unique").on(table.enrollmentCode)]);
+}, (table) => [
+  uniqueIndex("devices_enrollment_code_unique").on(table.enrollmentCode),
+  index("devices_owner_email_idx").on(table.ownerEmail),
+  index("devices_agent_token_hash_idx").on(table.agentTokenHash),
+]);
 
 export const trustedApplications = sqliteTable("trusted_applications", {
   id: text("id").primaryKey(),
@@ -77,7 +84,11 @@ export const securityAlerts = sqliteTable("security_alerts", {
   lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   resolvedAt: text("resolved_at"),
   updatedBy: text("updated_by"),
-}, (table) => [uniqueIndex("security_alerts_fingerprint_unique").on(table.fingerprint)]);
+}, (table) => [
+  uniqueIndex("security_alerts_fingerprint_unique").on(table.fingerprint),
+  index("security_alerts_device_id_idx").on(table.deviceId),
+  index("security_alerts_owner_email_idx").on(table.ownerEmail),
+]);
 
 export const agentRequestNonces = sqliteTable("agent_request_nonces", {
   nonce: text("nonce").primaryKey(),
@@ -115,7 +126,10 @@ export const passkeyCredentials = sqliteTable("passkey_credentials", {
   label: text("label").notNull().default("Touch ID"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   lastUsedAt: text("last_used_at"),
-}, (table) => [uniqueIndex("passkey_owner_credential_unique").on(table.ownerEmail, table.id)]);
+}, (table) => [
+  uniqueIndex("passkey_owner_credential_unique").on(table.ownerEmail, table.id),
+  index("passkey_credentials_owner_email_idx").on(table.ownerEmail),
+]);
 
 export const passkeyChallenges = sqliteTable("passkey_challenges", {
   id: text("id").primaryKey(),
