@@ -53,6 +53,17 @@ export async function canAttemptPassword(ownerEmail: string) {
   return row.count < ATTEMPT_LIMIT;
 }
 
+export async function changePassword(ownerEmail: string, currentPassword: string, newPassword: string) {
+  if (!(await passwordConfigured(ownerEmail))) throw new Error("No se ha configurado ninguna contraseña de IRIS.");
+  if (!(await verifyPassword(ownerEmail, currentPassword))) throw new Error("La contraseña actual es incorrecta.");
+  if (newPassword.length < 12 || newPassword.length > 128) throw new Error("La contraseña debe tener entre 12 y 128 caracteres.");
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const passwordHash = await derive(newPassword, salt, PASSWORD_ITERATIONS);
+  await getDb().update(userPasswords)
+    .set({ passwordHash: toHex(passwordHash), salt: toHex(salt), iterations: PASSWORD_ITERATIONS, updatedAt: new Date().toISOString() })
+    .where(eq(userPasswords.ownerEmail, ownerEmail));
+}
+
 export async function verifyPassword(ownerEmail: string, password: string) {
   const db = getDb();
   const key = `password:${ownerEmail}`;

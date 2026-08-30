@@ -34,18 +34,19 @@ export async function logAudit(actorEmail: string, action: string, resource: str
   await db.insert(auditEvents).values({ actorEmail, action, resource, outcome, metadata: normalizedMetadata, previousHash, eventHash });
 }
 
-export async function listRecentAudit(actorEmail: string, role: IrisRole) {
+export async function listRecentAudit(actorEmail: string, role: IrisRole, limit = 20) {
   const db = getDb();
-  if (role === "ADMIN") return db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(12);
-  return db.select().from(auditEvents).where(and(eq(auditEvents.actorEmail, actorEmail))).orderBy(desc(auditEvents.createdAt)).limit(12);
+  const cap = Math.min(limit, 100);
+  if (role === "ADMIN") return db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(cap);
+  return db.select().from(auditEvents).where(and(eq(auditEvents.actorEmail, actorEmail))).orderBy(desc(auditEvents.createdAt)).limit(cap);
 }
 
-export async function listUsersForAdmin(actorEmail: string, role: IrisRole) {
+export async function listUsersForAdmin(actorEmail: string, role: IrisRole, limit = 50, offset = 0) {
   if (role !== "ADMIN") {
     await logAudit(actorEmail, "USER_LIST_VIEWED", "user_directory", "DENIED");
     throw new Error("Administrator access required");
   }
-  return getDb().select().from(users).orderBy(desc(users.lastSeenAt));
+  return getDb().select().from(users).orderBy(desc(users.lastSeenAt)).limit(Math.min(limit, 200)).offset(offset);
 }
 
 export async function listUserAuditForAdmin(actorEmail: string, role: IrisRole, targetEmail?: string) {

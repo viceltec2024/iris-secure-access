@@ -1,6 +1,7 @@
 import { eq, lt } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { agentRequestNonces, devices, rateLimits, remediationPlans, securityAlerts, trustedApplications } from "../../../../db/schema";
+import { agentRequestNonces, devices, remediationPlans, securityAlerts, trustedApplications } from "../../../../db/schema";
+import { enforceRateLimit } from "../../../../lib/rate-limit";
 
 const MAX_BODY_BYTES = 32_768;
 const TOKEN_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
@@ -60,19 +61,6 @@ function secureEqual(a: string, b: string) {
   let difference = 0;
   for (let index = 0; index < a.length; index += 1) difference |= a.charCodeAt(index) ^ b.charCodeAt(index);
   return difference === 0;
-}
-
-async function enforceRateLimit(key: string, limit: number, windowMs: number) {
-  const db = getDb();
-  const now = new Date();
-  const [row] = await db.select().from(rateLimits).where(eq(rateLimits.key, key)).limit(1);
-  if (!row || Date.parse(row.expiresAt) <= now.getTime()) {
-    await db.insert(rateLimits).values({ key, count: 1, expiresAt: new Date(now.getTime() + windowMs).toISOString() }).onConflictDoUpdate({ target: rateLimits.key, set: { count: 1, expiresAt: new Date(now.getTime() + windowMs).toISOString() } });
-    return true;
-  }
-  if (row.count >= limit) return false;
-  await db.update(rateLimits).set({ count: row.count + 1 }).where(eq(rateLimits.key, key));
-  return true;
 }
 
 function cleanTelemetry(input: Telemetry): Telemetry {
