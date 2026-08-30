@@ -1,6 +1,5 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../../lib/authz";
-import { issueBiometricSession } from "../../../../lib/passkeys";
 import { canAttemptPassword, changePassword } from "../../../../lib/passwords";
 
 export async function POST(request: Request) {
@@ -20,7 +19,6 @@ export async function POST(request: Request) {
 
   try {
     await changePassword(user.email, body.currentPassword, body.newPassword);
-    await issueBiometricSession(user.email);
     await logAudit(user.email, "IRIS_PASSWORD_CHANGED", "step_up_access", "SUCCESS");
     return Response.json({ changed: true });
   } catch (error) {
