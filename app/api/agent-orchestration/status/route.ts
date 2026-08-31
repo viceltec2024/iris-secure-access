@@ -21,23 +21,17 @@ function statusKey(agentId: string) {
   return `${STATUS_KEY_PREFIX}${agentId}`;
 }
 
-function parseState(value: string | null | undefined): AgentState | null {
-  if (!value) return null;
+function parseStoredValue(value: string | null | undefined): { status: AgentState | null; updatedAt: string | null; updatedBy: string | null } {
+  if (!value) return { status: null, updatedAt: null, updatedBy: null };
   try {
-    const parsed = JSON.parse(value) as { status?: string };
-    return ["QUEUED", "RUNNING", "DONE", "FAILED"].includes(parsed.status || "") ? parsed.status as AgentState : null;
+    const parsed = JSON.parse(value) as { status?: string; updatedAt?: string; updatedBy?: string };
+    return {
+      status: ["QUEUED", "RUNNING", "DONE", "FAILED"].includes(parsed.status || "") ? parsed.status as AgentState : null,
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+      updatedBy: typeof parsed.updatedBy === "string" ? parsed.updatedBy : null,
+    };
   } catch {
-    return null;
-  }
-}
-
-function parseMeta(value: string | null | undefined): { updatedAt: string | null; updatedBy: string | null } {
-  if (!value) return { updatedAt: null, updatedBy: null };
-  try {
-    const parsed = JSON.parse(value) as { updatedAt?: string; updatedBy?: string };
-    return { updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null, updatedBy: typeof parsed.updatedBy === "string" ? parsed.updatedBy : null };
-  } catch {
-    return { updatedAt: null, updatedBy: null };
+    return { status: null, updatedAt: null, updatedBy: null };
   }
 }
 
@@ -54,10 +48,8 @@ export async function GET() {
   const rows = await getDb().select().from(appSettings).where(inArray(appSettings.key, keys));
   const mapped = new Map(rows.map(row => [row.key, row.value]));
   const agents = AGENTS.map(agent => {
-    const raw = mapped.get(statusKey(agent.id));
-    const status = parseState(raw) || agent.defaultState;
-    const meta = parseMeta(raw);
-    return { id: agent.id, role: agent.role, status, updatedAt: meta.updatedAt, updatedBy: meta.updatedBy };
+    const parsed = parseStoredValue(mapped.get(statusKey(agent.id)));
+    return { id: agent.id, role: agent.role, status: parsed.status || agent.defaultState, updatedAt: parsed.updatedAt, updatedBy: parsed.updatedBy };
   });
   return Response.json({ enabled: true, refreshedAt: new Date().toISOString(), agents });
 }
@@ -73,8 +65,9 @@ export async function PATCH(request: Request) {
   if (!AGENTS.some(agent => agent.id === agentId)) return Response.json({ error: "Invalid agent id" }, { status: 400 });
   if (!["QUEUED", "RUNNING", "DONE", "FAILED"].includes(status)) return Response.json({ error: "Invalid status" }, { status: 400 });
 
-  const value = JSON.stringify({ status, updatedAt: new Date().toISOString(), updatedBy: user.email });
-  await getDb().insert(appSettings).values({ key: statusKey(agentId), value, updatedBy: user.email, updatedAt: new Date().toISOString() }).onConflictDoUpdate({ target: appSettings.key, set: { value, updatedBy: user.email, updatedAt: new Date().toISOString() } });
+  const now = new Date().toISOString();
+  const value = JSON.stringify({ status, updatedAt: now, updatedBy: user.email });
+  await getDb().insert(appSettings).values({ key: statusKey(agentId), value, updatedBy: user.email, updatedAt: now }).onConflictDoUpdate({ target: appSettings.key, set: { value, updatedBy: user.email, updatedAt: now } });
   await logAudit(user.email, "AGENT_RUNTIME_STATUS_UPDATED", agentId, "SUCCESS", { status });
   return Response.json({ ok: true });
 }
