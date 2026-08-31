@@ -2,7 +2,7 @@ import { inArray } from "drizzle-orm";
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { getDb } from "../../../../db";
 import { appSettings } from "../../../../db/schema";
-import { logAudit, provisionIrisUser } from "../../../../lib/authz";
+import { findIrisUser, logAudit } from "../../../../lib/authz";
 
 type AgentState = "QUEUED" | "RUNNING" | "DONE" | "FAILED";
 type AgentConfig = { id: string; role: string; defaultState: AgentState };
@@ -35,13 +35,13 @@ function parseStoredValue(value: string | null | undefined): { status: AgentStat
   }
 }
 
-async function currentUser() {
+async function resolveCurrentUser() {
   const identity = await getChatGPTUser();
-  return identity ? provisionIrisUser(identity) : null;
+  return identity ? findIrisUser(identity) : null;
 }
 
 export async function GET() {
-  const user = await currentUser();
+  const user = await resolveCurrentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const keys = AGENTS.map(agent => statusKey(agent.id));
@@ -55,7 +55,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const user = await currentUser();
+  const user = await resolveCurrentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
   if (user.role !== "ADMIN") return Response.json({ error: "Administrator approval required" }, { status: 403 });
 

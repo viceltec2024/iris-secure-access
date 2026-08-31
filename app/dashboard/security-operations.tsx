@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, ChartLineUp, CheckCircle, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
@@ -61,6 +61,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [approvingApplication, setApprovingApplication] = useState<string | null>(null);
   const [agentRuntime, setAgentRuntime] = useState<AgentRuntime[]>([]);
+  const [updatingAgentId, setUpdatingAgentId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadSecurityState = () => void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[]; alerts?: SecurityAlert[]; remediations?: RemediationPlan[] }) => {
@@ -75,14 +76,17 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     return () => window.clearInterval(refreshTimer);
   }, []);
 
-  useEffect(() => {
-    const loadAgentRuntime = () => void fetch("/api/agent-orchestration/status").then(response => response.json()).then((data: { agents?: AgentRuntime[] }) => {
-      if (Array.isArray(data.agents)) setAgentRuntime(data.agents);
-    }).catch(() => undefined);
-    loadAgentRuntime();
-    const runtimeTimer = window.setInterval(loadAgentRuntime, 5_000);
-    return () => window.clearInterval(runtimeTimer);
+  const loadAgentRuntime = useCallback(async () => {
+    const response = await fetch("/api/agent-orchestration/status");
+    const data = await response.json() as { agents?: AgentRuntime[] };
+    if (Array.isArray(data.agents)) setAgentRuntime(data.agents);
   }, []);
+
+  useEffect(() => {
+    void loadAgentRuntime().catch(() => undefined);
+    const runtimeTimer = window.setInterval(() => void loadAgentRuntime().catch(() => undefined), 5_000);
+    return () => window.clearInterval(runtimeTimer);
+  }, [loadAgentRuntime]);
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
   const open = incidents.filter(i => i.status !== "Contained").length;
@@ -117,9 +121,19 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   }
 
   async function setAgentStatus(agentId: string, status: AgentRuntimeState) {
-    const response = await fetch("/api/agent-orchestration/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentId, status }) });
-    if (!response.ok) return;
-    setAgentRuntime(current => current.map(agent => agent.id === agentId ? { ...agent, status, updatedAt: new Date().toISOString(), updatedBy: user.email } : agent));
+    setUpdatingAgentId(agentId);
+    try {
+      const response = await fetch("/api/agent-orchestration/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentId, status }) });
+      if (!response.ok) {
+        window.alert(language === "es" ? "No se pudo actualizar el estado del agente." : "The agent status could not be updated.");
+        return;
+      }
+      await loadAgentRuntime().catch(() => undefined);
+    } catch {
+      window.alert(language === "es" ? "No se pudo actualizar el estado del agente." : "The agent status could not be updated.");
+    } finally {
+      setUpdatingAgentId(null);
+    }
   }
 
   async function rotateEnrollmentCode(deviceId: string) {
@@ -235,7 +249,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
             <span className={`agent-state ${agent.status.toLowerCase()}`}>{agent.status}</span>
             {agent.updatedAt && <time>{new Date(agent.updatedAt).toLocaleTimeString(language)}</time>}
             {user.role === "ADMIN" && <div className="agent-actions">
-              {(["QUEUED", "RUNNING", "DONE", "FAILED"] as AgentRuntimeState[]).map(nextStatus => <button key={nextStatus} className={agent.status === nextStatus ? "active" : ""} onClick={() => void setAgentStatus(agent.id, nextStatus)}>{nextStatus}</button>)}
+              {(["QUEUED", "RUNNING", "DONE", "FAILED"] as AgentRuntimeState[]).map(nextStatus => <button key={nextStatus} disabled={updatingAgentId === agent.id} className={agent.status === nextStatus ? "active" : ""} onClick={() => void setAgentStatus(agent.id, nextStatus)}>{updatingAgentId === agent.id ? "..." : nextStatus}</button>)}
             </div>}
           </article>)}
         </div>
