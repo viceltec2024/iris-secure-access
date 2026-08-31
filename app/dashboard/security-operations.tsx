@@ -13,6 +13,8 @@ type Device = { id: string; name: string; platform: string; status: "PENDING" | 
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
 type SecurityAlert = { id: string; deviceId: string; ownerEmail: string; fingerprint: string; code: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; status: "NEW" | "ACKNOWLEDGED" | "RESOLVED"; evidence: string; firstSeenAt: string; lastSeenAt: string; resolvedAt: string | null; updatedBy: string | null };
 type RemediationPlan = { id: string; alertId: string; deviceId: string; ownerEmail: string; actionCode: string; status: "VERIFYING" | "VERIFIED" | "CANCELLED"; approvedBy: string; approvedAt: string; lastCheckedAt: string | null; verifiedAt: string | null };
+type AgentRuntimeState = "QUEUED" | "RUNNING" | "DONE" | "FAILED";
+type AgentRuntime = { id: string; role: string; status: AgentRuntimeState; updatedAt: string | null; updatedBy: string | null };
 
 function remediationGuide(code: string, language: Language) {
   const es = language === "es";
@@ -58,6 +60,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [creatingDevice, setCreatingDevice] = useState(false);
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [approvingApplication, setApprovingApplication] = useState<string | null>(null);
+  const [agentRuntime, setAgentRuntime] = useState<AgentRuntime[]>([]);
 
   useEffect(() => {
     const loadSecurityState = () => void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[]; alerts?: SecurityAlert[]; remediations?: RemediationPlan[] }) => {
@@ -70,6 +73,15 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     loadSecurityState();
     const refreshTimer = window.setInterval(loadSecurityState, 30_000);
     return () => window.clearInterval(refreshTimer);
+  }, []);
+
+  useEffect(() => {
+    const loadAgentRuntime = () => void fetch("/api/agent-orchestration/status").then(response => response.json()).then((data: { agents?: AgentRuntime[] }) => {
+      if (Array.isArray(data.agents)) setAgentRuntime(data.agents);
+    }).catch(() => undefined);
+    loadAgentRuntime();
+    const runtimeTimer = window.setInterval(loadAgentRuntime, 5_000);
+    return () => window.clearInterval(runtimeTimer);
   }, []);
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
@@ -102,6 +114,12 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   async function createDeviceEnrollment() {
     setCreatingDevice(true);
     try { const response = await fetch("/api/security-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "device_enrollment", name: "My Mac", platform: "macOS" }) }); const data = await response.json() as { device?: Device }; if (response.ok && data.device) setDevices(current => [data.device!, ...current]); } finally { setCreatingDevice(false); }
+  }
+
+  async function setAgentStatus(agentId: string, status: AgentRuntimeState) {
+    const response = await fetch("/api/agent-orchestration/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentId, status }) });
+    if (!response.ok) return;
+    setAgentRuntime(current => current.map(agent => agent.id === agentId ? { ...agent, status, updatedAt: new Date().toISOString(), updatedBy: user.email } : agent));
   }
 
   async function rotateEnrollmentCode(deviceId: string) {
@@ -199,6 +217,29 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       </section>
 
       <div className="provenance-legend"><span><b>REAL</b>{language === "es" ? "Reportado por un agente autorizado" : "Reported by an authorized agent"}</span><span><b>SIMULATION</b>{language === "es" ? "Datos de entrenamiento" : "Training data"}</span><span><b>NO VERIFICADO</b>{language === "es" ? "Sin reporte del agente" : "No agent report"}</span></div>
+
+      <section className="agent-live-monitor">
+        <div className="module-toolbar">
+          <div>
+            <h2>{language === "es" ? "Orquestación de agentes (en vivo)" : "Live agent orchestration"}</h2>
+            <p>{language === "es" ? "Estados actualizados automáticamente cada 5 segundos." : "Statuses auto-refresh every 5 seconds."}</p>
+          </div>
+          <span className="live-pill"><i />LIVE</span>
+        </div>
+        <div className="agent-runtime-grid">
+          {agentRuntime.map(agent => <article key={agent.id}>
+            <div>
+              <strong>{agent.role}</strong>
+              <small>{agent.id}</small>
+            </div>
+            <span className={`agent-state ${agent.status.toLowerCase()}`}>{agent.status}</span>
+            {agent.updatedAt && <time>{new Date(agent.updatedAt).toLocaleTimeString(language)}</time>}
+            {user.role === "ADMIN" && <div className="agent-actions">
+              {(["QUEUED", "RUNNING", "DONE", "FAILED"] as AgentRuntimeState[]).map(nextStatus => <button key={nextStatus} className={agent.status === nextStatus ? "active" : ""} onClick={() => void setAgentStatus(agent.id, nextStatus)}>{nextStatus}</button>)}
+            </div>}
+          </article>)}
+        </div>
+      </section>
 
       <section className="soc-grid">
         <div className="incident-card">
