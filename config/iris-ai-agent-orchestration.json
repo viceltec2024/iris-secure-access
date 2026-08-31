@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "name": "iris-secure-access-agent-orchestration",
+  "description": "Recommended 5-agent setup for secure and fast delivery in IRIS.",
+  "rules": {
+    "allowParallelByDefault": true,
+    "forbidSameFileConcurrentEdits": true,
+    "preferSmallPullRequests": true,
+    "requireValidationChecklist": true,
+    "blockMergeOnCriticalSecurityFindings": true
+  },
+  "agents": [
+    {
+      "id": "architect",
+      "role": "Agente Arquitecto",
+      "modelOptions": [
+        "claude-opus-5",
+        "gpt-5.6-terra"
+      ],
+      "responsibilities": [
+        "Define diseño técnico",
+        "Define contratos",
+        "Define criterios de aceptación"
+      ]
+    },
+    {
+      "id": "backend-auth",
+      "role": "Agente Backend/Auth",
+      "modelOptions": [
+        "claude-sonnet-5"
+      ],
+      "responsibilities": [
+        "Implementa lógica de acceso",
+        "Implementa sesión",
+        "Implementa reglas",
+        "Implementa APIs"
+      ]
+    },
+    {
+      "id": "frontend-ux",
+      "role": "Agente Frontend/UX",
+      "modelOptions": [
+        "gpt-5.5",
+        "claude-sonnet-4.6"
+      ],
+      "responsibilities": [
+        "Implementa interfaz",
+        "Implementa flujos de login",
+        "Implementa estados de seguridad"
+      ]
+    },
+    {
+      "id": "qa-ci",
+      "role": "Agente QA/CI",
+      "agentType": "task",
+      "responsibilities": [
+        "Ejecuta lint",
+        "Ejecuta build",
+        "Ejecuta tests",
+        "Valida regresiones",
+        "Genera evidencia de calidad"
+      ]
+    },
+    {
+      "id": "security",
+      "role": "Agente Security",
+      "agentType": "security-review",
+      "responsibilities": [
+        "Revisa vulnerabilidades explotables",
+        "Ejecuta codeql_checker",
+        "Bloquea merge con hallazgos críticos"
+      ]
+    }
+  ],
+  "workflow": [
+    {
+      "step": 1,
+      "owner": "architect",
+      "action": "Divide tareas y define criterios"
+    },
+    {
+      "step": 2,
+      "parallelOwners": [
+        "backend-auth",
+        "frontend-ux"
+      ],
+      "action": "Implementación paralela sin editar el mismo archivo"
+    },
+    {
+      "step": 3,
+      "owner": "qa-ci",
+      "action": "Validación de lint/build/tests"
+    },
+    {
+      "step": 4,
+      "owner": "security",
+      "action": "Security review y CodeQL"
+    },
+    {
+      "step": 5,
+      "owner": "architect",
+      "action": "Decisión final de merge"
+    }
+  ],
+  "pullRequestChecklist": [
+    "Cambios acotados y coherentes",
+    "Sin edición concurrente del mismo archivo",
+    "Lint, build y tests en verde",
+    "Sin secretos expuestos",
+    "Security review y CodeQL sin alertas críticas"
+  ]
+}

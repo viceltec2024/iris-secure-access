@@ -29,6 +29,22 @@ Scripts that need writable project-scoped home, npm, XDG, and temporary paths us
 - `db/schema.ts` starts intentionally empty
 - `examples/d1/` contains an optional D1 example surface
 - `drizzle.config.ts` supports local migration generation when needed
+- `config/iris-ai-agent-orchestration.json` defines the recommended 5-agent IRIS workflow for secure and fast delivery
+
+## IRIS AI Multi-Agent Operating Model
+
+IRIS now includes a versioned 5-agent orchestration profile at:
+
+- `config/iris-ai-agent-orchestration.json`
+
+This profile codifies:
+
+- agent roles (Architect, Backend/Auth, Frontend/UX, QA/CI, Security)
+- recommended model options per role
+- execution flow: Architect → Backend/Frontend in parallel → QA/CI → Security → Merge
+- guardrails: no concurrent edits on the same file, small PRs, required validation checklist, and merge blocking on critical security findings
+
+Use this file as the single source of truth for role assignment and PR validation when coordinating parallel AI contributors.
 
 ## Workspace Auth Headers
 
