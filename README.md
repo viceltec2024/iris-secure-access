@@ -46,6 +46,10 @@ This profile codifies:
 
 Use this file as the single source of truth for role assignment and PR validation when coordinating parallel AI contributors.
 
+Activation status:
+
+- `enabled: true` in `config/iris-ai-agent-orchestration.json` means the 5-agent operating model is active for this repository configuration.
+
 ## Workspace Auth Headers
 
 OpenAI workspace sites can read the current user's email from

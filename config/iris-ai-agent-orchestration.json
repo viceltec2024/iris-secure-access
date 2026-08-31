@@ -2,6 +2,7 @@
   "version": 1,
   "name": "iris-secure-access-agent-orchestration",
   "description": "Recommended 5-agent setup for secure and fast delivery in IRIS.",
+  "enabled": true,
   "rules": {
     "allowParallelByDefault": true,
     "forbidSameFileConcurrentEdits": true,
