@@ -3,6 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { rateLimits, userPasswords } from "../db/schema";
+import { enforceRateLimit } from "./rate-limit";
 
 const PASSWORD_ITERATIONS = 600_000;
 const ATTEMPT_LIMIT = 5;
@@ -42,15 +43,9 @@ export async function createPassword(ownerEmail: string, password: string) {
 }
 
 export async function canAttemptPassword(ownerEmail: string) {
-  const db = getDb();
-  const key = `password:${ownerEmail}`;
-  const now = Date.now();
-  const [row] = await db.select().from(rateLimits).where(eq(rateLimits.key, key)).limit(1);
-  if (!row || Date.parse(row.expiresAt) <= now) {
-    await db.insert(rateLimits).values({ key, count: 0, expiresAt: new Date(now + ATTEMPT_WINDOW_MS).toISOString() }).onConflictDoUpdate({ target: rateLimits.key, set: { count: 0, expiresAt: new Date(now + ATTEMPT_WINDOW_MS).toISOString() } });
-    return true;
-  }
-  return row.count < ATTEMPT_LIMIT;
+  // Atomically checks-and-consumes one attempt slot so concurrent requests
+  // cannot race past the limit (see lib/rate-limit.ts for the same pattern).
+  return enforceRateLimit(`password:${ownerEmail}`, ATTEMPT_LIMIT, ATTEMPT_WINDOW_MS);
 }
 
 export async function changePassword(ownerEmail: string, currentPassword: string, newPassword: string) {
@@ -66,15 +61,12 @@ export async function changePassword(ownerEmail: string, currentPassword: string
 
 export async function verifyPassword(ownerEmail: string, password: string) {
   const db = getDb();
-  const key = `password:${ownerEmail}`;
   const [record] = await db.select().from(userPasswords).where(eq(userPasswords.ownerEmail, ownerEmail)).limit(1);
   if (!record) return false;
   const candidate = await derive(password.slice(0, 128), fromHex(record.salt), record.iterations);
   const verified = secureEqual(candidate, fromHex(record.passwordHash));
-  if (verified) await db.delete(rateLimits).where(eq(rateLimits.key, key));
-  else {
-    const [row] = await db.select().from(rateLimits).where(eq(rateLimits.key, key)).limit(1);
-    await db.update(rateLimits).set({ count: (row?.count || 0) + 1 }).where(eq(rateLimits.key, key));
-  }
+  // The attempt slot is already consumed atomically by canAttemptPassword;
+  // only clear it here on success so legitimate users aren't left rate-limited.
+  if (verified) await db.delete(rateLimits).where(eq(rateLimits.key, `password:${ownerEmail}`));
   return verified;
 }
