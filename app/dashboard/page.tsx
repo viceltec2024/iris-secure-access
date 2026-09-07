@@ -5,6 +5,7 @@ import SecurityOperations from "./security-operations";
 import PasskeyGate from "./passkey-gate";
 import { isBiometricVerified, passkeysFor } from "../../lib/passkeys";
 import { passwordConfigured } from "../../lib/passwords";
+import { devAuthEnabled } from "../dev-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +20,10 @@ export default async function Dashboard() {
   const events = await listRecentAudit(user.email, user.role);
   const passkeyEnrolled = (await passkeysFor(user.email)).length > 0;
   const hasPassword = await passwordConfigured(user.email);
-  const verified = passkeyEnrolled || hasPassword ? await isBiometricVerified(user.email) : false;
-  const signOutPath = chatGPTSignOutPath("/");
-  return <PasskeyGate passkeyEnrolled={passkeyEnrolled} passwordConfigured={hasPassword} verified={verified} signOutPath={signOutPath}>
+  const skipStepUp = devAuthEnabled();
+  const verified = skipStepUp ? true : (passkeyEnrolled || hasPassword ? await isBiometricVerified(user.email) : false);
+  const signOutPath = skipStepUp ? "/dev/sign-out?return_to=/" : chatGPTSignOutPath("/");
+  return <PasskeyGate passkeyEnrolled={passkeyEnrolled} passwordConfigured={hasPassword} verified={verified} signOutPath={signOutPath} devSkipStepUp={skipStepUp}>
     <SecurityOperations user={{ email: user.email, displayName: user.displayName || user.email, role: user.role }} auditCount={events.length} signOutPath={signOutPath} />
   </PasskeyGate>;
 }

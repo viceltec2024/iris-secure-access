@@ -1,11 +1,13 @@
 import { chatGPTSignInPath, getChatGPTUser } from "./chatgpt-auth";
 import { Buildings, LockKey, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
+import { devAuthEnabled } from "./dev-auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const user = await getChatGPTUser();
-  const destination = user ? "/dashboard" : chatGPTSignInPath("/dashboard");
+  const localAccess = !user && devAuthEnabled();
+  const destination = user ? "/dashboard" : localAccess ? "/dev/sign-in?return_to=/dashboard" : chatGPTSignInPath("/dashboard");
 
   return (
     <main className="auth-shell">
@@ -34,7 +36,7 @@ export default async function Home() {
           <div className="auth-form platform-auth">
             <div className="heading">
               <h1>Secure access</h1>
-              <p>Sign in with your ChatGPT identity. OpenAI protects your account and handles multi-factor authentication.</p>
+              <p>{localAccess ? "Local development access is enabled. Enter the IRIS workspace without ChatGPT sign-in." : "Sign in with your ChatGPT identity. OpenAI protects your account and handles multi-factor authentication."}</p>
             </div>
 
             <div className="security-summary">
@@ -46,7 +48,7 @@ export default async function Home() {
 
             <a className="primary-button auth-link" href={destination}>
               <Buildings weight="duotone" />
-              <span>{user ? "Enter IRIS workspace" : "Continue with ChatGPT"}</span>
+              <span>{user ? "Enter IRIS workspace" : localAccess ? "Enter IRIS workspace" : "Continue with ChatGPT"}</span>
             </a>
             <p className="auth-disclosure">By continuing, IRIS receives only your verified account identity. Permissions are enforced on the server.</p>
           </div>

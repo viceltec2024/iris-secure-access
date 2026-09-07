@@ -4,9 +4,9 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { Fingerprint, Key, LockKey, ShieldCheck } from "@phosphor-icons/react";
 
-type Props = { passkeyEnrolled: boolean; passwordConfigured: boolean; verified: boolean; signOutPath: string; children: ReactNode };
+type Props = { passkeyEnrolled: boolean; passwordConfigured: boolean; verified: boolean; signOutPath: string; devSkipStepUp?: boolean; children: ReactNode };
 
-export default function PasskeyGate({ passkeyEnrolled, passwordConfigured, verified, signOutPath, children }: Props) {
+export default function PasskeyGate({ passkeyEnrolled, passwordConfigured, verified, signOutPath, devSkipStepUp = false, children }: Props) {
   const [platformAuthenticatorAvailable, setPlatformAuthenticatorAvailable] = useState<boolean | null>(null);
   const [webAuthnAvailable, setWebAuthnAvailable] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -24,6 +24,8 @@ export default function PasskeyGate({ passkeyEnrolled, passwordConfigured, verif
       .then(setPlatformAuthenticatorAvailable)
       .catch(() => setPlatformAuthenticatorAvailable(false));
   }, []);
+
+  if (devSkipStepUp) return <>{children}</>;
 
   async function runPasskey(mode: "register" | "auth") {
     setBusy(true); setError("");

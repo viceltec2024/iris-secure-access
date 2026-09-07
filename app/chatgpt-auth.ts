@@ -1,5 +1,6 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { DEV_IDENTITY_COOKIE, devAuthEnabled } from "./dev-auth";
 
 export type ChatGPTUser = {
   displayName: string;
@@ -19,7 +20,16 @@ const CALLBACK_PATH = "/callback";
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
   const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!email) return null;
+  if (!email) {
+    if (devAuthEnabled()) {
+      const rawDevEmail = (await cookies()).get(DEV_IDENTITY_COOKIE)?.value;
+      const devEmail = rawDevEmail ? safeDecodeURIComponent(rawDevEmail) : null;
+      if (devEmail) {
+        return { displayName: devEmail, email: devEmail.toLowerCase(), fullName: null };
+      }
+    }
+    return null;
+  }
 
   const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
   const fullName =
@@ -73,7 +83,9 @@ function isReservedAuthPath(pathname: string): boolean {
   return (
     pathname === SIGN_IN_PATH ||
     pathname === SIGN_OUT_PATH ||
-    pathname === CALLBACK_PATH
+    pathname === CALLBACK_PATH ||
+    pathname === "/dev/sign-in" ||
+    pathname === "/dev/sign-out"
   );
 }
 
