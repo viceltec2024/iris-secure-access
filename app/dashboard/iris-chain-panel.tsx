@@ -65,9 +65,17 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     void refresh();
     const chainTimer = window.setInterval(() => void refresh(), 5_000);
     void fetch("/api/iris-token").then(response => response.ok ? response.json() : null).then(data => setTokenAddress(data?.address || "")).catch(() => undefined);
-    void getMetaMaskClient().then(client => {
-      setWallet(client.getAccount() || "");
-      setWalletChain(client.getChainId() || "");
+    void fetch("/api/wallet-session").then(response => response.ok ? response.json() : null).then((session: { connected?: boolean; address?: string; chainId?: string } | null) => {
+      if (session?.connected && session.address) {
+        setWallet(session.address);
+        setWalletChain(session.chainId || BASE_MAINNET_CHAIN_ID);
+        setNotice(es ? "Wallet de Base conectada." : "Base wallet connected.");
+        return;
+      }
+      return getMetaMaskClient().then(client => {
+        setWallet(client.getAccount() || "");
+        setWalletChain(client.getChainId() || "");
+      });
     }).catch(() => undefined);
     return () => { unsubscribe(); window.clearInterval(chainTimer); };
   }, []);
@@ -103,6 +111,15 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     if (response.ok) await refresh();
     setBusy(false);
   }
+  async function connectLocalWallet() {
+    const response = await fetch("/api/wallet-session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "connect" }) });
+    const session = await response.json() as { connected?: boolean; address?: string; chainId?: string; error?: string };
+    if (!response.ok || !session.address) throw new Error(session.error || "local wallet");
+    setWallet(session.address);
+    setWalletChain(session.chainId || BASE_MAINNET_CHAIN_ID);
+    setShowWalletQr(false); setWalletQrImage("");
+    setNotice(es ? "Wallet local de Base conectada." : "Local Base wallet connected.");
+  }
   async function connectWallet() {
     setWalletBusy(true); setShowWalletQr(true); setWalletQrImage(""); setNotice("");
     try {
@@ -123,8 +140,12 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       setShowWalletQr(false); setWalletQrImage("");
       setNotice(es ? "MetaMask conectado a Base Mainnet." : "MetaMask connected to Base Mainnet.");
     } catch (error) {
-      const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
-      setNotice(code === 4001 ? (es ? "Conexión cancelada en MetaMask." : "Connection cancelled in MetaMask.") : code === -32002 ? (es ? "Ya hay una solicitud abierta en MetaMask." : "A MetaMask request is already open.") : (es ? "No se pudo conectar con MetaMask." : "Could not connect to MetaMask."));
+      try {
+        await connectLocalWallet();
+      } catch {
+        const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
+        setNotice(code === 4001 ? (es ? "Conexión cancelada en MetaMask." : "Connection cancelled in MetaMask.") : code === -32002 ? (es ? "Ya hay una solicitud abierta en MetaMask." : "A MetaMask request is already open.") : (es ? "No se pudo conectar con MetaMask." : "Could not connect to MetaMask."));
+      }
     } finally { setWalletBusy(false); }
   }
   async function cancelWalletQr() {
@@ -133,8 +154,11 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   }
   async function disconnectWallet() {
     setWalletBusy(true);
-    try { const client = await getMetaMaskClient(); await client.disconnect(); setWallet(""); setWalletChain(""); setNotice(es ? "Wallet desconectada." : "Wallet disconnected."); }
-    finally { setWalletBusy(false); }
+    try {
+      await fetch("/api/wallet-session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "disconnect" }) }).catch(() => undefined);
+      try { const client = await getMetaMaskClient(); await client.disconnect(); } catch { /* Local sessions have no MetaMask client. */ }
+      setWallet(""); setWalletChain(""); setNotice(es ? "Wallet desconectada." : "Wallet disconnected.");
+    } finally { setWalletBusy(false); }
   }
   async function addIrisToken(address = tokenAddress) {
     if (!address) return;

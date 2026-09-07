@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, ChartLineUp, CheckCircle, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
@@ -13,6 +13,8 @@ type Device = { id: string; name: string; platform: string; status: "PENDING" | 
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
 type SecurityAlert = { id: string; deviceId: string; ownerEmail: string; fingerprint: string; code: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; status: "NEW" | "ACKNOWLEDGED" | "RESOLVED"; evidence: string; firstSeenAt: string; lastSeenAt: string; resolvedAt: string | null; updatedBy: string | null };
 type RemediationPlan = { id: string; alertId: string; deviceId: string; ownerEmail: string; actionCode: string; status: "VERIFYING" | "VERIFIED" | "CANCELLED"; approvedBy: string; approvedAt: string; lastCheckedAt: string | null; verifiedAt: string | null };
+type AgentRuntimeState = "QUEUED" | "RUNNING" | "DONE" | "FAILED";
+type AgentRuntime = { id: string; role: string; status: AgentRuntimeState; task?: string; updatedAt: string | null; updatedBy: string | null };
 
 function remediationGuide(code: string, language: Language) {
   const es = language === "es";
@@ -58,6 +60,9 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [creatingDevice, setCreatingDevice] = useState(false);
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [approvingApplication, setApprovingApplication] = useState<string | null>(null);
+  const [agentRuntime, setAgentRuntime] = useState<AgentRuntime[]>([]);
+  const [updatingAgentId, setUpdatingAgentId] = useState<string | null>(null);
+  const [startingAgents, setStartingAgents] = useState(false);
 
   useEffect(() => {
     const loadSecurityState = () => void fetch("/api/security-state").then(response => response.json()).then((data: { incidents?: { incidentId: string; status: Incident["status"] }[]; devices?: Device[]; actions?: ResponseAction[]; alerts?: SecurityAlert[]; remediations?: RemediationPlan[] }) => {
@@ -71,6 +76,18 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     const refreshTimer = window.setInterval(loadSecurityState, 30_000);
     return () => window.clearInterval(refreshTimer);
   }, []);
+
+  const loadAgentRuntime = useCallback(async () => {
+    const response = await fetch("/api/agent-orchestration/status");
+    const data = await response.json() as { agents?: AgentRuntime[] };
+    if (Array.isArray(data.agents)) setAgentRuntime(data.agents);
+  }, []);
+
+  useEffect(() => {
+    void loadAgentRuntime().catch(() => undefined);
+    const runtimeTimer = window.setInterval(() => void loadAgentRuntime().catch(() => undefined), 5_000);
+    return () => window.clearInterval(runtimeTimer);
+  }, [loadAgentRuntime]);
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
   const open = incidents.filter(i => i.status !== "Contained").length;
@@ -102,6 +119,34 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   async function createDeviceEnrollment() {
     setCreatingDevice(true);
     try { const response = await fetch("/api/security-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "device_enrollment", name: "My Mac", platform: "macOS" }) }); const data = await response.json() as { device?: Device }; if (response.ok && data.device) setDevices(current => [data.device!, ...current]); } finally { setCreatingDevice(false); }
+  }
+
+  async function startAgents() {
+    setStartingAgents(true);
+    try {
+      const response = await fetch("/api/agent-orchestration/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start" }) });
+      const data = await response.json() as { agents?: AgentRuntime[] };
+      if (response.ok && data.agents) setAgentRuntime(data.agents);
+      else window.alert(language === "es" ? "No se pudieron poner los agentes a trabajar." : "The agents could not be started.");
+    } finally {
+      setStartingAgents(false);
+    }
+  }
+
+  async function setAgentStatus(agentId: string, status: AgentRuntimeState) {
+    setUpdatingAgentId(agentId);
+    try {
+      const response = await fetch("/api/agent-orchestration/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentId, status }) });
+      if (!response.ok) {
+        window.alert(language === "es" ? "No se pudo actualizar el estado del agente." : "The agent status could not be updated.");
+        return;
+      }
+      await loadAgentRuntime().catch(() => undefined);
+    } catch {
+      window.alert(language === "es" ? "No se pudo actualizar el estado del agente." : "The agent status could not be updated.");
+    } finally {
+      setUpdatingAgentId(null);
+    }
   }
 
   async function rotateEnrollmentCode(deviceId: string) {
@@ -199,6 +244,32 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       </section>
 
       <div className="provenance-legend"><span><b>REAL</b>{language === "es" ? "Reportado por un agente autorizado" : "Reported by an authorized agent"}</span><span><b>SIMULATION</b>{language === "es" ? "Datos de entrenamiento" : "Training data"}</span><span><b>NO VERIFICADO</b>{language === "es" ? "Sin reporte del agente" : "No agent report"}</span></div>
+
+      <section className="agent-live-monitor">
+        <div className="module-toolbar">
+          <div>
+            <h2>{language === "es" ? "Orquestación de agentes (en vivo)" : "Live agent orchestration"}</h2>
+            <p>{language === "es" ? "Los cinco agentes se conectan solos y empiezan su trabajo. El estado se actualiza cada 5 segundos." : "The five agents connect themselves and start their work. Status refreshes every 5 seconds."}</p>
+          </div>
+          <div className="agent-toolbar-actions">
+            <span className="live-pill"><i />LIVE</span>
+            {user.role === "ADMIN" && <button className="add-device" onClick={() => void startAgents()} disabled={startingAgents}><Pulse />{startingAgents ? (language === "es" ? "Conectando…" : "Connecting…") : (language === "es" ? "Poner agentes a trabajar" : "Put agents to work")}</button>}
+          </div>
+        </div>
+        <div className="agent-runtime-grid">
+          {agentRuntime.map(agent => <article key={agent.id}>
+            <div>
+              <strong>{agent.role}</strong>
+              <small>{agent.task || agent.id}</small>
+            </div>
+            <span className={`agent-state ${agent.status.toLowerCase()}`}>{agent.status}</span>
+            {agent.updatedAt && <time>{new Date(agent.updatedAt).toLocaleTimeString(language)}</time>}
+            {user.role === "ADMIN" && <div className="agent-actions">
+              {(["QUEUED", "RUNNING", "DONE", "FAILED"] as AgentRuntimeState[]).map(nextStatus => <button key={nextStatus} disabled={updatingAgentId === agent.id} className={agent.status === nextStatus ? "active" : ""} onClick={() => void setAgentStatus(agent.id, nextStatus)}>{updatingAgentId === agent.id ? "..." : nextStatus}</button>)}
+            </div>}
+          </article>)}
+        </div>
+      </section>
 
       <section className="soc-grid">
         <div className="incident-card">

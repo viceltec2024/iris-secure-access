@@ -4,7 +4,9 @@ import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { devices, securityAlerts } from "../../../db/schema";
+import { appSettings, devices, securityAlerts } from "../../../db/schema";
+import { ensureAgentsWorking } from "../../../lib/agent-orchestration";
+import { localIrisAnswer } from "../../../lib/iris-local-analyst";
 
 export const dynamic = "force-dynamic";
 
@@ -26,21 +28,33 @@ export async function POST(request: Request) {
   const messages = Array.isArray(body.messages) ? body.messages.slice(-12).filter(message => (message.role === "user" || message.role === "assistant") && typeof message.content === "string").map(message => ({ role: message.role, content: message.content.slice(0, 2400) })) : [];
   if (!messages.some(message => message.role === "user")) return Response.json({ error: "Write a question for IRIS." }, { status: 400 });
 
-  const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
-  if (!apiKey) return Response.json({ error: "Ask IRIS is not configured yet." }, { status: 503 });
-
   const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown } : {};
+  const language = preferences.language === "en" ? "en" : "es";
   const db = getDb();
   const deviceRows = user.role === "ADMIN" ? await db.select().from(devices).orderBy(desc(devices.createdAt)).limit(25) : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt)).limit(25);
   const alertRows = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(50) : [];
-  const trustedContext = {
-    language: preferences.language === "en" ? "en" : "es",
+  const agents = await ensureAgentsWorking(user.email);
+  const [walletRow] = await db.select().from(appSettings).where(eq(appSettings.key, `iris_local_wallet_session:${user.email}`)).limit(1);
+  const question = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  const analystInput = {
+    language,
+    question,
+    userName: user.displayName || user.email,
     section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
-    user: { role: user.role, name: user.displayName || user.email },
-    devices: deviceRows.map(device => ({ id: device.id, name: device.name, platform: device.platform, status: device.status, risk: device.risk, lastSeenAt: device.lastSeenAt, telemetry: JSON.parse(device.telemetry || "{}") })),
-    alerts: alertRows.map(alert => ({ deviceId: alert.deviceId, code: alert.code, severity: alert.severity, status: alert.status, evidence: JSON.parse(alert.evidence || "{}"), firstSeenAt: alert.firstSeenAt, lastSeenAt: alert.lastSeenAt })),
+    devices: deviceRows.map(device => ({ id: device.id, name: device.name, platform: device.platform, status: device.status, risk: device.risk, lastSeenAt: device.lastSeenAt, telemetry: JSON.parse(device.telemetry || "{}") as Record<string, unknown> })),
+    alerts: alertRows.map(alert => ({ deviceId: alert.deviceId, code: alert.code, severity: alert.severity, status: alert.status, evidence: JSON.parse(alert.evidence || "{}") as Record<string, unknown>, lastSeenAt: alert.lastSeenAt })),
+    agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),
+    wallet: { connected: Boolean(walletRow?.value), address: walletRow?.value || "" },
   };
-  const safeContext = JSON.stringify(trustedContext).slice(0, 24000);
+
+  const localAnswer = localIrisAnswer(analystInput);
+  const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
+  if (!apiKey) {
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "iris-local-analyst" });
+    return Response.json({ answer: localAnswer, source: "local" });
+  }
+
+  const safeContext = JSON.stringify({ ...analystInput, question: undefined }).slice(0, 24000);
   const transcript = messages.map(message => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
   const input = `CURRENT IRIS CONTEXT\n${safeContext}\n\nCONVERSATION\n${transcript}`;
 
@@ -57,9 +71,9 @@ When the user asks by voice for the system status, answer aloud naturally and co
     const answer = payload.output?.flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text || "").join("\n").trim();
     if (!answer) throw new Error("IRIS returned an empty analysis.");
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "gpt-5.6-sol" });
-    return Response.json({ answer });
+    return Response.json({ answer, source: "openai" });
   } catch {
-    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "DENIED", { reason: "provider_error" });
-    return Response.json({ error: "IRIS is temporarily unavailable." }, { status: 502 });
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "iris-local-analyst", fallback: true });
+    return Response.json({ answer: localAnswer, source: "local" });
   }
 }

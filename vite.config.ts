@@ -59,6 +59,7 @@ export default defineConfig(async ({ command, mode }) => {
           "process.env.IRIS_DEV_SKIP_STEPUP": JSON.stringify("1"),
           "process.env.IRIS_DEV_EMAIL": JSON.stringify(localEnv.IRIS_DEV_EMAIL || "owner@iris.local"),
           "process.env.IRIS_OWNER_EMAIL": JSON.stringify(localEnv.IRIS_OWNER_EMAIL || "owner@iris.local"),
+          "process.env.IRIS_DEV_WALLET": JSON.stringify(localEnv.IRIS_DEV_WALLET || "0x49BeAEc30C7431235c3262a2B1C0C5d8b5a0d3E1"),
         }
       : {},
     plugins: [
