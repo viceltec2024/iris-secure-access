@@ -1,0 +1,65 @@
+export type VoiceErrorCode = "unsupported" | "denied" | "network" | "no-speech" | "audio-capture" | "aborted" | "unknown";
+
+const WAKE_PATTERN = /(?:(?:oye|hey|ok|okay|hola|escucha|okey)\s+)?iris\b/i;
+const STOP_PATTERN = /^(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|callate|quiet|cancel)(?:\s+iris)?$/i;
+
+export function recognitionLanguage(language: "es" | "en") {
+  return language === "es" ? "es-MX" : "en-US";
+}
+
+export function normalizeVoiceTranscript(value: string) {
+  return value.toLocaleLowerCase().replace(/[.,!?¿¡;:]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function extractVoiceCommand(transcript: string, language: "es" | "en") {
+  const trimmed = transcript.trim();
+  if (!trimmed) return "";
+  const normalized = normalizeVoiceTranscript(trimmed);
+  if (STOP_PATTERN.test(normalized)) return "";
+  const wakeMatch = trimmed.match(WAKE_PATTERN);
+  if (wakeMatch) {
+    return trimmed.slice((wakeMatch.index || 0) + wakeMatch[0].length).replace(/^[,.:;\s]+/, "").trim();
+  }
+  if (normalized.split(" ").length >= 3) return trimmed;
+  return "";
+}
+
+export function defaultVoiceQuestion(language: "es" | "en") {
+  return language === "es"
+    ? "¿Cuál es el estado completo del sistema y dónde están las amenazas detectadas?"
+    : "What is the complete system status and where are the detected threats?";
+}
+
+export function isStopCommand(transcript: string) {
+  return STOP_PATTERN.test(normalizeVoiceTranscript(transcript));
+}
+
+export function hasWakePhrase(transcript: string) {
+  return WAKE_PATTERN.test(transcript);
+}
+
+export function voiceErrorMessage(code: VoiceErrorCode, language: "es" | "en") {
+  const es = language === "es";
+  if (code === "unsupported") return es ? "Este navegador no tiene reconocimiento de voz. Abre IRIS en Chrome o Edge de tu computadora, no en una ventana remota." : "This browser has no speech recognition. Open IRIS in Chrome or Edge on your computer, not a remote window.";
+  if (code === "denied") return es ? "El micrófono está bloqueado. En la barra del navegador permite el micrófono para IRIS y vuelve a pulsar el botón." : "The microphone is blocked. Allow the microphone for IRIS in the browser bar, then tap the button again.";
+  if (code === "audio-capture") return es ? "No encuentro un micrófono. Conecta uno y vuelve a intentarlo." : "No microphone was found. Connect one and try again.";
+  if (code === "network") return es ? "Chrome no pudo usar el servicio de voz. Necesita conexión y un micrófono real en tu equipo." : "Chrome could not reach the speech service. It needs a network connection and a real microphone on your computer.";
+  if (code === "no-speech") return es ? "No escuché nada. Pulsa el micrófono, di “Oye IRIS” y tu pregunta." : "I did not hear anything. Tap the microphone, say “Hey IRIS,” then your question.";
+  if (code === "aborted") return "";
+  return es ? "No pude activar el comando de voz. Pulsa el micrófono otra vez o escribe tu pregunta." : "Voice command could not start. Tap the microphone again or type your question.";
+}
+
+export function mapRecognitionError(error: string): VoiceErrorCode {
+  if (error === "not-allowed" || error === "service-not-allowed") return "denied";
+  if (error === "network") return "network";
+  if (error === "no-speech") return "no-speech";
+  if (error === "audio-capture") return "audio-capture";
+  if (error === "aborted") return "aborted";
+  return "unknown";
+}
+
+export async function requestMicrophone() {
+  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("unsupported"), { code: "unsupported" as VoiceErrorCode });
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  stream.getTracks().forEach(track => track.stop());
+}
