@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { orbTint, orbWaveEnergy, orbWaveY } from "../app/dashboard/iris-orb.ts";
-import { extractVoiceCommand, hasWakePhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
+import { extractVoiceCommand, hasWakePhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, scoreSpeechVoice, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
 import { fileNameForAudioType, mapMediaError, recordingMimeType, shouldFinishRecording } from "../app/dashboard/iris-record.ts";
 
 test("accepts Oye IRIS, Hola IRIS, and IRIS alone as wake phrases", () => {
@@ -51,5 +51,12 @@ test("IRIS system orb grows louder when it hears or speaks", () => {
   assert.ok(orbWaveEnergy("listening", true, 0.2) > orbWaveEnergy("ready", false, 0));
   assert.ok(orbWaveEnergy("speaking", false, 0) > orbWaveEnergy("thinking", false, 0));
   assert.equal(orbTint("thinking", false).glow[2], 255);
-  assert.notEqual(orbWaveY(0, 0.4, 1), 0);
+  assert.notEqual(orbWaveY(0, 0, 0.4, 1), 0);
+});
+
+test("splits spoken answers so the browser can play them out loud", () => {
+  const chunks = splitSpeechChunks("Hola. ".repeat(40), 80);
+  assert.ok(chunks.length > 1);
+  assert.ok(chunks.every(chunk => chunk.length <= 80));
+  assert.ok(scoreSpeechVoice({ name: "Google Español", lang: "es-MX" }, "es") > scoreSpeechVoice({ name: "English", lang: "en-US" }, "es"));
 });

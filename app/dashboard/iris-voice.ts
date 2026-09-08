@@ -108,7 +108,48 @@ export function mapRecognitionError(error: string): VoiceErrorCode {
   return "unknown";
 }
 
-export async function requestMicrophone() {
-  const stream = await openMicrophone();
-  releaseMicrophone(stream);
+export function splitSpeechChunks(text: string, max = 220) {
+  const chunks: string[] = [];
+  let current = "";
+  for (const word of text.replace(/\s+/g, " ").trim().split(" ")) {
+    if (!word) continue;
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > max && current) {
+      chunks.push(current);
+      current = word;
+    } else current = next;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+export function scoreSpeechVoice(voice: { name: string; lang: string; localService?: boolean }, language: "es" | "en") {
+  const locale = language === "es" ? /^es([_-]|$)/i : /^en([_-]|$)/i;
+  if (!locale.test(voice.lang)) return language === "es" && /^en([_-]|$)/i.test(voice.lang) ? 0.2 : 0;
+  if (/premium|enhanced|natural|neural|siri|google|ava|samantha|paulina|m[oó]nica/i.test(voice.name)) return 3;
+  if (voice.localService) return 2;
+  return 1;
+}
+
+let speechUnlocked = false;
+let speechContext: AudioContext | null = null;
+
+export function unlockSpeechEngine() {
+  if (typeof window === "undefined") return;
+  if ("speechSynthesis" in window) {
+    try { window.speechSynthesis.resume(); } catch { /* ignore */ }
+  }
+  const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return;
+  if (!speechContext) speechContext = new Ctor();
+  void speechContext.resume();
+  if (speechUnlocked) return;
+  const gain = speechContext.createGain();
+  gain.gain.value = 0.0001;
+  const oscillator = speechContext.createOscillator();
+  oscillator.connect(gain);
+  gain.connect(speechContext.destination);
+  oscillator.start();
+  oscillator.stop(speechContext.currentTime + 0.04);
+  speechUnlocked = true;
 }

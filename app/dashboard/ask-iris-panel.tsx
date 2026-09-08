@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChatCircleDots, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import { isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseMicrophone, spokenQuestionFromTranscript, voiceErrorMessage } from "./iris-voice";
+import { isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseMicrophone, scoreSpeechVoice, splitSpeechChunks, spokenQuestionFromTranscript, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
 import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
 import IrisSystemOrb from "./iris-system-orb";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
@@ -74,27 +74,55 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   }
 
   function browserVoiceFallback(text: string) {
-    if (!("speechSynthesis" in window)) return;
-    const utterance = new SpeechSynthesisUtterance(text);
+    if (!("speechSynthesis" in window)) {
+      setVoiceHint(language === "es" ? "IRIS ya contestó por escrito. Este navegador no puede hablar en voz alta." : "IRIS already answered in writing. This browser cannot speak out loud.");
+      resumeVoiceConversation();
+      return;
+    }
+    unlockSpeechEngine();
     const spokenLanguage = detectedLanguage(text);
-    utterance.lang = spokenLanguage === "es" ? "es-US" : "en-US";
-    const locale = spokenLanguage === "es" ? /^es([_-]|$)/i : /^en([_-]|$)/i;
-    const preferred = voices.filter(voice => locale.test(voice.lang)).sort((a, b) => {
-      const quality = (voice: SpeechSynthesisVoice) => /premium|enhanced|natural|neural|siri|google|ava|samantha|paulina|m[oó]nica/i.test(voice.name) ? 3 : voice.localService ? 2 : 1;
-      return quality(b) - quality(a);
-    })[0];
-    if (preferred) utterance.voice = preferred;
-    utterance.rate = 0.94; utterance.pitch = 1.01; utterance.volume = 1;
-    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); };
-    utterance.onend = () => { speakingRef.current = false; setSpeaking(false); resumeVoiceConversation(); };
-    utterance.onerror = () => { speakingRef.current = false; setSpeaking(false); resumeVoiceConversation(); };
-    window.speechSynthesis.speak(utterance);
+    const available = window.speechSynthesis.getVoices();
+    const catalog = available.length ? available : voices;
+    const preferred = [...catalog].sort((a, b) => scoreSpeechVoice(b, spokenLanguage) - scoreSpeechVoice(a, spokenLanguage))[0];
+    const chunks = splitSpeechChunks(text);
+    let index = 0;
+    const speakChunk = () => {
+      if (index >= chunks.length) {
+        speakingRef.current = false;
+        setSpeaking(false);
+        resumeVoiceConversation();
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(chunks[index]);
+      utterance.lang = spokenLanguage === "es" ? "es-MX" : "en-US";
+      if (preferred) utterance.voice = preferred;
+      utterance.rate = 0.96;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      utterance.onstart = () => {
+        speakingRef.current = true;
+        setSpeaking(true);
+        setVoiceLoading(false);
+        setVoiceHint(language === "es" ? "IRIS te está hablando. Sube el volumen." : "IRIS is speaking. Turn the volume up.");
+      };
+      utterance.onend = () => { index += 1; speakChunk(); };
+      utterance.onerror = () => { index += 1; speakChunk(); };
+      try { window.speechSynthesis.resume(); } catch { /* ignore */ }
+      window.speechSynthesis.speak(utterance);
+    };
+    speakingRef.current = true;
+    setSpeaking(true);
+    window.setTimeout(speakChunk, 80);
   }
 
   async function speak(text: string) {
+    unlockSpeechEngine();
     pauseRecognition();
     stopVoice();
-    if (neuralVoice === false) { browserVoiceFallback(text); return; }
+    if (neuralVoice === false) {
+      window.setTimeout(() => browserVoiceFallback(text), 60);
+      return;
+    }
     const controller = new AbortController(); voiceRequestRef.current = controller; setVoiceLoading(true);
     try {
       const response = await fetch("/api/iris-voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, language: detectedLanguage(text) }), signal: controller.signal });
@@ -102,15 +130,21 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       const blob = await response.blob();
       if (controller.signal.aborted) return;
       const url = URL.createObjectURL(blob); audioUrlRef.current = url;
-      const audio = new Audio(url); audioRef.current = audio;
-      audio.onplay = () => { speakingRef.current = true; setSpeaking(true); setVoiceLoading(false); };
+      const audio = new Audio(url); audio.volume = 1; audioRef.current = audio;
+      audio.onplay = () => { speakingRef.current = true; setSpeaking(true); setVoiceLoading(false); setVoiceHint(language === "es" ? "IRIS te está hablando. Sube el volumen." : "IRIS is speaking. Turn the volume up."); };
       audio.onended = () => finishNeuralVoice();
-      audio.onerror = () => { finishNeuralVoice(); browserVoiceFallback(text); };
+      audio.onerror = () => { voiceRequestRef.current = null; setVoiceLoading(false); browserVoiceFallback(text); };
       await audio.play();
     } catch (error) {
       const aborted = error instanceof DOMException && error.name === "AbortError";
-      finishNeuralVoice();
-      if (!aborted) browserVoiceFallback(text);
+      voiceRequestRef.current = null;
+      setVoiceLoading(false);
+      if (aborted) {
+        speakingRef.current = false;
+        setSpeaking(false);
+        return;
+      }
+      browserVoiceFallback(text);
     }
   }
 
@@ -174,6 +208,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   function toggleAutoSpeak() { setAutoSpeak(value => { const next = !value; if (!next) stopVoice(); return next; }); }
 
   async function sendMessage(text = input) {
+    unlockSpeechEngine();
     const clean = text.trim();
     if (!clean || loading) return;
     const nextMessages = [...messages, { role: "user" as const, content: clean }];
@@ -302,6 +337,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   }
 
   async function startListening() {
+    unlockSpeechEngine();
     openVoiceStage();
     setSpokenAnswer("");
     listenActiveRef.current = true;
