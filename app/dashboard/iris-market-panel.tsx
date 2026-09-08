@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChartLineUp, MagnifyingGlass, Pulse, Wallet } from "@phosphor-icons/react";
+import { MagnifyingGlass, Pulse, Wallet } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 import { LIVE_REFRESH_MS, type MarketAnalysis, type MarketBar, type MarketBoard, type MarketQuote, type MarketRange } from "../../lib/iris-market";
 
@@ -125,9 +125,7 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
     return next;
   }, [tape, tick]);
 
-  const lesson = chart && (language === "es"
-    ? `Lectura en vivo de ${chart.quote.symbol}: precio ${money(chart.quote.price, chart.quote.currency)}, tendencia ${chart.analysis.trend === "up" ? "alcista" : chart.analysis.trend === "down" ? "bajista" : "lateral"}, RSI ${chart.analysis.rsi14 ?? "—"}. El gráfico se mueve solo. Esto enseña el mercado; no es una orden.`
-    : `Live reading of ${chart.quote.symbol}: price ${money(chart.quote.price, chart.quote.currency)}, trend ${chart.analysis.trend}, RSI ${chart.analysis.rsi14 ?? "—"}. The chart moves on its own. This teaches the market; it is not an order.`);
+  const trendLabel = chart?.analysis.trend === "up" ? (es ? "Alcista" : "Bullish") : chart?.analysis.trend === "down" ? (es ? "Bajista" : "Bearish") : es ? "Lateral" : "Sideways";
 
   return <section className="module-panel iris-market-panel">
     <header className="market-desk-head">
@@ -177,11 +175,16 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
           </div>
           <div className="market-range">{ranges.map(item => <button key={item.id} type="button" className={range === item.id ? "active" : ""} onClick={() => setRange(item.id)}>{es ? item.es : item.en}</button>)}</div>
         </header>
-        <svg viewBox="0 0 640 190" preserveAspectRatio="none" role="img" aria-label={es ? "Gráfico en vivo" : "Live chart"}>
+        <svg className="market-chart" viewBox="0 0 640 190" preserveAspectRatio="none" role="img" aria-label={es ? "Gráfico en vivo" : "Live chart"}>
           <path className="chart-grid-lines" d="M0 38H640M0 76H640M0 114H640M0 152H640" />
           {chart && <polyline className={`chart-line ${chart.quote.changePercent >= 0 ? "height" : "pending"}`} points={chartPoints(chart.bars.map(bar => bar.close))} />}
         </svg>
-        <p className="market-lesson"><ChartLineUp />{lesson}</p>
+        <div className="market-lesson">
+          <span>{es ? "Tendencia" : "Trend"}<b className={chart?.analysis.trend || ""}>{chart ? trendLabel : "—"}</b></span>
+          <span>RSI 14<b>{chart?.analysis.rsi14 ?? "—"}</b></span>
+          <span>{es ? "Lectura" : "Score"}<b>{chart?.analysis.score ?? "—"}/100</b></span>
+          <small>{es ? "El gráfico se mueve solo. IRIS no compra hasta que apruebes." : "The chart moves on its own. IRIS does not buy until you approve."}</small>
+        </div>
         <div className="market-readouts">
           <span>{es ? "Media 20" : "SMA 20"}<b>{chart?.analysis.sma20 ? money(chart.analysis.sma20, chart.quote.currency) : "—"}</b></span>
           <span>{es ? "Media 50" : "SMA 50"}<b>{chart?.analysis.sma50 ? money(chart.analysis.sma50, chart.quote.currency) : "—"}</b></span>

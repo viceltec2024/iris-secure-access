@@ -78,4 +78,8 @@ test("live market desk is a dense trading watchlist, not stacked cards", () => {
   assert.match(css, /font-variant-numeric:tabular-nums/);
   assert.doesNotMatch(css, /@media\(max-width:980px\)\{[^}]*\.market-tape/);
   assert.doesNotMatch(css, /\.market-board\{display:grid;grid-template-columns:repeat\(3/);
+  assert.match(css, /\.market-chart-card > svg\.market-chart/);
+  assert.doesNotMatch(css, /\.market-chart-card svg\{width:100%;height:168px\}/);
+  assert.doesNotMatch(panel, /Live reading of /);
+  assert.match(panel, /El gráfico se mueve solo/);
 });
