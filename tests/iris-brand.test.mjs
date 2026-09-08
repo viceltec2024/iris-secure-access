@@ -121,12 +121,18 @@ test("local dashboard access signs in on this machine, not ChatGPT", () => {
   const auth = readFileSync(new URL("../app/chatgpt-auth.ts", import.meta.url), "utf8");
   const vite = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
   const signIn = readFileSync(new URL("../app/dev/sign-in/route.ts", import.meta.url), "utf8");
+  const agents = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8");
+  const localDev = readFileSync(new URL("../scripts/dev-local.sh", import.meta.url), "utf8");
   assert.match(auth, /devDefaultEmail\(\)/);
   assert.match(auth, /\/dev\/sign-in\?return_to=/);
   assert.match(signIn, /text\/html; charset=utf-8/);
   assert.match(vite, /allowedHosts:\s*true/);
-  assert.match(vite, /host:\s*"::"/);
+  assert.match(vite, /host:\s*true/);
+  assert.doesNotMatch(vite, /host:\s*"::"/);
+  assert.match(vite, /isCodexSandbox/);
   assert.match(vite, /IRIS_PUBLIC_ORIGIN/);
+  assert.match(localDev, /CODEX_SANDBOX/);
+  assert.match(agents, /npm run dev:local/);
 });
 
 test("dashboard fonts come from Inter, not vinext Geist filesystem URLs", () => {

@@ -9,6 +9,7 @@ const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
 const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
+const isCodexSandbox = Boolean(process.env.CODEX_SANDBOX);
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const localBindingConfig = {
@@ -41,7 +42,7 @@ export default defineConfig(async ({ command, mode }) => {
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
 
   const localEnv = loadEnv(mode, process.cwd(), "");
-  const allowLocalAuth = command === "serve" && localEnv.IRIS_DEV_SKIP_STEPUP === "1";
+  const allowLocalAuth = command === "serve" && (localEnv.IRIS_DEV_SKIP_STEPUP === "1" || isCodexSandbox);
   const publicOrigin = localEnv.IRIS_PUBLIC_ORIGIN || process.env.IRIS_PUBLIC_ORIGIN || "";
   if (publicOrigin) process.env.IRIS_PUBLIC_ORIGIN = publicOrigin;
   const define: Record<string, string> = {};
@@ -58,9 +59,9 @@ export default defineConfig(async ({ command, mode }) => {
 
   return {
     server: {
-      host: "::",
+      host: true,
       allowedHosts: true,
-      ...(isCodexSeatbeltSandbox
+      ...(isCodexSandbox || isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),
     },

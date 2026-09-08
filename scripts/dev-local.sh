@@ -18,6 +18,14 @@ if [[ -f .env.local ]]; then
   set +a
 fi
 
+# Codex previews have no gitignored .env.local. Keep local owner auth on
+# so Ask IRIS and the dashboard work without ChatGPT Sites OAuth.
+if [[ -n "${CODEX_SANDBOX:-}" ]]; then
+  export IRIS_DEV_SKIP_STEPUP="${IRIS_DEV_SKIP_STEPUP:-1}"
+  export IRIS_DEV_EMAIL="${IRIS_DEV_EMAIL:-owner@iris.local}"
+  export IRIS_OWNER_EMAIL="${IRIS_OWNER_EMAIL:-owner@iris.local}"
+fi
+
 # Seed the local D1 database in the background. It waits for the dev server to
 # become ready before applying migrations, and never blocks server startup.
 node --experimental-sqlite "${script_dir}/apply-local-d1-migrations.mjs" &
