@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { orbTint, orbWaveEnergy, orbWaveY } from "../app/dashboard/iris-orb.ts";
-import { closeAudioContext, extractVoiceCommand, hasWakePhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, resumeSpeechIfPaused, scoreSpeechVoice, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
+import { closeAudioContext, extractVoiceCommand, hasWakePhrase, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, pickSpeechVoice, resumeSpeechIfPaused, scoreSpeechVoice, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
 import { fileNameForAudioType, mapMediaError, recordingMimeType, shouldFinishRecording } from "../app/dashboard/iris-record.ts";
 
 test("accepts Oye IRIS, Hola IRIS, and IRIS alone as wake phrases", () => {
@@ -76,6 +76,16 @@ test("resumes speech synthesis only when it is paused", () => {
   resumeSpeechIfPaused({ paused: false, resume: () => { resumes += 1; } });
   resumeSpeechIfPaused({ paused: true, resume: () => { resumes += 1; } });
   assert.equal(resumes, 1);
+});
+
+test("picks a Spanish voice and writes the listen phrase IRIS speaks first", () => {
+  assert.equal(irisListenPhrase("es"), "Hola. Soy IRIS. Te escucho.");
+  const spanish = pickSpeechVoice([
+    { name: "Daniel", lang: "en-GB" },
+    { name: "Paulina", lang: "es-MX", localService: true },
+  ], "es");
+  assert.equal(spanish?.name, "Paulina");
+  assert.equal(pickSpeechVoice([{ name: "Daniel", lang: "en-GB" }], "es"), undefined);
 });
 
 test("splits spoken answers so the browser can play them out loud", () => {

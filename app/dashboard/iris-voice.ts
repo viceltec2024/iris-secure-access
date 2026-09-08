@@ -152,13 +152,41 @@ export function scoreSpeechVoice(voice: { name: string; lang: string; localServi
   return 1;
 }
 
+export function pickSpeechVoice(voices: Array<{ name: string; lang: string; localService?: boolean }>, language: "es" | "en") {
+  const ranked = [...voices].sort((left, right) => scoreSpeechVoice(right, language) - scoreSpeechVoice(left, language));
+  const best = ranked[0];
+  return best && scoreSpeechVoice(best, language) >= 1 ? best : undefined;
+}
+
+export function irisListenPhrase(language: "es" | "en") {
+  return language === "es" ? "Hola. Soy IRIS. Te escucho." : "Hi. I'm IRIS. I'm listening.";
+}
+
 let speechUnlocked = false;
+let browserSpeechPrimed = false;
 let speechContext: AudioContext | null = null;
 let speechSource: AudioBufferSourceNode | null = null;
+let holdNode: OscillatorNode | null = null;
+let htmlAudio: HTMLAudioElement | null = null;
+
+function primeBrowserSpeech() {
+  if (typeof window === "undefined" || !("speechSynthesis" in window) || browserSpeechPrimed) return;
+  resumeSpeechIfPaused(window.speechSynthesis);
+  const prime = new SpeechSynthesisUtterance(" ");
+  prime.volume = 0.01;
+  prime.rate = 2;
+  prime.lang = "es-MX";
+  try {
+    window.speechSynthesis.speak(prime);
+    browserSpeechPrimed = true;
+  } catch {
+    /* Chrome may still allow later speak() after unlock. */
+  }
+}
 
 export function unlockSpeechEngine() {
   if (typeof window === "undefined") return;
-  if ("speechSynthesis" in window) resumeSpeechIfPaused(window.speechSynthesis);
+  primeBrowserSpeech();
   const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return;
   if (!speechContext || speechContext.state === "closed") speechContext = new Ctor();
@@ -174,11 +202,124 @@ export function unlockSpeechEngine() {
   speechUnlocked = true;
 }
 
+export function holdSpeechSession() {
+  unlockSpeechEngine();
+  if (!speechContext || speechContext.state === "closed" || holdNode) return;
+  const oscillator = speechContext.createOscillator();
+  const gain = speechContext.createGain();
+  gain.gain.value = 0.00001;
+  oscillator.connect(gain);
+  gain.connect(speechContext.destination);
+  oscillator.start();
+  holdNode = oscillator;
+}
+
+export function releaseSpeechHold() {
+  if (!holdNode) return;
+  try { holdNode.stop(); } catch { /* already stopped */ }
+  try { holdNode.disconnect(); } catch { /* already disconnected */ }
+  holdNode = null;
+}
+
+export function stopHtmlAudio() {
+  if (!htmlAudio) return;
+  try { htmlAudio.pause(); } catch { /* already paused */ }
+  htmlAudio.removeAttribute("src");
+  htmlAudio = null;
+}
+
 export function stopSpeechEnginePlayback() {
+  stopHtmlAudio();
+  releaseSpeechHold();
   if (!speechSource) return;
   try { speechSource.stop(); } catch { /* already stopped */ }
   try { speechSource.disconnect(); } catch { /* already disconnected */ }
   speechSource = null;
+}
+
+export function speakBrowserText(
+  text: string,
+  language: "es" | "en",
+  voices: Array<{ name: string; lang: string; localService?: boolean }>,
+  handlers: { onStart?: () => void; onEnd?: () => void; onBlocked?: () => void } = {},
+) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    handlers.onBlocked?.();
+    handlers.onEnd?.();
+    return () => undefined;
+  }
+  const synth = window.speechSynthesis;
+  synth.cancel();
+  const catalog = voices.length ? voices : synth.getVoices();
+  const preferred = pickSpeechVoice(catalog, language);
+  const chunks = splitSpeechChunks(text);
+  let index = 0;
+  let stopped = false;
+  let started = false;
+  let finished = false;
+  let watchdog = 0;
+  const finish = (blocked = false) => {
+    if (finished) return;
+    finished = true;
+    if (watchdog) window.clearTimeout(watchdog);
+    if (blocked) handlers.onBlocked?.();
+    handlers.onEnd?.();
+  };
+  const stop = () => {
+    stopped = true;
+    if (watchdog) window.clearTimeout(watchdog);
+    synth.cancel();
+  };
+  const makeUtterance = (chunk: string) => {
+    const utterance = new SpeechSynthesisUtterance(chunk);
+    utterance.lang = preferred?.lang || (language === "es" ? "es-MX" : "en-US");
+    if (preferred) utterance.voice = preferred as SpeechSynthesisVoice;
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.onstart = () => {
+      started = true;
+      handlers.onStart?.();
+    };
+    utterance.onend = () => {
+      if (stopped) return;
+      index += 1;
+      speakChunk();
+    };
+    utterance.onerror = event => {
+      const error = "error" in event ? String((event as { error?: string }).error || "") : "";
+      if (error === "canceled" || error === "interrupted") return;
+      if (stopped) return;
+      index += 1;
+      speakChunk();
+    };
+    return utterance;
+  };
+  const speakChunk = () => {
+    if (stopped) return;
+    if (index >= chunks.length) {
+      finish(false);
+      return;
+    }
+    resumeSpeechIfPaused(synth);
+    synth.speak(makeUtterance(chunks[index]));
+  };
+  window.setTimeout(() => {
+    if (stopped) return;
+    speakChunk();
+    watchdog = window.setTimeout(() => {
+      if (stopped || started || finished) return;
+      synth.cancel();
+      resumeSpeechIfPaused(synth);
+      if (chunks[0]) synth.speak(makeUtterance(chunks[0]));
+      watchdog = window.setTimeout(() => {
+        if (stopped || started || finished) return;
+        stop();
+        finish(true);
+      }, 1400);
+    }, 900);
+  }, 120);
+  return stop;
 }
 
 export async function playAudioBuffer(buffer: ArrayBuffer, onStart?: () => void) {
@@ -205,4 +346,34 @@ export async function playAudioBuffer(buffer: ArrayBuffer, onStart?: () => void)
       reject(error);
     }
   });
+}
+
+export async function playMpegSpeech(buffer: ArrayBuffer, onStart?: () => void) {
+  stopHtmlAudio();
+  const url = URL.createObjectURL(new Blob([buffer], { type: "audio/mpeg" }));
+  const audio = new Audio();
+  htmlAudio = audio;
+  audio.src = url;
+  audio.preload = "auto";
+  let started = false;
+  const markStart = () => {
+    if (started) return;
+    started = true;
+    onStart?.();
+  };
+  try {
+    await new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error("html-audio"));
+      audio.onplay = markStart;
+      void audio.play().then(markStart, reject);
+    });
+  } catch {
+    URL.revokeObjectURL(url);
+    if (htmlAudio === audio) htmlAudio = null;
+    await playAudioBuffer(buffer, onStart);
+    return;
+  }
+  URL.revokeObjectURL(url);
+  if (htmlAudio === audio) htmlAudio = null;
 }
