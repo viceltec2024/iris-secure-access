@@ -34,7 +34,6 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const [speaking, setSpeaking] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
-  autoSpeakRef.current = autoSpeak;
   const [voiceHint, setVoiceHint] = useState("");
   const [neuralVoice, setNeuralVoice] = useState<boolean | null>(null);
   const [voiceStage, setVoiceStage] = useState(false);
@@ -66,6 +65,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const skipResumeRef = useRef(false);
   const browserStopRef = useRef<(() => void) | null>(null);
   const autoSpeakRef = useRef(true);
+  autoSpeakRef.current = autoSpeak;
 
   const voiceMode: VoiceStageMode = listening ? "listening" : loading || voiceLoading ? "thinking" : speaking ? "speaking" : "ready";
 
