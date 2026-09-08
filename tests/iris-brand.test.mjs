@@ -9,6 +9,12 @@ test("IRIS brand mark is a centered emblem without a duotone ghost path", () => 
   assert.doesNotMatch(source, /ShieldCheck/);
 });
 
+test("token deploy dialog uses the official IRIS token emblem", () => {
+  const source = readFileSync(new URL("../app/dashboard/iris-chain-panel.tsx", import.meta.url), "utf8");
+  assert.match(source, /<IrisTokenMark size=\{56\} \/>/);
+  assert.doesNotMatch(source, /RocketLaunch/);
+});
+
 test("sidebar and home lockups use the IRIS brand mark", () => {
   const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
   const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
