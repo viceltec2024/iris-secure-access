@@ -1,6 +1,6 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { DEV_IDENTITY_COOKIE, devAuthEnabled } from "./dev-auth";
+import { DEV_IDENTITY_COOKIE, devAuthEnabled, devDefaultEmail } from "./dev-auth";
 
 export type ChatGPTUser = {
   displayName: string;
@@ -23,10 +23,8 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   if (!email) {
     if (devAuthEnabled()) {
       const rawDevEmail = (await cookies()).get(DEV_IDENTITY_COOKIE)?.value;
-      const devEmail = rawDevEmail ? safeDecodeURIComponent(rawDevEmail) : null;
-      if (devEmail) {
-        return { displayName: devEmail, email: devEmail.toLowerCase(), fullName: null };
-      }
+      const devEmail = (rawDevEmail ? safeDecodeURIComponent(rawDevEmail) : null) || devDefaultEmail();
+      return { displayName: devEmail, email: devEmail.toLowerCase(), fullName: null };
     }
     return null;
   }
