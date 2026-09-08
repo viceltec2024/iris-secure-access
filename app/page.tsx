@@ -1,5 +1,6 @@
 import { chatGPTSignInPath, getChatGPTUser } from "./chatgpt-auth";
 import { Buildings, LockKey, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
+import IrisBrandMark from "./iris-brand-mark";
 import { devAuthEnabled } from "./dev-auth";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export default async function Home() {
       <section className="brand-panel" aria-label="IRIS Enterprise security">
         <div className="brand-content">
           <div className="brand-lockup">
-            <div className="brand-mark" aria-hidden="true"><ShieldCheck weight="duotone" /></div>
+            <div className="brand-mark" aria-hidden="true"><IrisBrandMark size={88} /></div>
             <div><div className="brand-name">IRIS</div><div className="brand-edition">ENTERPRISE</div></div>
           </div>
           <div className="brand-message">

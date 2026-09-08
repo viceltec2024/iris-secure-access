@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, ChartLineUp, CheckCircle, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
+import IrisBrandMark from "../iris-brand-mark";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
 import IrisMarketPanel from "./iris-market-panel";
@@ -219,7 +220,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
 
   return <main className="soc-shell">
     <aside className="soc-sidebar">
-      <div className="soc-brand"><ShieldCheck weight="duotone" /><div><strong>IRIS</strong><span>SECURITY AI</span></div></div>
+      <div className="soc-brand"><IrisBrandMark /><div><strong>IRIS</strong><span>SECURITY AI</span></div></div>
       <nav aria-label="IRIS modules">
         <button className={section === "operations" ? "active" : ""} onClick={() => setSection("operations")}><Pulse /> {t("operations")}</button>
         <button className={section === "alerts" ? "active" : ""} onClick={() => setSection("alerts")}><Bell /> {language === "es" ? "Alertas reales" : "Real alerts"} <b>{activeAlerts.length}</b></button>

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireChatGPTUser, chatGPTSignOutPath } from "../../chatgpt-auth";
 import { listUserAuditForAdmin, listUsersForAdmin, logAudit, provisionIrisUser } from "../../../lib/authz";
 import { ShieldCheck, SignOut, UserCircle, Pulse, UsersThree, ArrowLeft } from "@phosphor-icons/react/dist/ssr";
+import IrisBrandMark from "../../iris-brand-mark";
 import { UserDirectory } from "./user-directory";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export default async function ManageUsersPage({ searchParams }: { searchParams: 
   return (
     <main className="workspace-shell">
       <aside className="workspace-sidebar">
-        <div className="workspace-brand"><ShieldCheck weight="duotone" /><div><strong>IRIS</strong><span>ENTERPRISE</span></div></div>
+        <div className="workspace-brand"><IrisBrandMark /><div><strong>IRIS</strong><span>ENTERPRISE</span></div></div>
         <nav aria-label="Workspace navigation"><a href="/dashboard"><Pulse /> Security overview</a><a className="nav-active" href="/admin/users"><UsersThree /> Manage users</a></nav>
         <div className="workspace-user"><UserCircle /><div><strong>{actor.displayName || actor.email}</strong><span>{actor.role}</span></div></div>
       </aside>
