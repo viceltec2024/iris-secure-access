@@ -3,16 +3,55 @@ set -eu
 
 SCRIPT_PATH="${0:A}"
 
-API_URL="https://iris-secure-access.taylor-667.chatgpt.site/api/agent/check-in"
+API_URL="${IRIS_API_URL:-https://iris-secure-access.taylor-667.chatgpt.site/api/agent/check-in}"
 AGENT_DIR="$HOME/Library/Application Support/IRIS Agent"
 AGENT_PATH="$AGENT_DIR/iris-agent.sh"
 TOKEN_PATH="$AGENT_DIR/agent-token"
+API_URL_PATH="$AGENT_DIR/api-url"
 KEYCHAIN_SERVICE="com.iris.security-agent"
 KEYCHAIN_ACCOUNT="agent-token"
 LOG_PATH="$AGENT_DIR/agent.log"
 PLIST_PATH="$HOME/Library/LaunchAgents/com.iris.security-agent.plist"
 
 json_escape() { printf '%s' "$1" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+resolve_api_url() {
+  /bin/mkdir -p "$AGENT_DIR"
+  /bin/chmod 700 "$AGENT_DIR"
+  if [ -n "${IRIS_API_URL:-}" ]; then
+    API_URL="$IRIS_API_URL"
+    printf '%s' "$API_URL" > "$API_URL_PATH"
+    /bin/chmod 600 "$API_URL_PATH"
+  elif [ -f "$API_URL_PATH" ]; then
+    local stored
+    stored="$(/usr/bin/tr -d '[:space:]' < "$API_URL_PATH")"
+    if [ -n "$stored" ]; then
+      API_URL="$stored"
+    fi
+  else
+    printf '%s' "$API_URL" > "$API_URL_PATH"
+    /bin/chmod 600 "$API_URL_PATH"
+  fi
+}
+
+write_launch_agent() {
+  /bin/mkdir -p "$HOME/Library/LaunchAgents"
+  /bin/cat > "$PLIST_PATH" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.iris.security-agent</string>
+  <key>ProgramArguments</key><array><string>$AGENT_PATH</string><string>run</string></array>
+  <key>StartInterval</key><integer>120</integer>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>NetworkState</key><true/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>$LOG_PATH</string>
+  <key>StandardErrorPath</key><string>$LOG_PATH</string>
+</dict></plist>
+PLIST
+}
 
 telemetry_json() {
   local hostname os_version architecture disk_used total_pages used_pages memory_used firewall gatekeeper filevault sip auto_updates app_count app_hash risky_json xprotect mrt xprotect_version persistence_count persistence_hash unsigned_persistence_json threat_locations_json
@@ -72,7 +111,40 @@ telemetry_json() {
   printf '{"hostname":"%s","osVersion":"macOS %s","architecture":"%s","diskUsedPercent":%s,"memoryUsedPercent":%s,"firewallEnabled":%s,"gatekeeperEnabled":%s,"fileVaultEnabled":%s,"sipEnabled":%s,"automaticUpdatesEnabled":%s,"installedApplicationCount":%s,"applicationInventoryHash":"%s","riskyApplications":%s,"xProtectPresent":%s,"xProtectVersion":"%s","malwareRemovalToolPresent":%s,"persistenceItemCount":%s,"persistenceInventoryHash":"%s","unsignedPersistenceItems":%s,"threatLocations":%s}' "$(json_escape "$hostname")" "$(json_escape "$os_version")" "$(json_escape "$architecture")" "$disk_used" "$memory_used" "$firewall" "$gatekeeper" "$filevault" "$sip" "$auto_updates" "$app_count" "$app_hash" "$risky_json" "$xprotect" "$(json_escape "$xprotect_version")" "$mrt" "$persistence_count" "$persistence_hash" "$unsigned_persistence_json" "$threat_locations_json"
 }
 
+apply_commands() {
+  local response_file="$1"
+  [ -f "$response_file" ] || return 0
+  command -v /usr/bin/python3 >/dev/null 2>&1 || return 0
+  local result
+  result="$(/usr/bin/python3 - "$response_file" <<'PY'
+import json, subprocess, sys
+path = sys.argv[1]
+try:
+    data = json.load(open(path))
+except Exception:
+    raise SystemExit(0)
+need_reverify = False
+for cmd in data.get("commands") or []:
+    code = str(cmd.get("code") or "")
+    title = str(cmd.get("title") or "IRIS")
+    message = str(cmd.get("message") or "")
+    if code in ("NOTIFY", "ENABLE_FIREWALL", "REVERIFY") and message:
+        subprocess.run(["/usr/bin/osascript", "-e", f"display notification {json.dumps(message)} with title {json.dumps(title)}"], check=False)
+    if code == "ENABLE_FIREWALL":
+        script = '/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on'
+        subprocess.run(["/usr/bin/osascript", "-e", f"do shell script {json.dumps(script)} with administrator privileges"], check=False)
+    if code == "REVERIFY":
+        need_reverify = True
+print("REVERIFY" if need_reverify else "OK")
+PY
+)"
+  if [ "$result" = "REVERIFY" ] && [ -z "${IRIS_SKIP_REVERIFY:-}" ]; then
+    (sleep 20; IRIS_SKIP_REVERIFY=1 "$AGENT_PATH" run) >/dev/null 2>&1 &
+  fi
+}
+
 check_in() {
+  resolve_api_url
   /usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w >/dev/null 2>&1 || { echo "IRIS Agent is not enrolled."; exit 1; }
   local token payload request_body response_file timestamp nonce signature signing_input encryption_key authentication_key iv ciphertext encrypted_tag
   token="$(/usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w)"
@@ -90,6 +162,7 @@ check_in() {
   response_file="$(/usr/bin/mktemp -t iris-agent)"
   if /usr/bin/curl --fail --silent --show-error --retry 2 --retry-delay 5 --connect-timeout 15 --max-time 45 -H "Authorization: Bearer $token" -H "X-IRIS-Timestamp: $timestamp" -H "X-IRIS-Nonce: $nonce" -H "X-IRIS-Signature: $signature" -H "Content-Type: application/json" --data-binary "$request_body" "$API_URL" > "$response_file"; then
     echo "$(/bin/date -u +%FT%TZ) encrypted check-in succeeded" >> "$LOG_PATH"
+    apply_commands "$response_file"
   else
     echo "$(/bin/date -u +%FT%TZ) check-in failed" >> "$LOG_PATH"
   fi
@@ -98,6 +171,7 @@ check_in() {
 }
 
 upgrade_agent() {
+  resolve_api_url
   /usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w >/dev/null 2>&1 || { echo "IRIS Agent is not enrolled. Use install with a new enrollment code."; exit 1; }
   /bin/mkdir -p "$AGENT_DIR" "$HOME/Library/LaunchAgents"
   /bin/chmod 700 "$AGENT_DIR"
@@ -112,6 +186,7 @@ upgrade_agent() {
 install_agent() {
   echo "IRIS Agent for macOS"
   echo "This read-only agent reports security controls, XProtect, startup persistence, system health, and application signature results."
+  resolve_api_url
   printf "Enter a NEW IRIS enrollment code: "
   read -r enrollment_code
   enrollment_code="$(printf '%s' "$enrollment_code" | /usr/bin/tr '[:lower:]' '[:upper:]' | /usr/bin/tr -d '[:space:]')"
@@ -130,24 +205,24 @@ install_agent() {
   /usr/bin/security delete-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" >/dev/null 2>&1 || true
   /usr/bin/security add-generic-password -U -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w "$token" >/dev/null
   /bin/rm -f "$TOKEN_PATH"
-  /bin/cat > "$PLIST_PATH" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.iris.security-agent</string>
-  <key>ProgramArguments</key><array><string>$AGENT_PATH</string><string>run</string></array>
-  <key>StartInterval</key><integer>120</integer>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><dict><key>NetworkState</key><true/></dict>
-  <key>ThrottleInterval</key><integer>30</integer>
-  <key>ProcessType</key><string>Background</string>
-  <key>StandardOutPath</key><string>$LOG_PATH</string>
-  <key>StandardErrorPath</key><string>$LOG_PATH</string>
-</dict></plist>
-PLIST
+  write_launch_agent
   /bin/launchctl bootout "gui/$(/usr/bin/id -u)/com.iris.security-agent" 2>/dev/null || true
   /bin/launchctl bootstrap "gui/$(/usr/bin/id -u)" "$PLIST_PATH"
   echo "IRIS Agent installed. Your device should show ONLINE within two minutes."
+}
+
+reconnect_agent() {
+  resolve_api_url
+  /usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w >/dev/null 2>&1 || { echo "IRIS Agent is not enrolled. Use install with the enrollment code from IRIS."; exit 1; }
+  /bin/mkdir -p "$AGENT_DIR"
+  /bin/chmod 700 "$AGENT_DIR"
+  /bin/cp "$SCRIPT_PATH" "$AGENT_PATH"
+  /bin/chmod 700 "$AGENT_PATH"
+  write_launch_agent
+  /bin/launchctl bootout "gui/$(/usr/bin/id -u)/com.iris.security-agent" 2>/dev/null || true
+  /bin/launchctl bootstrap "gui/$(/usr/bin/id -u)" "$PLIST_PATH"
+  /bin/launchctl kickstart -k "gui/$(/usr/bin/id -u)/com.iris.security-agent" 2>/dev/null || check_in
+  echo "IRIS Agent reconnecting to $API_URL. Your device should show ONLINE within two minutes."
 }
 
 uninstall_agent() {
@@ -161,8 +236,9 @@ uninstall_agent() {
 case "${1:-install}" in
   install) install_agent ;;
   upgrade) upgrade_agent ;;
+  reconnect) reconnect_agent ;;
   run) check_in ;;
   status) /bin/launchctl print "gui/$(/usr/bin/id -u)/com.iris.security-agent" >/dev/null 2>&1 && echo "IRIS Agent is running." || echo "IRIS Agent is not running." ;;
   uninstall) uninstall_agent ;;
-  *) echo "Usage: $0 [install|upgrade|run|status|uninstall]"; exit 2 ;;
+  *) echo "Usage: $0 [install|upgrade|reconnect|run|status|uninstall]"; exit 2 ;;
 esac

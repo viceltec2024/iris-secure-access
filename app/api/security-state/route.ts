@@ -1,46 +1,17 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
-import { agentRequestNonces, devices, incidentStates, remediationPlans, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
-import { logAudit, provisionIrisUser } from "../../../lib/authz";
+import { agentRequestNonces, appSettings, devices, incidentStates, remediationPlans, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
+import { queueAgentCommands } from "../../../lib/iris-agent-commands";
+import { type AgentTelemetry, deviceView } from "../../../lib/iris-device-view";
+import { commandsForAlert } from "../../../lib/iris-live-soc";
+import { irisReconnectOrigin } from "../../../lib/iris-origin";
+import { listRecentAudit, logAudit, provisionIrisUser } from "../../../lib/authz";
+import { parseWalletSessionValue } from "../../../lib/iris-chain";
+import { approveProposal, parsePurchaseDesk, rejectProposal } from "../../../lib/iris-purchases";
 
-const knownIncidents = new Set(["IR-1042", "IR-1041", "IR-1039", "IR-1036", "IR-1032"]);
-const ONLINE_WINDOW_MS = 5 * 60 * 1000;
-
-type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; unsignedPersistenceItems?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
-
-function deviceView(device: typeof devices.$inferSelect, trustedNames: string[] = []) {
-  let telemetry: AgentTelemetry | null = null;
-  try {
-    const parsed = JSON.parse(device.telemetry || "{}");
-    if (parsed && typeof parsed === "object" && Object.keys(parsed).length) telemetry = parsed as AgentTelemetry;
-  } catch { telemetry = null; }
-  const reportedAt = device.lastSeenAt ? Date.parse(device.lastSeenAt) : Number.NaN;
-  const fresh = Number.isFinite(reportedAt) && Date.now() - reportedAt <= ONLINE_WINDOW_MS;
-  const enrolled = Boolean(device.agentTokenHash);
-  if (telemetry) {
-    telemetry.trustedApplications = trustedNames;
-    telemetry.riskyApplications = (telemetry.riskyApplications || []).filter(name => !trustedNames.includes(name));
-    if (!telemetry.riskyApplications.length) telemetry.securityFindings = (telemetry.securityFindings || []).filter(finding => finding !== "UNVERIFIED_APPLICATIONS_FOUND");
-  }
-  let healthScore: number | null = telemetry ? 100 : null;
-  if (healthScore !== null) {
-    if (telemetry!.firewallEnabled === false) healthScore -= 30;
-    if (telemetry!.gatekeeperEnabled === false) healthScore -= 20;
-    if (telemetry!.fileVaultEnabled === false) healthScore -= 25;
-    if (telemetry!.sipEnabled === false) healthScore -= 25;
-    if (telemetry!.automaticUpdatesEnabled === false) healthScore -= 10;
-    if (telemetry!.xProtectPresent === false) healthScore -= 30;
-    if (telemetry!.malwareRemovalToolPresent === false) healthScore -= 15;
-    if (telemetry!.unsignedPersistenceItems?.length) healthScore -= Math.min(30, telemetry!.unsignedPersistenceItems.length * 10);
-    if (telemetry!.riskyApplications?.length) healthScore -= Math.min(20, telemetry!.riskyApplications.length * 5);
-    if ((telemetry!.diskUsedPercent ?? 0) >= 95) healthScore -= 30; else if ((telemetry!.diskUsedPercent ?? 0) >= 85) healthScore -= 15;
-    if ((telemetry!.memoryUsedPercent ?? 0) >= 95) healthScore -= 20; else if ((telemetry!.memoryUsedPercent ?? 0) >= 85) healthScore -= 10;
-    if (!fresh) healthScore -= 20;
-    healthScore = Math.max(0, healthScore);
-  }
-  return { id: device.id, name: device.name, platform: device.platform, status: !enrolled ? "PENDING" : fresh ? "ONLINE" : "OFFLINE", risk: device.risk, enrollmentCode: device.enrollmentCode, lastSeenAt: device.lastSeenAt, telemetry, healthScore, provenance: enrolled && telemetry ? "REAL" : "UNVERIFIED" };
-}
+const WALLET_KEY = "iris_local_wallet_session";
+const DESK_KEY = "iris_purchase_desk";
 
 async function currentUser() {
   const identity = await getChatGPTUser();
@@ -48,7 +19,7 @@ async function currentUser() {
   return provisionIrisUser(identity);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
   const db = getDb();
@@ -58,9 +29,25 @@ export async function GET() {
   const trustedRows = deviceRows.length ? await db.select().from(trustedApplications).where(inArray(trustedApplications.deviceId, deviceRows.map(device => device.id))) : [];
   const alerts = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(100) : [];
   const remediations = deviceRows.length ? await db.select().from(remediationPlans).where(inArray(remediationPlans.deviceId, deviceRows.map(device => device.id))).orderBy(desc(remediationPlans.approvedAt)).limit(100) : [];
-  const incidents = user.role === "ADMIN" ? await db.select().from(incidentStates) : [];
+  const incidents = await db.select().from(incidentStates);
   const actions = user.role === "ADMIN" ? await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30) : await db.select().from(responseActions).where(eq(responseActions.actorEmail, user.email)).orderBy(desc(responseActions.createdAt)).limit(30);
-  return Response.json({ incidents, actions, alerts, remediations, devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))) });
+  const audit = await listRecentAudit(user.email, user.role, 40);
+  const [walletRow] = await db.select().from(appSettings).where(eq(appSettings.key, `${WALLET_KEY}:${user.email}`)).limit(1);
+  const wallet = parseWalletSessionValue(walletRow?.value || "");
+  const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, `${DESK_KEY}:${user.email}`)).limit(1);
+  const purchases = parsePurchaseDesk(deskRow?.value || "").proposals.filter(item => item.status === "awaiting_approval");
+  return Response.json({
+    live: true,
+    agentOrigin: irisReconnectOrigin(new URL(request.url).origin, process.env.IRIS_PUBLIC_ORIGIN || ""),
+    incidents,
+    actions,
+    alerts,
+    remediations,
+    audit,
+    purchases,
+    wallet: wallet ? { connected: true, address: wallet.address, mode: wallet.mode } : { connected: false, address: "", mode: "watch" },
+    devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))),
+  });
 }
 
 export async function POST(request: Request) {
@@ -122,7 +109,7 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await request.json().catch(() => ({})) as { type?: string; alertId?: string; alertStatus?: "ACKNOWLEDGED" | "RESOLVED"; incidentId?: string; decision?: "approve" | "reject" };
+  const body = await request.json().catch(() => ({})) as { type?: string; alertId?: string; alertStatus?: "ACKNOWLEDGED" | "RESOLVED"; incidentId?: string; decision?: "approve" | "reject"; language?: "es" | "en" };
   if (body.type === "start_remediation" && body.alertId) {
     const db = getDb();
     const [alert] = await db.select().from(securityAlerts).where(eq(securityAlerts.id, body.alertId)).limit(1);
@@ -142,11 +129,64 @@ export async function PATCH(request: Request) {
     await logAudit(user.email, body.alertStatus === "RESOLVED" ? "SECURITY_ALERT_RESOLVED" : "SECURITY_ALERT_ACKNOWLEDGED", alert.deviceId, "SUCCESS", { alertId: alert.id, code: alert.code });
     return Response.json({ alert: updated });
   }
-  if (!body.incidentId || !knownIncidents.has(body.incidentId) || !["approve", "reject"].includes(body.decision || "")) return Response.json({ error: "Invalid action" }, { status: 400 });
+  if (!body.incidentId || !["approve", "reject"].includes(body.decision || "")) return Response.json({ error: "Invalid action" }, { status: 400 });
   const approved = body.decision === "approve";
   const now = new Date().toISOString();
-  if (approved) await getDb().insert(incidentStates).values({ incidentId: body.incidentId, status: "Contained", updatedBy: user.email, updatedAt: now }).onConflictDoUpdate({ target: incidentStates.incidentId, set: { status: "Contained", updatedBy: user.email, updatedAt: now } });
-  await getDb().insert(responseActions).values({ incidentId: body.incidentId, actorEmail: user.email, action: approved ? "CONTAIN_INCIDENT" : "REJECT_RESPONSE_PLAN", outcome: approved ? "COMPLETED" : "REJECTED", mode: "SIMULATION" });
-  await logAudit(user.email, approved ? "INCIDENT_RESPONSE_APPROVED" : "INCIDENT_RESPONSE_REJECTED", body.incidentId, "SUCCESS", { mode: "SIMULATION" });
-  return Response.json({ incidentId: body.incidentId, status: approved ? "Contained" : null, decision: body.decision });
+  const db = getDb();
+  const language = body.language === "en" ? "en" : "es";
+
+  if (body.incidentId.startsWith("purchase:")) {
+    const proposalId = body.incidentId.slice("purchase:".length);
+    const deskKey = `${DESK_KEY}:${user.email}`;
+    const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, deskKey)).limit(1);
+    const desk = parsePurchaseDesk(deskRow?.value || "");
+    try {
+      if (approved) {
+        const result = approveProposal(desk, proposalId);
+        await db.insert(appSettings).values({ key: deskKey, value: JSON.stringify(result.state), updatedBy: user.email, updatedAt: now }).onConflictDoUpdate({
+          target: appSettings.key,
+          set: { value: JSON.stringify(result.state), updatedBy: user.email, updatedAt: now },
+        });
+        await db.insert(incidentStates).values({ incidentId: body.incidentId, status: "Contained", updatedBy: user.email, updatedAt: now }).onConflictDoUpdate({ target: incidentStates.incidentId, set: { status: "Contained", updatedBy: user.email, updatedAt: now } });
+        await db.insert(responseActions).values({ incidentId: body.incidentId, actorEmail: user.email, action: "APPROVE_PURCHASE", outcome: "COMPLETED", mode: "LIVE" });
+        await logAudit(user.email, "IRIS_PURCHASE_APPROVED", result.proposal.id, "SUCCESS", { mode: "LIVE", checkoutUrl: result.proposal.checkoutUrl });
+        return Response.json({ incidentId: body.incidentId, status: "Contained", decision: "approve", checkoutUrl: result.proposal.checkoutUrl, mode: "LIVE" });
+      }
+      rejectProposal(desk, proposalId);
+      await db.insert(appSettings).values({ key: deskKey, value: JSON.stringify(desk), updatedBy: user.email, updatedAt: now }).onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: JSON.stringify(desk), updatedBy: user.email, updatedAt: now },
+      });
+      await db.insert(responseActions).values({ incidentId: body.incidentId, actorEmail: user.email, action: "REJECT_PURCHASE", outcome: "REJECTED", mode: "LIVE" });
+      await logAudit(user.email, "IRIS_PURCHASE_REJECTED", proposalId, "SUCCESS", { mode: "LIVE" });
+      return Response.json({ incidentId: body.incidentId, status: null, decision: "reject", mode: "LIVE" });
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : "Purchase decision failed" }, { status: 400 });
+    }
+  }
+
+  if (body.incidentId.startsWith("device:")) {
+    const deviceId = body.incidentId.slice("device:".length);
+    const [device] = await db.select().from(devices).where(eq(devices.id, deviceId)).limit(1);
+    if (!device || (user.role !== "ADMIN" && device.ownerEmail !== user.email)) return Response.json({ error: "Device not found" }, { status: 404 });
+    if (approved) await db.insert(incidentStates).values({ incidentId: body.incidentId, status: "Contained", updatedBy: user.email, updatedAt: now }).onConflictDoUpdate({ target: incidentStates.incidentId, set: { status: "Contained", updatedBy: user.email, updatedAt: now } });
+    await db.insert(responseActions).values({ incidentId: body.incidentId, actorEmail: user.email, action: approved ? "ACKNOWLEDGE_OFFLINE_AGENT" : "REJECT_RESPONSE_PLAN", outcome: approved ? "COMPLETED" : "REJECTED", mode: "LIVE" });
+    await logAudit(user.email, approved ? "INCIDENT_RESPONSE_APPROVED" : "INCIDENT_RESPONSE_REJECTED", body.incidentId, "SUCCESS", { mode: "LIVE", kind: "device" });
+    return Response.json({ incidentId: body.incidentId, status: approved ? "Contained" : null, decision: body.decision, mode: "LIVE" });
+  }
+
+  const [alert] = await db.select().from(securityAlerts).where(eq(securityAlerts.id, body.incidentId)).limit(1);
+  if (!alert || (user.role !== "ADMIN" && alert.ownerEmail !== user.email)) return Response.json({ error: "Live incident not found" }, { status: 404 });
+  if (approved) {
+    const [plan] = await db.insert(remediationPlans).values({ id: crypto.randomUUID(), alertId: alert.id, deviceId: alert.deviceId, ownerEmail: alert.ownerEmail, actionCode: alert.code, status: "VERIFYING", approvedBy: user.email, approvedAt: now, lastCheckedAt: now }).onConflictDoUpdate({ target: remediationPlans.alertId, set: { status: "VERIFYING", approvedBy: user.email, approvedAt: now, lastCheckedAt: now, verifiedAt: null } }).returning();
+    await db.update(securityAlerts).set({ status: "ACKNOWLEDGED", updatedBy: user.email }).where(eq(securityAlerts.id, alert.id));
+    const queued = await queueAgentCommands(alert.deviceId, user.email, commandsForAlert(alert.code, language), alert.id);
+    await db.insert(incidentStates).values({ incidentId: alert.id, status: "Investigating", updatedBy: user.email, updatedAt: now }).onConflictDoUpdate({ target: incidentStates.incidentId, set: { status: "Investigating", updatedBy: user.email, updatedAt: now } });
+    await db.insert(responseActions).values({ incidentId: alert.id, actorEmail: user.email, action: "DISPATCH_AGENT_COMMANDS", outcome: "COMPLETED", mode: "LIVE" });
+    await logAudit(user.email, "INCIDENT_RESPONSE_APPROVED", alert.id, "SUCCESS", { mode: "LIVE", actionCode: alert.code, commands: queued.map(item => item.code) });
+    return Response.json({ incidentId: alert.id, status: "Investigating", decision: "approve", mode: "LIVE", remediation: plan, commands: queued.map(item => item.code) });
+  }
+  await db.insert(responseActions).values({ incidentId: alert.id, actorEmail: user.email, action: "REJECT_RESPONSE_PLAN", outcome: "REJECTED", mode: "LIVE" });
+  await logAudit(user.email, "INCIDENT_RESPONSE_REJECTED", alert.id, "SUCCESS", { mode: "LIVE" });
+  return Response.json({ incidentId: alert.id, status: null, decision: "reject", mode: "LIVE" });
 }

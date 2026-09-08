@@ -1,7 +1,8 @@
 import { generateRegistrationOptions } from "@simplewebauthn/server";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { provisionIrisUser } from "../../../../../lib/authz";
-import { PASSKEY_RP_ID, PASSKEY_RP_NAME, passkeysFor, stableUserId, storeChallenge } from "../../../../../lib/passkeys";
+import { PASSKEY_RP_NAME, parsePasskeyTransports, passkeysFor, stableUserId, storeChallenge } from "../../../../../lib/passkeys";
+import { passkeyRelyingParty } from "../../../../../lib/iris-origin";
 import { enforceRateLimit } from "../../../../../lib/rate-limit";
 
 export async function POST(request: Request) {
@@ -15,12 +16,13 @@ export async function POST(request: Request) {
   }
 
   const existing = await passkeysFor(user.email);
+  const { rpID } = passkeyRelyingParty(request.url);
   const options = await generateRegistrationOptions({
-    rpName: PASSKEY_RP_NAME, rpID: PASSKEY_RP_ID,
+    rpName: PASSKEY_RP_NAME, rpID,
     userID: await stableUserId(user.email), userName: user.email,
     userDisplayName: user.displayName || user.email,
     attestationType: "none",
-    excludeCredentials: existing.map(item => ({ id: item.id, transports: JSON.parse(item.transports) })),
+    excludeCredentials: existing.map(item => ({ id: item.id, transports: parsePasskeyTransports(item.transports) })),
     authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
   });
   await storeChallenge(user.email, "REGISTER", options.challenge);

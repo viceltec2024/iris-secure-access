@@ -1,6 +1,7 @@
 import { createEVMClient } from "@metamask/connect-evm";
+import { BASE_MAINNET_CHAIN_ID } from "../../lib/iris-chain";
 
-export const BASE_MAINNET_CHAIN_ID = "0x2105" as const;
+export { BASE_MAINNET_CHAIN_ID };
 
 let clientPromise: ReturnType<typeof createEVMClient> | null = null;
 const displayUriListeners = new Set<(uri: string) => void>();
@@ -25,7 +26,7 @@ export function getMetaMaskClient() {
       },
       ui: {
         headless: true,
-        preferExtension: false,
+        preferExtension: true,
         showInstallModal: false,
       },
       mobile: {

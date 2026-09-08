@@ -1,29 +1,31 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- WebAuthn availability is probed after mount */
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { Fingerprint, Key, LockKey, ShieldCheck } from "@phosphor-icons/react";
 
-type Props = { passkeyEnrolled: boolean; passwordConfigured: boolean; verified: boolean; signOutPath: string; children: ReactNode };
+type Props = { passkeyEnrolled: boolean; passwordConfigured: boolean; verified: boolean; signOutPath: string; devSkipStepUp?: boolean; children: ReactNode };
 
-export default function PasskeyGate({ passkeyEnrolled, passwordConfigured, verified, signOutPath, children }: Props) {
+export default function PasskeyGate({ passkeyEnrolled, passwordConfigured, verified, signOutPath, devSkipStepUp = false, children }: Props) {
   const [platformAuthenticatorAvailable, setPlatformAuthenticatorAvailable] = useState<boolean | null>(null);
-  const [webAuthnAvailable, setWebAuthnAvailable] = useState(true);
+  const [webAuthnAvailable] = useState(() => typeof window === "undefined" || "PublicKeyCredential" in window);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showPasswordSetup, setShowPasswordSetup] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   useEffect(() => {
-    if (!("PublicKeyCredential" in window)) {
-      setWebAuthnAvailable(false);
+    if (!webAuthnAvailable) {
       setPlatformAuthenticatorAvailable(false);
       return;
     }
     PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
       .then(setPlatformAuthenticatorAvailable)
       .catch(() => setPlatformAuthenticatorAvailable(false));
-  }, []);
+  }, [webAuthnAvailable]);
+
+  if (devSkipStepUp) return <>{children}</>;
 
   async function runPasskey(mode: "register" | "auth") {
     setBusy(true); setError("");

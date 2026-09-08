@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import { getDb } from "../db";
 import { biometricSessions, passkeyChallenges, passkeyCredentials } from "../db/schema";
+import { passkeyRelyingParty } from "./iris-origin";
 
 export const PASSKEY_RP_NAME = "IRIS Secure Access";
 export const PASSKEY_RP_ID = "iris-secure-access.taylor-667.chatgpt.site";
@@ -15,6 +16,16 @@ const SESSION_TTL_SECONDS = 12 * 60 * 60;
 
 export const encodePublicKey = (value: Uint8Array) => isoBase64URL.fromBuffer(value);
 export const decodePublicKey = (value: string) => isoBase64URL.toBuffer(value);
+
+export function parsePasskeyTransports(value: string | null | undefined) {
+  try {
+    const parsed = JSON.parse(value || "[]") as unknown;
+    const allowed = new Set(["ble", "hybrid", "internal", "nfc", "usb"]);
+    return Array.isArray(parsed) ? parsed.filter((item): item is "ble" | "hybrid" | "internal" | "nfc" | "usb" => typeof item === "string" && allowed.has(item)) : [];
+  } catch {
+    return [];
+  }
+}
 
 export async function passkeysFor(ownerEmail: string) {
   return getDb().select().from(passkeyCredentials).where(eq(passkeyCredentials.ownerEmail, ownerEmail));
@@ -46,7 +57,7 @@ async function digest(value: string) {
   return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function issueBiometricSession(ownerEmail: string) {
+export async function issueBiometricSession(ownerEmail: string, requestUrl?: string) {
   const rawToken = `${crypto.randomUUID()}${crypto.randomUUID()}`;
   const tokenHash = await digest(rawToken);
   const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
@@ -54,7 +65,8 @@ export async function issueBiometricSession(ownerEmail: string) {
   await db.delete(biometricSessions).where(eq(biometricSessions.ownerEmail, ownerEmail));
   await db.insert(biometricSessions).values({ tokenHash, ownerEmail, expiresAt });
   const jar = await cookies();
-  jar.set(BIOMETRIC_COOKIE, rawToken, { httpOnly: true, secure: true, sameSite: "strict", path: "/", maxAge: SESSION_TTL_SECONDS });
+  const secure = requestUrl ? passkeyRelyingParty(requestUrl).secureCookie : process.env.NODE_ENV === "production";
+  jar.set(BIOMETRIC_COOKIE, rawToken, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: SESSION_TTL_SECONDS });
 }
 
 export async function isBiometricVerified(ownerEmail: string) {
