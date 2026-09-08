@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">SNIPERHN Token</title><desc id="desc">Crosshair emblem for the SNIPERHN ERC-20 token</desc>
+  <defs>
+    <radialGradient id="bg" cx="34%" cy="22%" r="86%"><stop offset="0" stop-color="#7a2a2a"/><stop offset=".55" stop-color="#1d1420"/><stop offset="1" stop-color="#071018"/></radialGradient>
+    <linearGradient id="ring" x1="70" y1="48" x2="444" y2="464" gradientUnits="userSpaceOnUse"><stop stop-color="#ffb37a"/><stop offset=".5" stop-color="#e24b4b"/><stop offset="1" stop-color="#39c6e8"/></linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <circle cx="256" cy="256" r="242" fill="#050b14"/><circle cx="256" cy="256" r="226" fill="url(#bg)" stroke="url(#ring)" stroke-width="12"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="#ffd0a8" stroke-opacity=".28" stroke-width="6"/>
+  <circle cx="256" cy="256" r="78" fill="none" stroke="#39c6e8" stroke-opacity=".7" stroke-width="5" filter="url(#glow)"/>
+  <path d="M256 86v78M256 348v78M86 256h78M348 256h78" fill="none" stroke="#f2d0b0" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="256" cy="256" r="18" fill="#ff5d4a" filter="url(#glow)"/>
+</svg>
