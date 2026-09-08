@@ -15,6 +15,14 @@ test("token deploy dialog uses the official IRIS token emblem", () => {
   assert.doesNotMatch(source, /RocketLaunch/);
 });
 
+test("Ask IRIS can open in full screen", () => {
+  const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(panel, /fullScreen \? <CornersIn/);
+  assert.match(panel, /full-screen/);
+  assert.match(css, /\.iris-chat\.full-screen\{/);
+});
+
 test("sidebar and home lockups use the IRIS brand mark", () => {
   const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
   const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");

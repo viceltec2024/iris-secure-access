@@ -367,6 +367,10 @@ a { color: inherit; }
 .iris-voice-stage.thinking .iris-voice-status{color:#efc56d}
 .iris-voice-caption{z-index:1;max-width:320px;margin:0;color:#c5d7e3;font-size:13px;line-height:1.45;text-align:center}
 .iris-voice-hear{z-index:1;min-height:44px;padding:0 22px;border:1px solid #2bd4ff;border-radius:999px;background:#10364a;color:#e9fbff;font-size:13px;font-weight:800;letter-spacing:.04em}
+.iris-chat.full-screen{inset:0;right:0;bottom:0;width:100vw;height:100dvh;max-width:none;border:0;border-radius:0;z-index:80}
+.iris-chat.full-screen .iris-voice-stage{padding:48px 28px 32px}
+.iris-chat.full-screen .iris-chat-messages{width:min(760px,100%);margin:0 auto}
+.iris-chat.full-screen .iris-chat-input{width:min(760px,calc(100% - 48px));margin:0 auto 18px}
 @media(prefers-reduced-motion:reduce){.iris-system-orb{filter:none}}
 .wallet-connect-bar-providers{grid-template-columns:1.3fr .9fr auto auto auto}
 .wallet-connect-bar .wallet-metamask{border-color:#d68a2a;background:#2b1c0d;color:#ffc56d}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChatCircleDots, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
+import { ArrowUp, ChatCircleDots, CornersIn, CornersOut, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 import { isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, playAudioBuffer, recognitionLanguage, releaseMicrophone, resumeSpeechIfPaused, scoreSpeechVoice, splitSpeechChunks, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
 import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
@@ -43,6 +43,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const [voiceEnergy, setVoiceEnergy] = useState(0);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [needsHear, setNeedsHear] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
   const speakingRef = useRef(false);
   const lastSpokenRef = useRef("");
   const hearTimerRef = useRef<number | null>(null);
@@ -77,6 +78,15 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
     return () => { window.speechSynthesis.cancel(); window.speechSynthesis.removeEventListener("voiceschanged", refreshVoices); };
   }, []);
+
+  useEffect(() => {
+    if (!fullScreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFullScreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullScreen]);
 
   useEffect(() => () => { listenActiveRef.current = false; clearVoiceTimers(); stopSpeechKeepAlive(); recognitionRef.current?.abort(); stopLevelMonitorRef.current?.(); releaseMicrophone(streamRef.current); streamRef.current = null; voiceRequestRef.current?.abort(); audioRef.current?.pause(); if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current); }, []);
 
@@ -482,10 +492,14 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
 
   if (!open) return <button className="iris-chat-launcher" onClick={() => setOpen(true)}><ChatCircleDots weight="fill" /><span>Ask IRIS</span><i /></button>;
 
-  return <aside className={`iris-chat ${voiceStage ? "voice-open" : ""}`} aria-label="Ask IRIS assistant">
-    <header><button onClick={toggleAutoSpeak} aria-label={autoSpeak ? "Silenciar respuestas automáticas" : "Activar respuestas habladas"} title={autoSpeak ? "Silenciar" : "Activar voz"}>{autoSpeak ? <SpeakerHigh /> : <SpeakerSlash />}</button><button onClick={() => { closeVoiceStage(); stopVoice(); setOpen(false); }} aria-label="Close Ask IRIS"><X /></button></header>
+  return <aside className={`iris-chat ${voiceStage ? "voice-open" : ""}${fullScreen ? " full-screen" : ""}`} aria-label="Ask IRIS assistant">
+    <header>
+      <button onClick={() => setFullScreen(value => !value)} aria-label={fullScreen ? (language === "es" ? "Salir de pantalla completa" : "Exit full screen") : (language === "es" ? "Pantalla completa" : "Full screen")} title={fullScreen ? (language === "es" ? "Salir de pantalla completa" : "Exit full screen") : (language === "es" ? "Pantalla completa" : "Full screen")}>{fullScreen ? <CornersIn /> : <CornersOut />}</button>
+      <button onClick={toggleAutoSpeak} aria-label={autoSpeak ? "Silenciar respuestas automáticas" : "Activar respuestas habladas"} title={autoSpeak ? "Silenciar" : "Activar voz"}>{autoSpeak ? <SpeakerHigh /> : <SpeakerSlash />}</button>
+      <button onClick={() => { setFullScreen(false); closeVoiceStage(); stopVoice(); setOpen(false); }} aria-label="Close Ask IRIS"><X /></button>
+    </header>
     {voiceStage
-      ? <IrisVoiceStage language={language} mode={voiceMode} transcript={liveTranscript} answer={spokenAnswer} hearing={hearing} level={voiceEnergy} showHear={needsHear} onHear={hearIris} />
+      ? <IrisVoiceStage language={language} mode={voiceMode} transcript={liveTranscript} answer={spokenAnswer} hearing={hearing} level={voiceEnergy} showHear={needsHear} onHear={hearIris} expanded={fullScreen} />
       : <div className="iris-chat-messages" aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p></article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>}
     <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong> · {selectedIncident.id}{voiceHint ? ` · ${voiceHint}` : ""}</div>
     <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Habla o escribe tu pregunta para IRIS…" : "Speak or type your question for IRIS…"} rows={2} /><button type="button" className={`iris-voice-command ${listening || voiceStage ? "listening" : ""}`} onClick={() => void startListening()} aria-label={language === "es" ? "Comando de voz" : "Voice command"} title={language === "es" ? "Comando de voz" : "Voice command"}><Microphone weight="fill" /></button><button type="submit" disabled={!input.trim() || loading} aria-label="Send question"><ArrowUp weight="bold" /></button></form>
