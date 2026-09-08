@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChatCircleDots, CornersIn, CornersOut, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import { holdSpeechSession, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, playMpegSpeech, recognitionLanguage, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
+import { holdSpeechSession, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
 import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
 
@@ -35,7 +35,6 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [voiceHint, setVoiceHint] = useState("");
-  const [neuralVoice, setNeuralVoice] = useState<boolean | null>(null);
   const [voiceStage, setVoiceStage] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
   const [spokenAnswer, setSpokenAnswer] = useState("");
@@ -64,14 +63,11 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const greetedRef = useRef(false);
   const skipResumeRef = useRef(false);
   const browserStopRef = useRef<(() => void) | null>(null);
+  const queuedSpeechRef = useRef<string | null>(null);
   const autoSpeakRef = useRef(true);
   autoSpeakRef.current = autoSpeak;
 
   const voiceMode: VoiceStageMode = listening ? "listening" : loading || voiceLoading ? "thinking" : speaking ? "speaking" : "ready";
-
-  useEffect(() => {
-    void fetch("/api/iris-voice").then(response => response.ok ? response.json() : null).then((data: { tts?: boolean } | null) => setNeuralVoice(Boolean(data?.tts))).catch(() => setNeuralVoice(false));
-  }, []);
 
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -145,6 +141,16 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
           speakingRef.current = false;
           setSpeaking(false);
           setVoiceLoading(false);
+          const queued = queuedSpeechRef.current;
+          queuedSpeechRef.current = null;
+          if (queued) {
+            void browserVoiceFallback(queued, language === "es" ? "es" : detectedLanguage(queued)).then(resolve);
+            return;
+          }
+          if (loadingRef.current && autoSpeakRef.current) {
+            void browserVoiceFallback(language === "es" ? "Un momento." : "One moment.", language).then(resolve);
+            return;
+          }
           if (!skipResumeRef.current) resumeVoiceConversation();
           skipResumeRef.current = false;
           resolve();
@@ -158,37 +164,12 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     unlockSpeechEngine();
     holdSpeechSession();
     releaseMicForSpeech();
-    stopVoice();
-    const spokenLanguage = detectedLanguage(text);
-    if (neuralVoice === false) {
-      await browserVoiceFallback(text, spokenLanguage);
+    if (browserStopRef.current) {
+      queuedSpeechRef.current = text;
       return;
     }
-    const controller = new AbortController(); voiceRequestRef.current = controller; setVoiceLoading(true);
-    try {
-      const response = await fetch("/api/iris-voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, language: spokenLanguage }), signal: controller.signal });
-      if (!response.ok) throw new Error("voice unavailable");
-      const buffer = await response.arrayBuffer();
-      if (controller.signal.aborted) return;
-      await playMpegSpeech(buffer, () => {
-        speakingRef.current = true;
-        setSpeaking(true);
-        setVoiceLoading(false);
-        setVoiceHint(language === "es" ? "IRIS te está hablando. Sube el volumen." : "IRIS is speaking. Turn the volume up.");
-      });
-      if (!controller.signal.aborted) finishNeuralVoice();
-    } catch (error) {
-      const aborted = error instanceof DOMException && error.name === "AbortError";
-      voiceRequestRef.current = null;
-      setVoiceLoading(false);
-      if (aborted) {
-        speakingRef.current = false;
-        setSpeaking(false);
-        skipResumeRef.current = false;
-        return;
-      }
-      await browserVoiceFallback(text, spokenLanguage);
-    }
+    queuedSpeechRef.current = null;
+    await browserVoiceFallback(text, language === "es" ? "es" : detectedLanguage(text));
   }
 
   function clearVoiceTimers() {
@@ -210,13 +191,6 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
 
   function resumeVoiceConversation() {
     if (voiceStageRef.current && !loadingRef.current) setTimeout(() => void startListeningRef.current(), 400);
-  }
-
-  function finishNeuralVoice() {
-    voiceRequestRef.current = null; speakingRef.current = false; setSpeaking(false); setVoiceLoading(false); audioRef.current = null;
-    if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; }
-    if (!skipResumeRef.current) resumeVoiceConversation();
-    skipResumeRef.current = false;
   }
 
   function openVoiceStage() {
@@ -248,7 +222,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     stopVoice();
   }
 
-  function stopVoice() { browserStopRef.current?.(); browserStopRef.current = null; stopSpeechEnginePlayback(); stopSpeechKeepAlive(); voiceRequestRef.current?.abort(); voiceRequestRef.current = null; audioRef.current?.pause(); audioRef.current = null; if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; } if ("speechSynthesis" in window) window.speechSynthesis.cancel(); speakingRef.current = false; setSpeaking(false); setVoiceLoading(false); }
+  function stopVoice() { queuedSpeechRef.current = null; browserStopRef.current?.(); browserStopRef.current = null; stopSpeechEnginePlayback(); stopSpeechKeepAlive(); voiceRequestRef.current?.abort(); voiceRequestRef.current = null; audioRef.current?.pause(); audioRef.current = null; if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; } if ("speechSynthesis" in window) window.speechSynthesis.cancel(); speakingRef.current = false; setSpeaking(false); setVoiceLoading(false); }
   function toggleAutoSpeak() {
     setAutoSpeak(value => {
       const next = !value;
@@ -268,6 +242,13 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     if (!clean || loading) return;
     const nextMessages = [...messages, { role: "user" as const, content: clean }];
     setMessages(nextMessages); setInput(""); loadingRef.current = true; setLoading(true); pauseRecognition();
+    if (autoSpeakRef.current) {
+      skipResumeRef.current = true;
+      browserStopRef.current?.();
+      browserStopRef.current = null;
+      queuedSpeechRef.current = null;
+      void browserVoiceFallback(language === "es" ? "Un momento." : "One moment.", language);
+    }
     try {
       const response = await fetch("/api/ask-iris", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: nextMessages.slice(-12), context: { language, section } }) });
       const data = await response.json() as { answer?: string; error?: string };

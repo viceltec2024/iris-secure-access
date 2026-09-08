@@ -318,7 +318,7 @@ export function speakBrowserText(
         finish(true);
       }, 1400);
     }, 900);
-  }, 120);
+  }, 0);
   return stop;
 }
 
