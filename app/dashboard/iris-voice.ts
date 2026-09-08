@@ -11,7 +11,7 @@ export function normalizeVoiceTranscript(value: string) {
   return value.toLocaleLowerCase().replace(/[.,!?¿¡;:]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-export function extractVoiceCommand(transcript: string, _language: "es" | "en") {
+export function extractVoiceCommand(transcript: string) {
   const trimmed = transcript.trim();
   if (!trimmed) return "";
   const normalized = normalizeVoiceTranscript(trimmed);

@@ -1,6 +1,5 @@
 "use client";
 
-/* eslint-disable react-hooks/set-state-in-effect -- SOC polls live security-state and market APIs */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import IrisBrandMark from "../iris-brand-mark";
@@ -8,7 +7,7 @@ import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
 import IrisMarketPanel from "./iris-market-panel";
 import { Language, text } from "./dashboard-i18n";
-import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase, type LiveWorker } from "../../lib/iris-live-soc";
+import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase } from "../../lib/iris-live-soc";
 import { IRIS_AGENT_SCRIPT_VERSION, irisAgentShellCommand } from "../../lib/iris-device-view";
 import { irisReconnectOrigin } from "../../lib/iris-origin";
 import { formatUtcClock } from "../../lib/iris-time";
@@ -22,7 +21,6 @@ type Device = { id: string; name: string; platform: string; status: "PENDING" | 
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
 type SecurityAlert = { id: string; deviceId: string; ownerEmail: string; fingerprint: string; code: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; status: "NEW" | "ACKNOWLEDGED" | "RESOLVED"; evidence: string; firstSeenAt: string; lastSeenAt: string; resolvedAt: string | null; updatedBy: string | null };
 type RemediationPlan = { id: string; alertId: string; deviceId: string; ownerEmail: string; actionCode: string; status: "VERIFYING" | "VERIFIED" | "CANCELLED"; approvedBy: string; approvedAt: string; lastCheckedAt: string | null; verifiedAt: string | null };
-type AgentRuntime = LiveWorker;
 
 function remediationGuide(code: string, language: Language) {
   const es = language === "es";

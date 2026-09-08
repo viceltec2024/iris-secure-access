@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable react-hooks/set-state-in-effect -- market panel polls Yahoo tape, board, and charts */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MagnifyingGlass, Pulse, Wallet } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 import { LIVE_REFRESH_MS, type MarketAnalysis, type MarketBar, type MarketBoard, type MarketQuote, type MarketRange } from "../../lib/iris-market";
@@ -79,7 +79,7 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
   const [group, setGroup] = useState<"all" | "indices" | "actions" | "crypto" | "latam">("all");
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Array<{ symbol: string; name: string }>>([]);
-  const [tick, setTick] = useState(0);
+  const [flashes, setFlashes] = useState<Record<string, "flash-up" | "flash-down">>({});
   const previous = useRef<Record<string, number>>({});
 
   useEffect(() => {
@@ -87,7 +87,6 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
     const loadTape = () => void fetch("/api/iris-market?view=live", { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => {
       if (!active || !data?.quotes) return;
       setTape(data as LiveTape);
-      setTick(current => current + 1);
     }).catch(() => undefined);
     const loadBoard = () => void fetch(`/api/iris-market?view=board&language=${language}`, { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => { if (active && data?.quotes) setBoard(data as MarketBoard); }).catch(() => undefined);
     loadTape();
@@ -116,17 +115,15 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
   const quotes = board?.quotes.length ? board.quotes : tape?.quotes || [];
   const visible = quotes.filter(item => group === "all" || item.group === group);
   const indexStrip = INDEX_STRIP.map(id => (tape?.quotes || quotes).find(item => item.symbol === id)).filter((item): item is MarketQuote => Boolean(item));
-  const flashes = useMemo(() => {
+  useEffect(() => {
     const next: Record<string, "flash-up" | "flash-down"> = {};
     for (const quote of tape?.quotes || []) {
       const prior = previous.current[quote.symbol];
       if (prior != null && prior !== quote.price) next[quote.symbol] = quote.price > prior ? "flash-up" : "flash-down";
+      previous.current[quote.symbol] = quote.price;
     }
-    return next;
-  }, [tape, tick]);
-  useEffect(() => {
-    for (const quote of tape?.quotes || []) previous.current[quote.symbol] = quote.price;
-  }, [tape, tick]);
+    setFlashes(next);
+  }, [tape]);
 
   const trendLabel = chart?.analysis.trend === "up" ? (es ? "Alcista" : "Bullish") : chart?.analysis.trend === "down" ? (es ? "Bajista" : "Bearish") : es ? "Lateral" : "Sideways";
 

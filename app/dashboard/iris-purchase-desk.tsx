@@ -9,7 +9,7 @@ import { PURCHASE_ASSETS, ROBINHOOD_CONNECT_URL, ROBINHOOD_WALLET_URL, type Purc
 
 const emptyDesk: PurchaseDeskState = { plans: [], proposals: [] };
 
-function sourceLabel(source: PurchaseSource, es: boolean) {
+function sourceLabel(source: PurchaseSource) {
   return source === "robinhood" ? "Robinhood" : "MetaMask";
 }
 
@@ -73,8 +73,8 @@ export default function IrisPurchaseDesk({ language, wallet, walletMode }: { lan
     await post({ action: "open", proposalId: result.approved.id });
     setPending(null);
     setNotice(es
-      ? `Aprobada. Completa la compra en ${sourceLabel(result.approved.source, es)}. IRIS no mueve fondos por su cuenta.`
-      : `Approved. Finish the purchase in ${sourceLabel(result.approved.source, es)}. IRIS never moves funds on its own.`);
+      ? `Aprobada. Completa la compra en ${sourceLabel(result.approved.source)}. IRIS no mueve fondos por su cuenta.`
+      : `Approved. Finish the purchase in ${sourceLabel(result.approved.source)}. IRIS never moves funds on its own.`);
   }
 
   const waiting = desk.proposals.filter(item => item.status === "awaiting_approval");
@@ -88,7 +88,7 @@ export default function IrisPurchaseDesk({ language, wallet, walletMode }: { lan
       <h2 id="purchase-approve-title">{es ? "IRIS no compra sola" : "IRIS does not buy alone"}</h2>
       <div className="token-deploy-summary">
         <span><b>${pending.amountUsd}</b> {pending.asset}</span>
-        <span>{sourceLabel(pending.source, es)}</span>
+        <span>{sourceLabel(pending.source)}</span>
         <span>{es ? "Pago oficial" : "Official checkout"}</span>
       </div>
       <div className="token-gas-warning"><Warning weight="fill" /><span><strong>{es ? "Tú confirmas en la app oficial" : "You confirm in the official app"}</strong>{es
@@ -100,7 +100,7 @@ export default function IrisPurchaseDesk({ language, wallet, walletMode }: { lan
           : "IRIS only opens MetaMask or Uniswap. You sign or pay in that window. IRIS cannot spend without that confirmation."}</span></div>
       <div className="approval-actions">
         <button disabled={busy} onClick={() => setPending(null)}>{es ? "Cancelar" : "Cancel"}</button>
-        <button disabled={busy} onClick={() => void confirmApproval()}><CheckCircle />{busy ? (es ? "Abriendo…" : "Opening…") : (es ? `Aprobar y abrir ${sourceLabel(pending.source, es)}` : `Approve and open ${sourceLabel(pending.source, es)}`)}</button>
+        <button disabled={busy} onClick={() => void confirmApproval()}><CheckCircle />{busy ? (es ? "Abriendo…" : "Opening…") : (es ? `Aprobar y abrir ${sourceLabel(pending.source)}` : `Approve and open ${sourceLabel(pending.source)}`)}</button>
       </div>
     </section></div>}
 
@@ -139,7 +139,7 @@ export default function IrisPurchaseDesk({ language, wallet, walletMode }: { lan
       <strong>{es ? "IRIS espera tu aprobación" : "IRIS is waiting for your approval"}</strong>
       {waiting.map(item => <article key={item.id}>
         <span>{item.source === "robinhood" ? <CurrencyBtc /> : <CurrencyEth />}</span>
-        <div><b>${item.amountUsd} {item.asset}</b><small>{es ? "vía" : "via"} {sourceLabel(item.source, es)}</small></div>
+        <div><b>${item.amountUsd} {item.asset}</b><small>{es ? "vía" : "via"} {sourceLabel(item.source)}</small></div>
         <button disabled={busy} onClick={() => void post({ action: "reject", proposalId: item.id })}>{es ? "Rechazar" : "Reject"}</button>
         <button disabled={busy} onClick={() => setPending(item)}>{es ? "Aprobar" : "Approve"}</button>
       </article>)}
@@ -149,7 +149,7 @@ export default function IrisPurchaseDesk({ language, wallet, walletMode }: { lan
       <div>
         <h4>{es ? "Planes activos" : "Active plans"}</h4>
         {desk.plans.filter(item => item.status === "active" || item.status === "paused").map(plan => <article key={plan.id} className="purchase-plan">
-          <div><b>${plan.amountUsd} {plan.asset}</b><small>{sourceLabel(plan.source, es)} · {plan.cadence === "daily" ? (es ? "cada día" : "daily") : plan.cadence === "weekly" ? (es ? "cada semana" : "weekly") : (es ? "una vez" : "once")}</small></div>
+          <div><b>${plan.amountUsd} {plan.asset}</b><small>{sourceLabel(plan.source)} · {plan.cadence === "daily" ? (es ? "cada día" : "daily") : plan.cadence === "weekly" ? (es ? "cada semana" : "weekly") : (es ? "una vez" : "once")}</small></div>
           <div className="purchase-plan-actions">
             <button disabled={busy} onClick={() => void post({ action: "propose_now", planId: plan.id })}>{es ? "Proponer ahora" : "Propose now"}</button>
             <button disabled={busy} onClick={() => void post({ action: "set_plan", planId: plan.id, status: plan.status === "paused" ? "active" : "paused" })}>{plan.status === "paused" ? (es ? "Reanudar" : "Resume") : (es ? "Pausar" : "Pause")}</button>
@@ -161,7 +161,7 @@ export default function IrisPurchaseDesk({ language, wallet, walletMode }: { lan
       <div>
         <h4>{es ? "Historial de aprobaciones" : "Approval history"}</h4>
         {history.map(item => <article key={item.id} className={`purchase-history ${item.status}`}>
-          <CheckCircle /><div><b>${item.amountUsd} {item.asset}</b><small>{sourceLabel(item.source, es)} · {item.status}</small></div>
+          <CheckCircle /><div><b>${item.amountUsd} {item.asset}</b><small>{sourceLabel(item.source)} · {item.status}</small></div>
           {(item.status === "approved" || item.status === "opened") && <a href={item.checkoutUrl} target="_blank" rel="noreferrer"><ArrowSquareOut /></a>}
         </article>)}
         {!history.length && <p>{es ? "Cuando apruebes, IRIS abre la caja oficial y deja rastro aquí." : "When you approve, IRIS opens the official checkout and leaves a trail here."}</p>}
