@@ -474,12 +474,12 @@ a { color: inherit; }
 .market-chart-card>div>strong,.market-chart-card header strong{font-size:18px;color:#e6f7ff}
 .market-chart-card header strong small{margin-left:8px;font-size:12px}
 .market-chart-card > svg.market-chart{width:100%;height:168px;margin:8px 0;display:block}
-.market-lesson{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:stretch;margin:0}
-.market-lesson span{display:flex;flex-direction:column;gap:2px;padding:6px 8px;border:1px solid #1d3b50;border-radius:6px;background:#081a29;color:#7f96a8;font-size:8px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.market-lesson{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center;margin:0;min-height:40px;padding:0}
+.market-lesson span{display:flex;flex-direction:column;gap:2px;padding:6px 10px;border:1px solid #1d3b50;border-radius:6px;background:#081a29;color:#7f96a8;font-size:8px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
 .market-lesson b{color:#e6f7ff;font-size:12px;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}
 .market-lesson b.up{color:#5ee0a6}
 .market-lesson b.down{color:#ff8f99}
-.market-lesson small{grid-column:1/-1;min-width:0;color:#7f96a8;font-size:10px;line-height:1.35}
+.market-lesson small{min-width:0;color:#7f96a8;font-size:10px;line-height:1.35}
 .market-readouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}
 .market-readouts span{display:flex;flex-direction:column;gap:3px;padding:7px 8px;border:1px solid #1d3b50;border-radius:6px;background:#081a29;color:#7f96a8;font-size:8px;letter-spacing:.06em;text-transform:uppercase}
 .market-readouts b{color:#e6f7ff;font-size:12px;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}

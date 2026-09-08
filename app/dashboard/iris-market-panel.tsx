@@ -181,8 +181,6 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
         </svg>
         <div className="market-lesson">
           <span>{es ? "Tendencia" : "Trend"}<b className={chart?.analysis.trend || ""}>{chart ? trendLabel : "—"}</b></span>
-          <span>RSI 14<b>{chart?.analysis.rsi14 ?? "—"}</b></span>
-          <span>{es ? "Lectura" : "Score"}<b>{chart?.analysis.score ?? "—"}/100</b></span>
           <small>{es ? "El gráfico se mueve solo. IRIS no compra hasta que apruebes." : "The chart moves on its own. IRIS does not buy until you approve."}</small>
         </div>
         <div className="market-readouts">
