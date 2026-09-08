@@ -122,14 +122,14 @@ export function recordSpokenUtterance(
 export async function transcribeRecordedAudio(blob: Blob, language: "es" | "en") {
   const type = blob.type || "audio/webm";
   const file = new File([blob], fileNameForAudioType(type), { type });
+  const localFirst = await transcribeInBrowser(blob, language).catch(() => "");
+  if (localFirst) return localFirst;
   const form = new FormData();
   form.set("audio", file);
   form.set("language", language);
   const response = await fetch("/api/iris-transcribe", { method: "POST", body: form });
   const data = await response.json().catch(() => ({})) as { text?: string; error?: string };
   if (response.ok && data.text?.trim()) return data.text.trim();
-  const local = await transcribeInBrowser(blob, language).catch(() => "");
-  if (local) return local;
   throw new Error(data.error || "IRIS could not hear that.");
 }
 

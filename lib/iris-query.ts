@@ -2,7 +2,15 @@ const WORKSPACE = /\b(dispositivo|device|alerta|alert|incidente|incident|agente|
 const GREETING = /^(?:hola|hello|hi|buenas|hey|qué tal|que tal|buenos d[ií]as|buenas tardes)(?:\s+iris)?[!.?]*$/i;
 const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|qu[eé] puedes|what can you|c[oó]mo te llamas)\b/i;
 const CONVERSATION = /\b(quiero hablar|hablemos|conversemos|h[áa]blame|platiquemos|podemos hablar|talk with you|let'?s talk)\b/i;
+const STOP_LINE = /^(?:(?:oye|hey|ok|okay|hola|escucha)\s+)?(?:iris\s+)?(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|callate|quiet|cancel)(?:\s+(?:iris|ya|ahora|por favor|please|de hablar|talking|speaking))?$/i;
+const STOP_PHRASE = /^(?:deja de hablar|stop talking|stop speaking|no hables|shut up|iris para|iris stop|para ya|stop para|para stop)$/i;
 const SOC = /\b(c[oó]mo est[aá](?:n)?(?:\s+(?:mi|el|la|los|las))?\s+(?:mac|iris|sistema|dispositivo|equipo|agente)|cu[aá]l es el estado|estado de iris|estado del mac|qu[eé] ves|qu[eé] hay en (?:el |este )?sistema|salud del|en l[ií]nea|fuera de l[ií]nea|mi equipo|mi computadora)\b/i;
+
+export function isStopRequest(question: string) {
+  const normalized = question.toLocaleLowerCase().replace(/[.,!?¿¡;:]/g, " ").replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+  return STOP_LINE.test(normalized) || STOP_PHRASE.test(normalized);
+}
 
 export function isWorkspaceQuestion(question: string) {
   return WORKSPACE.test(question);

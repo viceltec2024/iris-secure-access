@@ -1,5 +1,5 @@
 import { localIrisAnswer, type IrisAnalystInput } from "./iris-local-analyst.ts";
-import { isConversationStart, isGreetingQuestion, isIdentityQuestion, isSocQuestion, tryEvaluateMath } from "./iris-query.ts";
+import { isConversationStart, isGreetingQuestion, isIdentityQuestion, isSocQuestion, isStopRequest, tryEvaluateMath } from "./iris-query.ts";
 import { irisWorldAnswer } from "./iris-world-knowledge.ts";
 
 function firstName(value: string) {
@@ -32,6 +32,12 @@ function generalFallback(input: IrisAnalystInput) {
 }
 
 export async function irisMindAnswer(input: IrisAnalystInput) {
+  if (isStopRequest(input.question)) {
+    return {
+      answer: input.language === "es" ? "Paré. Dime cuando quieras seguir." : "Stopped. Tell me when you want to continue.",
+      source: "local" as const,
+    };
+  }
   if (isIdentityQuestion(input.question)) return { answer: identityAnswer(input), source: "local" };
   if (isGreetingQuestion(input.question) || isConversationStart(input.question)) {
     return { answer: conversationAnswer(input), source: "local" };

@@ -115,3 +115,18 @@ test("Ask IRIS answers live Mac questions instead of Wikipedia", async () => {
     globalThis.fetch = original;
   }
 });
+
+test("Ask IRIS treats stop and para as halt, not Wikipedia", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ title: "Para", extract: "Para puede referirse a un prefijo." }), { status: 200 });
+  try {
+    const result = await irisMindAnswer({ ...base, question: "para" });
+    assert.equal(result.source, "local");
+    assert.match(result.answer, /Paré|seguir/i);
+    assert.doesNotMatch(result.answer, /prefijo|Wikipedia|hidrocarburo/i);
+    const stop = await irisMindAnswer({ ...base, question: "stop" });
+    assert.match(stop.answer, /Paré|Stopped/i);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
