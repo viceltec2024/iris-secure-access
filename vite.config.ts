@@ -48,7 +48,7 @@ export default defineConfig(async ({ command, mode }) => {
 
   return {
     server: {
-      host: "0.0.0.0",
+      host: "::",
       allowedHosts: true,
       ...(isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }

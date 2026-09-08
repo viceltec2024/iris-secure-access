@@ -1,8 +1,10 @@
-import { requireChatGPTUser, chatGPTSignOutPath } from "../chatgpt-auth";
+import { chatGPTSignInPath, chatGPTSignOutPath, getChatGPTUser } from "../chatgpt-auth";
 import { listRecentAudit, provisionIrisUser } from "../../lib/authz";
 import { ShieldCheck } from "@phosphor-icons/react/dist/ssr";
+import { redirect } from "next/navigation";
 import SecurityOperations from "./security-operations";
 import PasskeyGate from "./passkey-gate";
+import LocalConnect from "../local-connect";
 import { isBiometricVerified, passkeysFor } from "../../lib/passkeys";
 import { passwordConfigured } from "../../lib/passwords";
 import { devAuthEnabled } from "../dev-auth";
@@ -10,7 +12,11 @@ import { devAuthEnabled } from "../dev-auth";
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
-  const identity = await requireChatGPTUser("/dashboard");
+  const identity = await getChatGPTUser();
+  if (!identity) {
+    if (devAuthEnabled()) return <LocalConnect returnTo="/dashboard" />;
+    redirect(chatGPTSignInPath("/dashboard"));
+  }
   const user = await provisionIrisUser(identity);
 
   if (user.status !== "ACTIVE") {

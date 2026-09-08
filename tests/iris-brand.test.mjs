@@ -89,7 +89,13 @@ test("sidebar and home lockups use the IRIS brand mark", () => {
 test("local dashboard access signs in on this machine, not ChatGPT", () => {
   const auth = readFileSync(new URL("../app/chatgpt-auth.ts", import.meta.url), "utf8");
   const vite = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
-  assert.match(auth, /redirect\(irisSignInPath\(returnTo\)\)/);
+  const dashboard = readFileSync(new URL("../app/dashboard/page.tsx", import.meta.url), "utf8");
+  const signIn = readFileSync(new URL("../app/dev/sign-in/route.ts", import.meta.url), "utf8");
   assert.match(auth, /\/dev\/sign-in\?return_to=/);
+  assert.match(dashboard, /LocalConnect returnTo="\/dashboard"/);
+  assert.match(dashboard, /Connecting to IRIS|LocalConnect/);
+  assert.match(signIn, /text\/html; charset=utf-8/);
+  assert.doesNotMatch(signIn, /status: 302/);
   assert.match(vite, /allowedHosts:\s*true/);
+  assert.match(vite, /host:\s*"::"/);
 });

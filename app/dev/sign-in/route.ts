@@ -30,8 +30,14 @@ export async function GET(request: Request): Promise<Response> {
     `Max-Age=${DEV_SESSION_MAX_AGE_SECONDS}`,
   ].join("; ");
 
-  return new Response(null, {
-    status: 302,
-    headers: { Location: returnTo, "Set-Cookie": cookie },
+  const safeHref = returnTo.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeHref}"><title>IRIS</title></head><body>Connecting to IRIS… <a href="${safeHref}">Continue</a></body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "Set-Cookie": cookie,
+    },
   });
 }
