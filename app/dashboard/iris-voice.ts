@@ -44,9 +44,59 @@ export function voiceErrorMessage(code: VoiceErrorCode, language: "es" | "en") {
   if (code === "denied") return es ? "El micrófono está bloqueado. En la barra del navegador permite el micrófono para IRIS y vuelve a pulsar el botón." : "The microphone is blocked. Allow the microphone for IRIS in the browser bar, then tap the button again.";
   if (code === "audio-capture") return es ? "No encuentro un micrófono. Conecta uno y vuelve a intentarlo." : "No microphone was found. Connect one and try again.";
   if (code === "network") return es ? "Chrome no pudo usar el servicio de voz. Necesita conexión y un micrófono real en tu equipo." : "Chrome could not reach the speech service. It needs a network connection and a real microphone on your computer.";
-  if (code === "no-speech") return es ? "No escuché nada. Pulsa el micrófono y di tu pregunta." : "I did not hear anything. Tap the microphone and ask your question.";
+  if (code === "no-speech") return es ? "Sigo escuchando. Habla cerca del micrófono y dime tu pregunta." : "Still listening. Speak near the microphone and ask your question.";
   if (code === "aborted") return "";
   return es ? "No pude activar el comando de voz. Pulsa el micrófono otra vez o escribe tu pregunta." : "Voice command could not start. Tap the microphone again or type your question.";
+}
+
+export function isRetryableVoiceError(code: VoiceErrorCode) {
+  return code === "no-speech" || code === "aborted";
+}
+
+export function spokenQuestionFromTranscript(transcript: string) {
+  const text = transcript.trim();
+  if (!text || isStopCommand(text)) return "";
+  return text;
+}
+
+export function isHearingVoice(level: number) {
+  return level >= 0.035;
+}
+
+export async function openMicrophone() {
+  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("unsupported"), { code: "unsupported" as VoiceErrorCode });
+  return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+}
+
+export function releaseMicrophone(stream: MediaStream | null | undefined) {
+  stream?.getTracks().forEach(track => track.stop());
+}
+
+export function monitorMicrophoneLevel(stream: MediaStream, onLevel: (level: number) => void) {
+  const audio = new AudioContext();
+  const source = audio.createMediaStreamSource(stream);
+  const analyser = audio.createAnalyser();
+  analyser.fftSize = 512;
+  source.connect(analyser);
+  const samples = new Uint8Array(analyser.fftSize);
+  let frame = 0;
+  const tick = () => {
+    analyser.getByteTimeDomainData(samples);
+    let sum = 0;
+    for (const sample of samples) {
+      const value = (sample - 128) / 128;
+      sum += value * value;
+    }
+    onLevel(Math.sqrt(sum / samples.length));
+    frame = requestAnimationFrame(tick);
+  };
+  void audio.resume();
+  tick();
+  return () => {
+    cancelAnimationFrame(frame);
+    source.disconnect();
+    void audio.close();
+  };
 }
 
 export function mapRecognitionError(error: string): VoiceErrorCode {
@@ -59,7 +109,6 @@ export function mapRecognitionError(error: string): VoiceErrorCode {
 }
 
 export async function requestMicrophone() {
-  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("unsupported"), { code: "unsupported" as VoiceErrorCode });
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  stream.getTracks().forEach(track => track.stop());
+  const stream = await openMicrophone();
+  releaseMicrophone(stream);
 }

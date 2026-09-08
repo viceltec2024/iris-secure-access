@@ -371,6 +371,9 @@ a { color: inherit; }
 .iris-voice-stage.listening .iris-voice-wave i,.iris-voice-stage.speaking .iris-voice-wave i{opacity:1;animation:iris-voice-bar .7s ease-in-out infinite alternate}
 .iris-voice-stage.thinking .iris-voice-wave i{background:#e0b45a;animation:iris-voice-bar 1.1s ease-in-out infinite alternate}
 .iris-voice-status{z-index:1;margin:4px 0 0;color:#7fe9ff;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.iris-voice-stage.listening.hearing .iris-voice-face{border-color:#8dffc9;box-shadow:0 0 0 12px rgba(98,230,178,.16),0 0 48px rgba(98,230,178,.45)}
+.iris-voice-stage.listening.hearing .iris-voice-status{color:#b6ffdd}
+.iris-voice-stage.listening.hearing .iris-voice-wave i{background:#8dffc9}
 .iris-voice-stage.listening .iris-voice-status{color:#7ef0c0}
 .iris-voice-stage.thinking .iris-voice-status{color:#efc56d}
 .iris-voice-caption{z-index:1;max-width:320px;margin:0;color:#c5d7e3;font-size:13px;line-height:1.45;text-align:center}

@@ -8,25 +8,27 @@ export default function IrisVoiceStage({
   mode,
   transcript,
   answer,
+  hearing = false,
   onClose,
 }: {
   language: Language;
   mode: VoiceStageMode;
   transcript: string;
   answer: string;
+  hearing?: boolean;
   onClose: () => void;
 }) {
   const es = language === "es";
-  const title = mode === "listening" ? (es ? "Te escucho" : "Listening")
+  const title = mode === "listening" ? (hearing ? (es ? "Te oigo" : "I hear you") : (es ? "Te escucho" : "Listening"))
     : mode === "thinking" ? (es ? "Pensando tu respuesta" : "Thinking through your question")
     : mode === "speaking" ? (es ? "IRIS te está contestando" : "IRIS is answering you")
     : (es ? "Habla con IRIS" : "Talk with IRIS");
-  const caption = mode === "listening" ? (transcript || (es ? "Pregúntame lo que quieras." : "Ask me anything."))
+  const caption = mode === "listening" ? (transcript || (hearing ? (es ? "Sigue, te estoy oyendo." : "Keep going, I can hear you.") : (es ? "Habla ahora. Me quedo escuchando." : "Speak now. I am staying on the microphone.")))
     : mode === "thinking" ? (transcript || (es ? "Analizando tu pregunta…" : "Analyzing your question…"))
     : (answer || transcript || (es ? "Lista para la siguiente pregunta." : "Ready for the next question."));
 
   return (
-    <section className={`iris-voice-stage ${mode}`} aria-live="polite" aria-label={title}>
+    <section className={`iris-voice-stage ${mode}${hearing ? " hearing" : ""}`} aria-live="polite" aria-label={title}>
       <button type="button" className="iris-voice-close" onClick={onClose} aria-label={es ? "Cerrar voz" : "Close voice"}><X /></button>
       <div className="iris-voice-rings" aria-hidden="true"><i /><i /><i /></div>
       <div className="iris-voice-face">
