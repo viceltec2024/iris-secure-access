@@ -40,9 +40,9 @@ export function hasWakePhrase(transcript: string) {
 
 export function voiceErrorMessage(code: VoiceErrorCode, language: "es" | "en") {
   const es = language === "es";
-  if (code === "unsupported") return es ? "IRIS no pudo usar el micrófono. Pulsa el botón otra vez y permite el acceso, o escribe tu pregunta." : "IRIS could not use the microphone. Tap the button again and allow access, or type your question.";
-  if (code === "denied") return es ? "El micrófono está bloqueado. En la barra del navegador permite el micrófono para IRIS y vuelve a pulsar el botón." : "The microphone is blocked. Allow the microphone for IRIS in the browser bar, then tap the button again.";
-  if (code === "audio-capture") return es ? "No encuentro un micrófono. Conecta uno y vuelve a intentarlo." : "No microphone was found. Connect one and try again.";
+  if (code === "unsupported") return es ? "Este navegador no puede abrir el micrófono. Sigue escribiendo: IRIS ya te contesta por texto." : "This browser cannot open the microphone. Keep typing: IRIS already answers in writing.";
+  if (code === "denied") return es ? "Chrome bloqueó el micrófono. Pulsa el candado de la barra, permite el micrófono para este sitio y vuelve a pulsar el icono. Mientras tanto puedes escribir." : "Chrome blocked the microphone. Tap the lock in the address bar, allow the microphone for this site, and tap the icon again. You can keep typing in the meantime.";
+  if (code === "audio-capture") return es ? "No pude conectar el micrófono. En Chrome permite el micrófono para esta pestaña, cierra Zoom o Meet si lo están usando, y pulsa el icono otra vez. Mientras tanto escribe tu pregunta: IRIS sí está conectada por texto." : "I could not connect the microphone. In Chrome, allow the microphone for this tab, close Zoom or Meet if they are using it, and tap the icon again. Keep typing: IRIS is connected in writing.";
   if (code === "network") return es ? "Chrome no pudo usar el servicio de voz. Necesita conexión y un micrófono real en tu equipo." : "Chrome could not reach the speech service. It needs a network connection and a real microphone on your computer.";
   if (code === "no-speech") return es ? "Sigo escuchando. Habla cerca del micrófono y dime tu pregunta." : "Still listening. Speak near the microphone and ask your question.";
   if (code === "aborted") return "";
@@ -63,9 +63,23 @@ export function isHearingVoice(level: number) {
   return level >= 0.035;
 }
 
+export function releaseAudioForMicrophone() {
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+  }
+  stopSpeechEnginePlayback();
+  releaseSpeechHold();
+}
+
 export async function openMicrophone() {
-  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("unsupported"), { code: "unsupported" as VoiceErrorCode });
-  return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("unsupported"), { name: "NotSupportedError", code: "unsupported" as VoiceErrorCode });
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (error) {
+    const code = mapMediaErrorFromName(error instanceof Error ? error.name : "");
+    if (code === "denied" || code === "unsupported") throw error;
+    return navigator.mediaDevices.getUserMedia({ audio: true });
+  }
 }
 
 export function releaseMicrophone(stream: MediaStream | null | undefined) {
@@ -118,6 +132,13 @@ export function monitorMicrophoneLevel(stream: MediaStream, onLevel: (level: num
     try { source.disconnect(); } catch { /* already disconnected */ }
     void closeAudioContext(audio);
   };
+}
+
+function mapMediaErrorFromName(name: string): VoiceErrorCode | "" {
+  if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") return "denied";
+  if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "NotReadableError") return "audio-capture";
+  if (name === "NotSupportedError") return "unsupported";
+  return "";
 }
 
 export function mapRecognitionError(error: string): VoiceErrorCode {

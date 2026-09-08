@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChatCircleDots, CornersIn, CornersOut, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import { holdSpeechSession, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, speechVolumeHint, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
+import { holdSpeechSession, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseAudioForMicrophone, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, speechVolumeHint, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
 import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
 
@@ -338,6 +338,12 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     });
   }
 
+  function failVoiceConnect(code: ReturnType<typeof mapRecognitionError>) {
+    listenActiveRef.current = false;
+    closeVoiceStage();
+    reportVoiceError(code);
+  }
+
   function commitSpokenQuestion(text: string) {
     const question = spokenQuestionFromTranscript(text);
     if (!question) return;
@@ -413,6 +419,10 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
         void startRecorderListening();
         return;
       }
+      if (code === "denied" || code === "audio-capture") {
+        failVoiceConnect(code);
+        return;
+      }
       reportVoiceError(code);
     };
     recognition.onend = () => {
@@ -437,22 +447,13 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   }
 
   async function startListening() {
+    releaseAudioForMicrophone();
     unlockSpeechEngine();
-    holdSpeechSession();
     openVoiceStage();
     setSpokenAnswer("");
     listenActiveRef.current = true;
-    setListening(true);
-    if (!greetedRef.current && autoSpeakRef.current) {
-      greetedRef.current = true;
-      const phrase = irisListenPhrase(language);
-      setSpokenAnswer(phrase);
-      setVoiceHint(language === "es" ? "IRIS te va a hablar." : "IRIS is about to speak.");
-      await speak(phrase, { resume: false });
-    }
-    listenActiveRef.current = true;
-    setListening(true);
-    setVoiceHint(language === "es" ? "Abriendo el micrófono…" : "Opening the microphone…");
+    setListening(false);
+    setVoiceHint(language === "es" ? "Conectando el micrófono…" : "Connecting the microphone…");
     try {
       if (!streamRef.current || streamRef.current.getTracks().every(track => track.readyState === "ended")) {
         releaseMicrophone(streamRef.current);
@@ -460,8 +461,17 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       }
       attachLevelMonitor(streamRef.current);
     } catch (error) {
-      listenActiveRef.current = false;
-      reportVoiceError(mapMediaError(error));
+      failVoiceConnect(mapMediaError(error));
+      return;
+    }
+    if (!listenActiveRef.current) return;
+    setListening(true);
+    setVoiceHint(language === "es" ? "Te escucho. Habla ahora." : "Listening. Speak now.");
+    if (!greetedRef.current && autoSpeakRef.current) {
+      greetedRef.current = true;
+      const phrase = irisListenPhrase(language);
+      setSpokenAnswer(phrase);
+      await speak(phrase, { resume: true });
       return;
     }
     if (recognitionApi() && !recorderOnlyRef.current) {
@@ -469,7 +479,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       return;
     }
     if (!canRecordVoice()) {
-      reportVoiceError("unknown");
+      failVoiceConnect("unknown");
       return;
     }
     void startRecorderListening();
@@ -478,7 +488,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   async function startRecorderListening() {
     const stream = streamRef.current;
     if (!stream || !canRecordVoice()) {
-      reportVoiceError("unknown");
+      failVoiceConnect("unknown");
       return;
     }
     recorderOnlyRef.current = true;

@@ -40,7 +40,7 @@ export function shouldFinishRecording({
 
 export function mapMediaError(error: unknown): "denied" | "audio-capture" | "unsupported" | "unknown" {
   const name = error instanceof Error ? error.name : "";
-  if (name === "NotAllowedError" || name === "SecurityError") return "denied";
+  if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") return "denied";
   if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "NotReadableError") return "audio-capture";
   if (name === "NotSupportedError") return "unsupported";
   return "unknown";

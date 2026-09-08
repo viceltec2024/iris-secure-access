@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { orbTint, orbWaveEnergy, orbWaveY } from "../app/dashboard/iris-orb.ts";
 import { closeAudioContext, extractVoiceCommand, hasWakePhrase, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, pickSpeechVoice, resumeSpeechIfPaused, scoreSpeechVoice, shouldForceSpeechRetry, shouldRepeatThinkingPhrase, speechVolumeHint, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
@@ -19,8 +20,10 @@ test("stop commands do not become questions", () => {
 test("voice errors explain microphone problems in Spanish", () => {
   assert.equal(mapRecognitionError("not-allowed"), "denied");
   assert.match(voiceErrorMessage("denied", "es"), /micrófono/i);
+  assert.match(voiceErrorMessage("denied", "es"), /escribir/i);
   assert.match(voiceErrorMessage("unsupported", "es"), /micrófono/i);
   assert.doesNotMatch(voiceErrorMessage("unsupported", "en"), /Chrome or Edge|remote window/i);
+  assert.match(voiceErrorMessage("audio-capture", "es"), /escribe tu pregunta/i);
   assert.match(voiceErrorMessage("no-speech", "es"), /Sigo escuchando/i);
 });
 
@@ -31,6 +34,7 @@ test("records speech without the Chrome speech API", () => {
   assert.equal(shouldFinishRecording({ speechMs: 0, silentMs: 2000, elapsedMs: 2000 }), false);
   assert.equal(mapMediaError(Object.assign(new Error("denied"), { name: "NotAllowedError" })), "denied");
   assert.equal(mapMediaError(Object.assign(new Error("missing"), { name: "NotFoundError" })), "audio-capture");
+  assert.equal(mapMediaError(Object.assign(new Error("busy"), { name: "NotReadableError" })), "audio-capture");
 });
 
 test("keeps listening through empty Chrome no-speech errors", () => {
@@ -108,4 +112,15 @@ test("volume hints tell the user when voices are missing or audio is blocked", (
   assert.match(speechVolumeHint("es", { voices: 0 }), /voces instaladas/i);
   assert.match(speechVolumeHint("es", { speaking: true, voices: 2 }), /está hablando|volumen/i);
   assert.match(speechVolumeHint("en", { voices: 2 }), /Tap the speaker/i);
+});
+
+test("Ask IRIS connects the microphone before saying Te escucho", () => {
+  const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
+  const start = panel.slice(panel.indexOf("async function startListening()"));
+  const mic = start.indexOf("openMicrophone");
+  const greet = start.indexOf("irisListenPhrase");
+  assert.ok(mic >= 0 && greet > mic);
+  assert.match(start, /failVoiceConnect\(mapMediaError/);
+  assert.match(start, /releaseAudioForMicrophone/);
+  assert.doesNotMatch(start.slice(0, mic), /await speak\(/);
 });
