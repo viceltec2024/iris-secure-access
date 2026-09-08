@@ -1,4 +1,3 @@
-import { X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 import IrisSystemOrb from "./iris-system-orb";
 
@@ -11,7 +10,6 @@ export default function IrisVoiceStage({
   answer,
   hearing = false,
   level = 0,
-  onClose,
 }: {
   language: Language;
   mode: VoiceStageMode;
@@ -19,7 +17,6 @@ export default function IrisVoiceStage({
   answer: string;
   hearing?: boolean;
   level?: number;
-  onClose: () => void;
 }) {
   const es = language === "es";
   const title = mode === "listening" ? (hearing ? (es ? "Te oigo" : "I hear you") : (es ? "Te escucho" : "Listening"))
@@ -32,7 +29,6 @@ export default function IrisVoiceStage({
 
   return (
     <section className={`iris-voice-stage ${mode}${hearing ? " hearing" : ""}`} aria-live="polite" aria-label={title}>
-      <button type="button" className="iris-voice-close" onClick={onClose} aria-label={es ? "Cerrar voz" : "Close voice"}><X /></button>
       <IrisSystemOrb mode={mode} hearing={hearing} level={level} size={236} />
       <p className="iris-voice-status">{title}</p>
       <p className="iris-voice-caption">{caption}</p>
