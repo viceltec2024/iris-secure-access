@@ -20,6 +20,22 @@ test("Ask IRIS answers system status in Spanish without OpenAI", () => {
   assert.match(answer, /0 dispositivo|dispositivo/i);
 });
 
+test("Ask IRIS explains MetaMask and Robinhood purchases", () => {
+  const answer = localIrisAnswer({
+    language: "es",
+    question: "puedo conectar robinhood y hacer compras automaticas",
+    userName: "Ezephian",
+    section: "chain",
+    devices: [],
+    alerts: [],
+    agents: [],
+    wallet: { connected: true, address: "0x49BeAEc30C7431235c3262a2B1C0C5d8b5a0d3E1" },
+  });
+  assert.match(answer, /Robinhood/i);
+  assert.match(answer, /MetaMask/i);
+  assert.match(answer, /aprobaci[oó]n/i);
+});
+
 test("Ask IRIS reports connected agents", () => {
   const answer = localIrisAnswer({
     language: "es",

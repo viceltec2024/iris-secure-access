@@ -71,8 +71,8 @@ export function localIrisAnswer(input: IrisAnalystInput) {
 
   const walletBlock = wallet
     ? es
-      ? `La wallet de Base está conectada: ${wallet.slice(0, 8)}…${wallet.slice(-6)}.`
-      : `The Base wallet is connected: ${wallet.slice(0, 8)}…${wallet.slice(-6)}.`
+      ? `La wallet está conectada y IRIS la monitorea en Base: ${wallet.slice(0, 8)}…${wallet.slice(-6)}. Puedes conectar MetaMask en este navegador, Robinhood Wallet, o pegar cualquier dirección 0x.`
+      : `The wallet is connected and IRIS is monitoring it on Base: ${wallet.slice(0, 8)}…${wallet.slice(-6)}. You can connect MetaMask in this browser, Robinhood Wallet, or paste any 0x address.`
     : es
       ? "No hay una wallet de Base conectada en esta sesión."
       : "No Base wallet is connected in this session.";
@@ -96,10 +96,10 @@ export function localIrisAnswer(input: IrisAnalystInput) {
       : `${name}, the agent team is connected and working. ${agentBlock} Detail: ${detail || "no rows yet"}.`;
   }
 
-  if (/(wallet|metamask|base|token)/.test(question)) {
+  if (/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy)/.test(question)) {
     return es
-      ? `${walletBlock} Si MetaMask no está en este navegador, IRIS mantiene una sesión local de Base para que el panel de cadena y el token sigan operativos. Puedes desconectarla cuando quieras.`
-      : `${walletBlock} If MetaMask is not in this browser, IRIS keeps a local Base session so the chain panel and token stay operational. You can disconnect it anytime.`;
+      ? `${walletBlock} En IRIS Chain puedes conectar MetaMask de forma directa o Robinhood Wallet. IRIS puede programar compras automáticas de ETH, USDC, BTC o SOL, pero nunca paga sola: cada compra espera tu aprobación y se completa en MetaMask o Robinhood.`
+      : `${walletBlock} In IRIS Chain you can connect MetaMask directly or Robinhood Wallet. IRIS can schedule automatic ETH, USDC, BTC, or SOL buys, but it never pays alone: every purchase waits for your approval and finishes in MetaMask or Robinhood.`;
   }
 
   if (/(amenaza|threat|malware|ubicaci[oó]n|d[oó]nde|where)/.test(question)) {

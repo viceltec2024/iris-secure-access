@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { ArrowDown, ArrowSquareOut, ArrowUp, ChartLineUp, CheckCircle, Coins, Cube, Link, Plus, Pulse, QrCode, RocketLaunch, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
 import QRCode from "qrcode";
 import type { Language } from "./dashboard-i18n";
+import { isEvmAddress, type WalletProvider } from "../../lib/iris-chain";
+import { ROBINHOOD_CONNECT_URL, ROBINHOOD_WALLET_URL } from "../../lib/iris-purchases";
 import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient, subscribeMetaMaskDisplayUri } from "./metamask-client";
+import { connectInjectedWallet } from "./wallet-providers";
+import IrisPurchaseDesk from "./iris-purchase-desk";
 import { IRIS_TOKEN_BYTECODE } from "./iris-token-artifact";
 
 type Block = { height: number; hash: string; transactionCount: number; validator: string };
@@ -42,6 +46,9 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [tokenOperations, setTokenOperations] = useState<TokenOperations | null>(null);
   const [activityHistory, setActivityHistory] = useState<ActivitySample[]>([]);
   const [notice, setNotice] = useState("");
+  const [watchInput, setWatchInput] = useState("");
+  const [walletMode, setWalletMode] = useState<WalletProvider>("watch");
+  const [showRobinhood, setShowRobinhood] = useState(false);
   const es = language === "es";
   async function refresh() {
     const started = performance.now();
@@ -65,11 +72,13 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     void refresh();
     const chainTimer = window.setInterval(() => void refresh(), 5_000);
     void fetch("/api/iris-token").then(response => response.ok ? response.json() : null).then(data => setTokenAddress(data?.address || "")).catch(() => undefined);
-    void fetch("/api/wallet-session").then(response => response.ok ? response.json() : null).then((session: { connected?: boolean; address?: string; chainId?: string } | null) => {
+    void fetch("/api/wallet-session").then(response => response.ok ? response.json() : null).then((session: { connected?: boolean; address?: string; chainId?: string; mode?: WalletProvider } | null) => {
       if (session?.connected && session.address) {
         setWallet(session.address);
         setWalletChain(session.chainId || BASE_MAINNET_CHAIN_ID);
-        setNotice(es ? "Wallet de Base conectada." : "Base wallet connected.");
+        setWatchInput(session.address);
+        setWalletMode(session.mode || "watch");
+        setNotice(es ? "Wallet conectada. IRIS la está monitoreando en Base." : "Wallet connected. IRIS is monitoring it on Base.");
         return;
       }
       return getMetaMaskClient().then(client => {
@@ -111,18 +120,40 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     if (response.ok) await refresh();
     setBusy(false);
   }
-  async function connectLocalWallet() {
-    const response = await fetch("/api/wallet-session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "connect" }) });
+  async function persistWallet(address: string, mode: WalletProvider = "watch") {
+    const response = await fetch("/api/wallet-session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "connect", address, mode }) });
     const session = await response.json() as { connected?: boolean; address?: string; chainId?: string; error?: string };
-    if (!response.ok || !session.address) throw new Error(session.error || "local wallet");
+    if (!response.ok || !session.address) throw new Error(session.error || "wallet");
     setWallet(session.address);
     setWalletChain(session.chainId || BASE_MAINNET_CHAIN_ID);
+    setWalletMode(mode);
+    setWatchInput(session.address);
     setShowWalletQr(false); setWalletQrImage("");
-    setNotice(es ? "Wallet local de Base conectada." : "Local Base wallet connected.");
+    setNotice(es ? "Wallet conectada. IRIS la está monitoreando en vivo en Base." : "Wallet connected. IRIS is monitoring it live on Base.");
+    return session.address;
+  }
+
+  async function connectWatchWallet() {
+    const address = watchInput.trim();
+    if (!isEvmAddress(address)) {
+      setNotice(es ? "Pega una wallet válida (0x y 40 caracteres)." : "Paste a valid wallet (0x and 40 characters).");
+      return;
+    }
+    setWalletBusy(true); setNotice("");
+    try { await persistWallet(address, "watch"); }
+    catch { setNotice(es ? "No se pudo conectar esa wallet." : "That wallet could not be connected."); }
+    finally { setWalletBusy(false); }
   }
   async function connectWallet() {
-    setWalletBusy(true); setShowWalletQr(true); setWalletQrImage(""); setNotice("");
+    setWalletBusy(true); setShowWalletQr(false); setWalletQrImage(""); setNotice("");
     try {
+      const injected = await connectInjectedWallet("metamask");
+      if (injected && isEvmAddress(injected.address)) {
+        await persistWallet(injected.address, "metamask");
+        setNotice(es ? "MetaMask conectada en este navegador. IRIS la monitorea en Base." : "MetaMask connected in this browser. IRIS is monitoring it on Base.");
+        return;
+      }
+      setShowWalletQr(true);
       const client = await getMetaMaskClient();
       const { accounts } = await client.connect({ chainIds: [BASE_MAINNET_CHAIN_ID] });
       await client.switchChain({
@@ -135,17 +166,44 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
           blockExplorerUrls: ["https://basescan.org"],
         },
       });
-      setWallet(accounts[0] || client.getAccount() || "");
-      setWalletChain(BASE_MAINNET_CHAIN_ID);
-      setShowWalletQr(false); setWalletQrImage("");
-      setNotice(es ? "MetaMask conectado a Base Mainnet." : "MetaMask connected to Base Mainnet.");
+      const address = accounts[0] || client.getAccount() || "";
+      if (!isEvmAddress(address)) throw new Error("wallet");
+      await persistWallet(address, "metamask");
+      setNotice(es ? "Wallet de MetaMask conectada. IRIS la está monitoreando en Base." : "MetaMask wallet connected. IRIS is monitoring it on Base.");
     } catch (error) {
-      try {
-        await connectLocalWallet();
-      } catch {
-        const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
-        setNotice(code === 4001 ? (es ? "Conexión cancelada en MetaMask." : "Connection cancelled in MetaMask.") : code === -32002 ? (es ? "Ya hay una solicitud abierta en MetaMask." : "A MetaMask request is already open.") : (es ? "No se pudo conectar con MetaMask." : "Could not connect to MetaMask."));
+      const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
+      setNotice(code === 4001 ? (es ? "Conexión cancelada en MetaMask." : "Connection cancelled in MetaMask.") : code === -32002 ? (es ? "Ya hay una solicitud abierta en MetaMask." : "A MetaMask request is already open.") : (es ? "No se pudo conectar con MetaMask." : "Could not connect to MetaMask."));
+    } finally { setWalletBusy(false); }
+  }
+  async function connectRobinhood() {
+    setWalletBusy(true); setNotice("");
+    try {
+      const injected = await connectInjectedWallet("robinhood");
+      if (injected && isEvmAddress(injected.address)) {
+        await persistWallet(injected.address, "robinhood");
+        setShowRobinhood(false);
+        setNotice(es ? "Robinhood Wallet conectada. IRIS la monitorea y puede proponer compras para que tú las apruebes." : "Robinhood Wallet connected. IRIS is monitoring it and can propose buys for you to approve.");
+        return;
       }
+      setShowRobinhood(true);
+    } catch (error) {
+      const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
+      setNotice(code === 4001 ? (es ? "Conexión cancelada en Robinhood." : "Connection cancelled in Robinhood.") : (es ? "Abre Robinhood Wallet o pega su dirección 0x." : "Open Robinhood Wallet or paste its 0x address."));
+    } finally { setWalletBusy(false); }
+  }
+  async function persistRobinhoodAddress() {
+    const address = watchInput.trim();
+    if (!isEvmAddress(address)) {
+      setNotice(es ? "Pega la dirección 0x de tu Robinhood Wallet." : "Paste the 0x address from your Robinhood Wallet.");
+      return;
+    }
+    setWalletBusy(true);
+    try {
+      await persistWallet(address, "robinhood");
+      setShowRobinhood(false);
+      setNotice(es ? "Robinhood Wallet en monitoreo. Las compras siguen pidiendo tu aprobación en Robinhood." : "Robinhood Wallet is monitored. Purchases still require your Robinhood approval.");
+    } catch {
+      setNotice(es ? "No se pudo guardar esa wallet de Robinhood." : "That Robinhood wallet could not be saved.");
     } finally { setWalletBusy(false); }
   }
   async function cancelWalletQr() {
@@ -157,7 +215,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     try {
       await fetch("/api/wallet-session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "disconnect" }) }).catch(() => undefined);
       try { const client = await getMetaMaskClient(); await client.disconnect(); } catch { /* Local sessions have no MetaMask client. */ }
-      setWallet(""); setWalletChain(""); setNotice(es ? "Wallet desconectada." : "Wallet disconnected.");
+      setWallet(""); setWalletChain(""); setWalletMode("watch"); setWatchInput(""); setShowRobinhood(false); setNotice(es ? "Wallet desconectada." : "Wallet disconnected.");
     } finally { setWalletBusy(false); }
   }
   async function addIrisToken(address = tokenAddress) {
@@ -226,12 +284,34 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <div className="wallet-qr-status"><i />{es ? "Esperando confirmación en MetaMask" : "Waiting for confirmation in MetaMask"}</div>
       <small>{es ? "El código es temporal. IRIS nunca solicita tu frase secreta." : "The code is temporary. IRIS never asks for your secret phrase."}</small>
     </div></div>}
+    {showRobinhood && <div className="wallet-qr-backdrop" role="presentation"><div className="wallet-qr-dialog robinhood-connect-dialog" role="dialog" aria-modal="true" aria-labelledby="robinhood-connect-title">
+      <button className="wallet-qr-close" aria-label={es ? "Cerrar" : "Close"} onClick={() => setShowRobinhood(false)}><X /></button>
+      <div className="wallet-qr-brand"><Wallet weight="duotone" /></div>
+      <p>ROBINHOOD CONNECT</p>
+      <h2 id="robinhood-connect-title">{es ? "Conecta Robinhood" : "Connect Robinhood"}</h2>
+      <span className="wallet-qr-help">{es ? "IRIS abre la Wallet oficial o Connect. Pega la dirección 0x para monitorearla. Las compras se confirman en Robinhood, nunca aquí." : "IRIS opens the official Wallet or Connect. Paste the 0x address to monitor it. Purchases are confirmed in Robinhood, never here."}</span>
+      <div className="robinhood-connect-actions">
+        <a href={ROBINHOOD_WALLET_URL} target="_blank" rel="noreferrer">{es ? "Abrir Robinhood Wallet" : "Open Robinhood Wallet"}<ArrowSquareOut /></a>
+        <a href={ROBINHOOD_CONNECT_URL} target="_blank" rel="noreferrer">Robinhood Connect<ArrowSquareOut /></a>
+      </div>
+      <label className="robinhood-address-field"><span>{es ? "Dirección de Robinhood Wallet" : "Robinhood Wallet address"}</span><input value={watchInput} onChange={event => setWatchInput(event.target.value)} placeholder="0x…" spellCheck={false} autoComplete="off" /></label>
+      <button className="chain-submit" disabled={walletBusy} onClick={() => void persistRobinhoodAddress()}>{es ? "Monitorear esta Robinhood Wallet" : "Monitor this Robinhood Wallet"}</button>
+      <small>{es ? "IRIS no pide tu usuario, contraseña ni frase secreta de Robinhood." : "IRIS never asks for your Robinhood username, password, or secret phrase."}</small>
+    </div></div>}
     <div className="module-toolbar"><div><h2>IRIS Chain</h2><p>{es ? "Registro inmutable de eventos, aprobaciones y evidencia de seguridad." : "Immutable ledger for security events, approvals, and evidence."}</p></div><span className="chain-online"><i />{state.status}</span></div>
+    <form className="wallet-connect-bar wallet-connect-bar-providers" onSubmit={event => { event.preventDefault(); void connectWatchWallet(); }}>
+      <div><span>{es ? "METAMASK · ROBINHOOD · BASE" : "METAMASK · ROBINHOOD · BASE"}</span><strong>{wallet ? (walletMode === "robinhood" ? (es ? "Robinhood Wallet en monitoreo" : "Robinhood Wallet monitored") : walletMode === "metamask" ? (es ? "MetaMask conectada" : "MetaMask connected") : (es ? "IRIS está monitoreando esta wallet" : "IRIS is monitoring this wallet")) : (es ? "Conecta MetaMask o Robinhood" : "Connect MetaMask or Robinhood")}</strong><small>{wallet || (es ? "Conexión directa a MetaMask, Robinhood Wallet, o pega cualquier 0x para vigilarla." : "Direct MetaMask, Robinhood Wallet, or paste any 0x address to watch it.")}</small></div>
+      <label><span>{es ? "Dirección" : "Address"}</span><input value={watchInput} onChange={event => setWatchInput(event.target.value)} placeholder="0x…" spellCheck={false} autoComplete="off" /></label>
+      <button type="submit" disabled={walletBusy}>{walletBusy ? (es ? "Conectando…" : "Connecting…") : (es ? "Monitorear" : "Monitor")}</button>
+      <button type="button" className="wallet-metamask" disabled={walletBusy} onClick={() => void connectWallet()}><Wallet />MetaMask</button>
+      <button type="button" className="wallet-robinhood" disabled={walletBusy} onClick={() => void connectRobinhood()}><Wallet />Robinhood</button>
+    </form>
+    <IrisPurchaseDesk language={language} wallet={wallet} walletMode={walletMode} />
     <div className="chain-metrics">
       <article><span>{es ? "Altura" : "Block height"}</span><strong>{latest?.height ?? 0}</strong><small><Cube /> {state.blocks.length} {es ? "bloques recientes" : "recent blocks"}</small></article>
       <article><span>{es ? "Transacciones" : "Transactions"}</span><strong>{state.transactions.length}</strong><small><CheckCircle /> {state.pending} {es ? "pendientes" : "pending"}</small></article>
       <article><span>{es ? "Consenso" : "Consensus"}</span><strong className="chain-consensus">PoA</strong><small><ShieldCheck />{state.consensus}</small></article>
-      <article><span>Base wallet</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={walletChain === BASE_MAINNET_CHAIN_ID ? "wallet-network-ready" : ""}><i />{wallet ? (walletChain === BASE_MAINNET_CHAIN_ID ? "Base Mainnet · 8453" : (es ? "Red incorrecta" : "Wrong network")) : (es ? "Extensión · QR · móvil" : "Extension · QR · mobile")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : (es ? "Conectar MetaMask" : "Connect MetaMask")}</button></article>
+      <article><span>{walletMode === "robinhood" ? "Robinhood" : walletMode === "metamask" ? "MetaMask" : "Base wallet"}</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={wallet ? "wallet-network-ready" : ""}><i />{wallet ? (walletMode === "robinhood" ? (es ? "Robinhood · compras con tu OK" : "Robinhood · buys need your OK") : walletMode === "metamask" ? "Base Mainnet · 8453" : (es ? "Monitoreo en vivo" : "Live monitoring")) : (es ? "MetaMask o Robinhood" : "MetaMask or Robinhood")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : "MetaMask"}</button></article>
     </div>
     <section className="iris-token-panel"><div className="iris-token-mark"><Coins weight="duotone" /></div><div className="iris-token-copy"><span>IRIS TOKEN · BASE MAINNET</span><h3>{tokenAddress ? (es ? "Token oficial conectado" : "Official token connected") : (es ? "Preparado para desplegar" : "Ready to deploy")}</h3><p>{tokenAddress ? shortHash(tokenAddress) : (es ? "1,000,000,000 IRIS · suministro fijo · 18 decimales" : "1,000,000,000 IRIS · fixed supply · 18 decimals")}</p></div><div className="iris-token-actions">{tokenAddress ? <><a href={`https://basescan.org/token/${tokenAddress}`} target="_blank" rel="noreferrer">BaseScan <ArrowSquareOut /></a><button disabled={!wallet} onClick={() => void addIrisToken()}><Wallet />{es ? "Agregar a MetaMask" : "Add to MetaMask"}</button></> : isAdmin ? <button disabled={!wallet || walletChain !== BASE_MAINNET_CHAIN_ID} onClick={() => setTokenDeployOpen(true)}><RocketLaunch />{wallet ? (es ? "Desplegar IRIS" : "Deploy IRIS") : (es ? "Conecta MetaMask primero" : "Connect MetaMask first")}</button> : <span>{es ? "Pendiente del administrador" : "Waiting for administrator"}</span>}</div></section>
     {tokenAddress && <section className="token-operations-center">

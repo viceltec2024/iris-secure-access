@@ -26,7 +26,7 @@ export function getMetaMaskClient() {
       },
       ui: {
         headless: true,
-        preferExtension: false,
+        preferExtension: true,
         showInstallModal: false,
       },
       mobile: {
