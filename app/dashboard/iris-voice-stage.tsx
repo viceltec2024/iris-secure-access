@@ -1,5 +1,6 @@
 import { X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
+import IrisSystemOrb from "./iris-system-orb";
 
 export type VoiceStageMode = "listening" | "thinking" | "speaking" | "ready";
 
@@ -9,6 +10,7 @@ export default function IrisVoiceStage({
   transcript,
   answer,
   hearing = false,
+  level = 0,
   onClose,
 }: {
   language: Language;
@@ -16,6 +18,7 @@ export default function IrisVoiceStage({
   transcript: string;
   answer: string;
   hearing?: boolean;
+  level?: number;
   onClose: () => void;
 }) {
   const es = language === "es";
@@ -30,14 +33,7 @@ export default function IrisVoiceStage({
   return (
     <section className={`iris-voice-stage ${mode}${hearing ? " hearing" : ""}`} aria-live="polite" aria-label={title}>
       <button type="button" className="iris-voice-close" onClick={onClose} aria-label={es ? "Cerrar voz" : "Close voice"}><X /></button>
-      <div className="iris-voice-rings" aria-hidden="true"><i /><i /><i /></div>
-      <div className="iris-voice-face">
-        <img src="/assets/iris-avatar.webp" alt="" width="132" height="132" />
-        <span className="iris-voice-mouth" />
-      </div>
-      <div className="iris-voice-wave" aria-hidden="true">
-        {Array.from({ length: 9 }, (_, index) => <i key={index} style={{ animationDelay: `${index * 80}ms` }} />)}
-      </div>
+      <IrisSystemOrb mode={mode} hearing={hearing} level={level} size={236} />
       <p className="iris-voice-status">{title}</p>
       <p className="iris-voice-caption">{caption}</p>
     </section>

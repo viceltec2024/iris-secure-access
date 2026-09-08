@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { orbTint, orbWaveEnergy, orbWaveY } from "../app/dashboard/iris-orb.ts";
 import { extractVoiceCommand, hasWakePhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
 import { fileNameForAudioType, mapMediaError, recordingMimeType, shouldFinishRecording } from "../app/dashboard/iris-record.ts";
 
@@ -44,4 +45,11 @@ test("sends the spoken question without a wake phrase", () => {
   assert.equal(spokenQuestionFromTranscript("para IRIS"), "");
   assert.equal(isHearingVoice(0.08), true);
   assert.equal(isHearingVoice(0.01), false);
+});
+
+test("IRIS system orb grows louder when it hears or speaks", () => {
+  assert.ok(orbWaveEnergy("listening", true, 0.2) > orbWaveEnergy("ready", false, 0));
+  assert.ok(orbWaveEnergy("speaking", false, 0) > orbWaveEnergy("thinking", false, 0));
+  assert.equal(orbTint("thinking", false).glow[2], 255);
+  assert.notEqual(orbWaveY(0, 0.4, 1), 0);
 });
