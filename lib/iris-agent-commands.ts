@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { appSettings } from "../db/schema";
-import { AGENT_COMMAND_CODES, commandsForAlert, type AgentCommandCode } from "./iris-live-soc";
+import { AGENT_COMMAND_CODES, type AgentCommandCode } from "./iris-live-soc";
 
-export { AGENT_COMMAND_CODES, commandsForAlert };
 export type { AgentCommandCode };
+type CommandDraft = { code: AgentCommandCode; title: string; message: string };
 
 export type AgentCommand = {
   id: string;
@@ -31,34 +31,7 @@ function parseCommands(value: string | null | undefined): AgentCommand[] {
   }
 }
 
-export function commandsForAlert(code: string, language: "es" | "en") {
-  const es = language === "es";
-  const label = code.replaceAll("_", " ");
-  const notify = {
-    code: "NOTIFY" as const,
-    title: "IRIS",
-    message: es ? `IRIS detectó ${label}. Abre el centro de control.` : `IRIS detected ${label}. Open the command center.`,
-  };
-  const reverify = {
-    code: "REVERIFY" as const,
-    title: "IRIS",
-    message: es ? "IRIS pide un nuevo reporte de seguridad." : "IRIS requested a fresh security report.",
-  };
-  if (code === "FIREWALL_DISABLED") {
-    return [
-      notify,
-      {
-        code: "ENABLE_FIREWALL" as const,
-        title: "IRIS",
-        message: es ? "IRIS va a activar el firewall. macOS puede pedir tu contraseña." : "IRIS will enable the firewall. macOS may ask for your password.",
-      },
-      reverify,
-    ];
-  }
-  return [notify, reverify];
-}
-
-export async function queueAgentCommands(deviceId: string, actorEmail: string, drafts: ReturnType<typeof commandsForAlert>, alertId?: string) {
+export async function queueAgentCommands(deviceId: string, actorEmail: string, drafts: CommandDraft[], alertId?: string) {
   const key = commandsKey(deviceId);
   const db = getDb();
   const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
