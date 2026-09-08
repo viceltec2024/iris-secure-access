@@ -153,7 +153,9 @@ async function decodeAudioBlob(blob: Blob) {
     const channel = buffer.numberOfChannels > 1 ? mixToMono(buffer) : buffer.getChannelData(0);
     return downsample(channel, buffer.sampleRate, 16000);
   } finally {
-    await context.close();
+    if (context.state !== "closed") {
+      try { await Promise.resolve(context.close()).catch(() => undefined); } catch { /* already closed */ }
+    }
   }
 }
 

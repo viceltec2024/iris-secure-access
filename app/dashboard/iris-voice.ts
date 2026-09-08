@@ -72,6 +72,23 @@ export function releaseMicrophone(stream: MediaStream | null | undefined) {
   stream?.getTracks().forEach(track => track.stop());
 }
 
+const closingAudio = new WeakSet<object>();
+
+export function closeAudioContext(audio: { state: string; close(): Promise<void> } | null | undefined) {
+  if (!audio || audio.state === "closed" || closingAudio.has(audio)) return Promise.resolve();
+  closingAudio.add(audio);
+  try {
+    return Promise.resolve(audio.close()).then(() => undefined, () => undefined);
+  } catch {
+    return Promise.resolve();
+  }
+}
+
+export function resumeSpeechIfPaused(synth: { paused?: boolean; resume(): void } | null | undefined) {
+  if (!synth?.paused) return;
+  try { synth.resume(); } catch { /* ignore */ }
+}
+
 export function monitorMicrophoneLevel(stream: MediaStream, onLevel: (level: number) => void) {
   const audio = new AudioContext();
   const source = audio.createMediaStreamSource(stream);
@@ -80,7 +97,9 @@ export function monitorMicrophoneLevel(stream: MediaStream, onLevel: (level: num
   source.connect(analyser);
   const samples = new Uint8Array(analyser.fftSize);
   let frame = 0;
+  let stopped = false;
   const tick = () => {
+    if (stopped || audio.state === "closed") return;
     analyser.getByteTimeDomainData(samples);
     let sum = 0;
     for (const sample of samples) {
@@ -90,12 +109,14 @@ export function monitorMicrophoneLevel(stream: MediaStream, onLevel: (level: num
     onLevel(Math.sqrt(sum / samples.length));
     frame = requestAnimationFrame(tick);
   };
-  void audio.resume();
+  void audio.resume().catch(() => undefined);
   tick();
   return () => {
+    if (stopped) return;
+    stopped = true;
     cancelAnimationFrame(frame);
-    source.disconnect();
-    void audio.close();
+    try { source.disconnect(); } catch { /* already disconnected */ }
+    void closeAudioContext(audio);
   };
 }
 
@@ -133,16 +154,15 @@ export function scoreSpeechVoice(voice: { name: string; lang: string; localServi
 
 let speechUnlocked = false;
 let speechContext: AudioContext | null = null;
+let speechSource: AudioBufferSourceNode | null = null;
 
 export function unlockSpeechEngine() {
   if (typeof window === "undefined") return;
-  if ("speechSynthesis" in window) {
-    try { window.speechSynthesis.resume(); } catch { /* ignore */ }
-  }
+  if ("speechSynthesis" in window) resumeSpeechIfPaused(window.speechSynthesis);
   const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return;
-  if (!speechContext) speechContext = new Ctor();
-  void speechContext.resume();
+  if (!speechContext || speechContext.state === "closed") speechContext = new Ctor();
+  void speechContext.resume().catch(() => undefined);
   if (speechUnlocked) return;
   const gain = speechContext.createGain();
   gain.gain.value = 0.0001;
@@ -152,4 +172,37 @@ export function unlockSpeechEngine() {
   oscillator.start();
   oscillator.stop(speechContext.currentTime + 0.04);
   speechUnlocked = true;
+}
+
+export function stopSpeechEnginePlayback() {
+  if (!speechSource) return;
+  try { speechSource.stop(); } catch { /* already stopped */ }
+  try { speechSource.disconnect(); } catch { /* already disconnected */ }
+  speechSource = null;
+}
+
+export async function playAudioBuffer(buffer: ArrayBuffer, onStart?: () => void) {
+  unlockSpeechEngine();
+  if (!speechContext || speechContext.state === "closed") throw new Error("unsupported");
+  if (speechContext.state === "suspended") await speechContext.resume();
+  if (speechContext.state !== "running") throw new Error("suspended");
+  const decoded = await speechContext.decodeAudioData(buffer.slice(0));
+  stopSpeechEnginePlayback();
+  await new Promise<void>((resolve, reject) => {
+    const source = speechContext!.createBufferSource();
+    speechSource = source;
+    source.buffer = decoded;
+    source.connect(speechContext!.destination);
+    source.onended = () => {
+      if (speechSource === source) speechSource = null;
+      resolve();
+    };
+    try {
+      source.start();
+      onStart?.();
+    } catch (error) {
+      if (speechSource === source) speechSource = null;
+      reject(error);
+    }
+  });
 }

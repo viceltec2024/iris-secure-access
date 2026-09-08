@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { orbTint, orbWaveEnergy, orbWaveY } from "../app/dashboard/iris-orb.ts";
-import { extractVoiceCommand, hasWakePhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, scoreSpeechVoice, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
+import { closeAudioContext, extractVoiceCommand, hasWakePhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, resumeSpeechIfPaused, scoreSpeechVoice, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
 import { fileNameForAudioType, mapMediaError, recordingMimeType, shouldFinishRecording } from "../app/dashboard/iris-record.ts";
 
 test("accepts Oye IRIS, Hola IRIS, and IRIS alone as wake phrases", () => {
@@ -52,6 +52,30 @@ test("IRIS system orb grows louder when it hears or speaks", () => {
   assert.ok(orbWaveEnergy("speaking", false, 0) > orbWaveEnergy("thinking", false, 0));
   assert.equal(orbTint("thinking", false).glow[2], 255);
   assert.notEqual(orbWaveY(0, 0, 0.4, 1), 0);
+});
+
+test("does not reject when an AudioContext is closed twice", async () => {
+  let closes = 0;
+  const audio = {
+    state: "running",
+    close: async () => {
+      closes += 1;
+      if (closes > 1) throw new Error("Cannot close a closed AudioContext.");
+      await Promise.resolve();
+      audio.state = "closed";
+    },
+  };
+  await Promise.all([closeAudioContext(audio), closeAudioContext(audio)]);
+  await closeAudioContext(audio);
+  assert.equal(closes, 1);
+  await assert.doesNotReject(() => closeAudioContext({ state: "closed", close: async () => { throw new Error("Cannot close a closed AudioContext."); } }));
+});
+
+test("resumes speech synthesis only when it is paused", () => {
+  let resumes = 0;
+  resumeSpeechIfPaused({ paused: false, resume: () => { resumes += 1; } });
+  resumeSpeechIfPaused({ paused: true, resume: () => { resumes += 1; } });
+  assert.equal(resumes, 1);
 });
 
 test("splits spoken answers so the browser can play them out loud", () => {
