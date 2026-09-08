@@ -5,9 +5,11 @@ import { enforceRateLimit } from "../../../lib/rate-limit";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { appSettings, devices, securityAlerts } from "../../../db/schema";
-import { ensureAgentsWorking } from "../../../lib/agent-orchestration";
+import { parseWalletSessionValue } from "../../../lib/iris-chain";
+import { liveWorkers } from "../../../lib/iris-live-soc";
 import { localIrisAnswer } from "../../../lib/iris-local-analyst";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "../../../lib/iris-market";
+import { parsePurchaseDesk } from "../../../lib/iris-purchases";
 
 export const dynamic = "force-dynamic";
 
@@ -34,18 +36,30 @@ export async function POST(request: Request) {
   const db = getDb();
   const deviceRows = user.role === "ADMIN" ? await db.select().from(devices).orderBy(desc(devices.createdAt)).limit(25) : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt)).limit(25);
   const alertRows = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(50) : [];
-  const agents = await ensureAgentsWorking(user.email);
   const [walletRow] = await db.select().from(appSettings).where(eq(appSettings.key, `iris_local_wallet_session:${user.email}`)).limit(1);
+  const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, `iris_purchase_desk:${user.email}`)).limit(1);
+  const wallet = parseWalletSessionValue(walletRow?.value || "");
+  const pendingPurchases = parsePurchaseDesk(deskRow?.value || "").proposals.filter(item => item.status === "awaiting_approval").length;
+  const mappedDevices = deviceRows.map(device => ({ id: device.id, name: device.name, platform: device.platform, status: device.status, risk: device.risk, lastSeenAt: device.lastSeenAt, telemetry: JSON.parse(device.telemetry || "{}") as Record<string, unknown> }));
+  const agents = liveWorkers({
+    devices: mappedDevices,
+    walletConnected: Boolean(wallet),
+    walletAddress: wallet?.address,
+    marketLive: true,
+    auditCount: 1,
+    pendingPurchases,
+    language,
+  });
   const question = [...messages].reverse().find(message => message.role === "user")?.content || "";
   const analystInput = {
     language,
     question,
     userName: user.displayName || user.email,
     section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
-    devices: deviceRows.map(device => ({ id: device.id, name: device.name, platform: device.platform, status: device.status, risk: device.risk, lastSeenAt: device.lastSeenAt, telemetry: JSON.parse(device.telemetry || "{}") as Record<string, unknown> })),
+    devices: mappedDevices,
     alerts: alertRows.map(alert => ({ deviceId: alert.deviceId, code: alert.code, severity: alert.severity, status: alert.status, evidence: JSON.parse(alert.evidence || "{}") as Record<string, unknown>, lastSeenAt: alert.lastSeenAt })),
     agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),
-    wallet: { connected: Boolean(walletRow?.value), address: walletRow?.value || "" },
+    wallet: { connected: Boolean(wallet), address: wallet?.address || "" },
   };
 
   if (isMarketQuestion(question) || preferences.section === "market") {

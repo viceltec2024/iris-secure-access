@@ -29,6 +29,14 @@ test("Ask IRIS can open in full screen", () => {
   assert.match(css, /\.iris-chat\.full-screen\{/);
 });
 
+test("security operations no longer ships training incidents", () => {
+  const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
+  const i18n = readFileSync(new URL("../app/dashboard/dashboard-i18n.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(sidebar, /IR-1039|IR-1042|seedIncidents|SIMULATION ANALYSIS/);
+  assert.doesNotMatch(i18n, /IR-1039|Demo systems connected|Sistemas de demostración/);
+  assert.match(sidebar, /buildLiveIncidents/);
+});
+
 test("sidebar and home lockups use the IRIS brand mark", () => {
   const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
   const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");

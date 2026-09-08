@@ -44,8 +44,8 @@ test("Ask IRIS reports connected agents", () => {
     section: "operations",
     devices: [],
     alerts: [],
-    agents: [{ id: "security", role: "Agente Security", status: "RUNNING", task: "Revisión" }],
+    agents: [{ id: "mac-agent", role: "Agente Mac", status: "RUNNING", task: "Reporte cada 2 minutos" }],
     wallet: { connected: false, address: "" },
   });
-  assert.match(answer, /Security|agentes/i);
+  assert.match(answer, /Mac|sistemas/i);
 });

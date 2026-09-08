@@ -63,11 +63,11 @@ export function localIrisAnswer(input: IrisAnalystInput) {
 
   const agentBlock = input.agents.length
     ? es
-      ? `Los cinco agentes de orquestación están conectados. En ejecución: ${runningAgents.map(agent => agent.role).join(", ") || "ninguno"}. Completados: ${doneAgents.map(agent => agent.role).join(", ") || "ninguno"}.`
-      : `The five orchestration agents are connected. Running: ${runningAgents.map(agent => agent.role).join(", ") || "none"}. Completed: ${doneAgents.map(agent => agent.role).join(", ") || "none"}.`
+      ? `Sistemas en vivo: ${runningAgents.map(agent => agent.role).join(", ") || "ninguno en ejecución"}. En cola o listos: ${doneAgents.map(agent => agent.role).join(", ") || "ninguno"}.`
+      : `Live systems: ${runningAgents.map(agent => agent.role).join(", ") || "none running"}. Queued or ready: ${doneAgents.map(agent => agent.role).join(", ") || "none"}.`
     : es
-      ? "Todavía no hay un runtime de orquestación reportado."
-      : "No orchestration runtime has been reported yet.";
+      ? "Todavía no hay sistemas en vivo reportados."
+      : "No live systems have been reported yet.";
 
   const walletBlock = wallet
     ? es
@@ -92,8 +92,8 @@ export function localIrisAnswer(input: IrisAnalystInput) {
   if (/(agente|agent|orquest)/.test(question)) {
     const detail = input.agents.map(agent => `${agent.role}: ${agent.status}${agent.task ? ` · ${agent.task}` : ""}`).join(es ? "; " : "; ");
     return es
-      ? `${name}, ya conecté el equipo de agentes y los puse a trabajar. ${agentBlock} Detalle: ${detail || "sin filas todavía"}.`
-      : `${name}, the agent team is connected and working. ${agentBlock} Detail: ${detail || "no rows yet"}.`;
+      ? `${name}, estos son los sistemas reales conectados ahora. ${agentBlock} Detalle: ${detail || "sin filas todavía"}.`
+      : `${name}, these are the real systems connected now. ${agentBlock} Detail: ${detail || "no rows yet"}.`;
   }
 
   if (/(bolsa|mercado|nasdaq|ticker|cotiz|acci[oó]n|jarvis|\bjar\b)/.test(question)) {
@@ -111,8 +111,8 @@ export function localIrisAnswer(input: IrisAnalystInput) {
   if (/(amenaza|threat|malware|ubicaci[oó]n|d[oó]nde|where)/.test(question)) {
     if (!activeAlerts.length) {
       return es
-        ? `No hay hallazgos verificados abiertos. ${statusBlock} Los incidentes de demostración no se tratan como amenazas reales en tu Mac.`
-        : `There are no open verified findings. ${statusBlock} Demonstration incidents are not treated as real threats on your Mac.`;
+        ? `No hay hallazgos verificados abiertos. ${statusBlock} IRIS solo trata como amenaza lo que reporta tu agente.`
+        : `There are no open verified findings. ${statusBlock} IRIS only treats as a threat what your agent reports.`;
     }
     const codes = activeAlerts.map(alert => alert.code.replaceAll("_", " ")).join(", ");
     const pathText = location.length

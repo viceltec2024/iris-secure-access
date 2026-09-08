@@ -72,6 +72,38 @@ telemetry_json() {
   printf '{"hostname":"%s","osVersion":"macOS %s","architecture":"%s","diskUsedPercent":%s,"memoryUsedPercent":%s,"firewallEnabled":%s,"gatekeeperEnabled":%s,"fileVaultEnabled":%s,"sipEnabled":%s,"automaticUpdatesEnabled":%s,"installedApplicationCount":%s,"applicationInventoryHash":"%s","riskyApplications":%s,"xProtectPresent":%s,"xProtectVersion":"%s","malwareRemovalToolPresent":%s,"persistenceItemCount":%s,"persistenceInventoryHash":"%s","unsignedPersistenceItems":%s,"threatLocations":%s}' "$(json_escape "$hostname")" "$(json_escape "$os_version")" "$(json_escape "$architecture")" "$disk_used" "$memory_used" "$firewall" "$gatekeeper" "$filevault" "$sip" "$auto_updates" "$app_count" "$app_hash" "$risky_json" "$xprotect" "$(json_escape "$xprotect_version")" "$mrt" "$persistence_count" "$persistence_hash" "$unsigned_persistence_json" "$threat_locations_json"
 }
 
+apply_commands() {
+  local response_file="$1"
+  [ -f "$response_file" ] || return 0
+  command -v /usr/bin/python3 >/dev/null 2>&1 || return 0
+  local result
+  result="$(/usr/bin/python3 - "$response_file" <<'PY'
+import json, subprocess, sys
+path = sys.argv[1]
+try:
+    data = json.load(open(path))
+except Exception:
+    raise SystemExit(0)
+need_reverify = False
+for cmd in data.get("commands") or []:
+    code = str(cmd.get("code") or "")
+    title = str(cmd.get("title") or "IRIS")
+    message = str(cmd.get("message") or "")
+    if code in ("NOTIFY", "ENABLE_FIREWALL", "REVERIFY") and message:
+        subprocess.run(["/usr/bin/osascript", "-e", f"display notification {json.dumps(message)} with title {json.dumps(title)}"], check=False)
+    if code == "ENABLE_FIREWALL":
+        script = '/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on'
+        subprocess.run(["/usr/bin/osascript", "-e", f"do shell script {json.dumps(script)} with administrator privileges"], check=False)
+    if code == "REVERIFY":
+        need_reverify = True
+print("REVERIFY" if need_reverify else "OK")
+PY
+)"
+  if [ "$result" = "REVERIFY" ] && [ -z "${IRIS_SKIP_REVERIFY:-}" ]; then
+    (sleep 20; IRIS_SKIP_REVERIFY=1 "$AGENT_PATH" run) >/dev/null 2>&1 &
+  fi
+}
+
 check_in() {
   /usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w >/dev/null 2>&1 || { echo "IRIS Agent is not enrolled."; exit 1; }
   local token payload request_body response_file timestamp nonce signature signing_input encryption_key authentication_key iv ciphertext encrypted_tag
@@ -90,6 +122,7 @@ check_in() {
   response_file="$(/usr/bin/mktemp -t iris-agent)"
   if /usr/bin/curl --fail --silent --show-error --retry 2 --retry-delay 5 --connect-timeout 15 --max-time 45 -H "Authorization: Bearer $token" -H "X-IRIS-Timestamp: $timestamp" -H "X-IRIS-Nonce: $nonce" -H "X-IRIS-Signature: $signature" -H "Content-Type: application/json" --data-binary "$request_body" "$API_URL" > "$response_file"; then
     echo "$(/bin/date -u +%FT%TZ) encrypted check-in succeeded" >> "$LOG_PATH"
+    apply_commands "$response_file"
   else
     echo "$(/bin/date -u +%FT%TZ) check-in failed" >> "$LOG_PATH"
   fi
