@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { MagnifyingGlass, X } from "@phosphor-icons/react";
+import { formatUtcClock } from "../../../lib/iris-time";
 import { AccessForm } from "./access-form";
 
 type DirectoryUser = {
@@ -39,6 +40,6 @@ export function UserDirectory({ users, actorEmail }: { users: DirectoryUser[]; a
       {hasFilters && <button type="button" className="clear-filters" onClick={clearFilters}><X /> Clear</button>}
       <p aria-live="polite"><strong>{filteredUsers.length}</strong> of {users.length} users shown</p>
     </div>
-    <div className="user-table-wrap"><table><thead><tr><th>User</th><th>Last active</th><th>Access controls</th><th>Audit</th></tr></thead><tbody>{filteredUsers.map((user) => <tr key={user.id}><td><strong>{user.displayName || "IRIS user"}</strong><span>{user.email}</span></td><td>{new Date(user.lastSeenAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</td><td><AccessForm email={user.email} role={user.role} status={user.status} isSelf={user.email === actorEmail} /></td><td><a className="audit-link" href={`/admin/users?user=${encodeURIComponent(user.email)}`}>View activity</a></td></tr>)}</tbody></table>{filteredUsers.length === 0 && <div className="directory-empty"><MagnifyingGlass /><strong>No users match these filters</strong><span>Try another search, role, or status.</span><button type="button" onClick={clearFilters}>Clear filters</button></div>}</div>
+    <div className="user-table-wrap"><table><thead><tr><th>User</th><th>Last active</th><th>Access controls</th><th>Audit</th></tr></thead><tbody>{filteredUsers.map((user) => <tr key={user.id}><td><strong>{user.displayName || "IRIS user"}</strong><span>{user.email}</span></td><td>{formatUtcClock(user.lastSeenAt)}</td><td><AccessForm email={user.email} role={user.role} status={user.status} isSelf={user.email === actorEmail} /></td><td><a className="audit-link" href={`/admin/users?user=${encodeURIComponent(user.email)}`}>View activity</a></td></tr>)}</tbody></table>{filteredUsers.length === 0 && <div className="directory-empty"><MagnifyingGlass /><strong>No users match these filters</strong><span>Try another search, role, or status.</span><button type="button" onClick={clearFilters}>Clear filters</button></div>}</div>
   </>;
 }

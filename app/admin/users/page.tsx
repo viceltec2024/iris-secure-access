@@ -3,6 +3,7 @@ import { requireChatGPTUser, chatGPTSignOutPath } from "../../chatgpt-auth";
 import { listUserAuditForAdmin, listUsersForAdmin, logAudit, provisionIrisUser } from "../../../lib/authz";
 import { ShieldCheck, SignOut, UserCircle, Pulse, UsersThree, ArrowLeft } from "@phosphor-icons/react/dist/ssr";
 import IrisBrandMark from "../../iris-brand-mark";
+import { formatUtcClock } from "../../../lib/iris-time";
 import { UserDirectory } from "./user-directory";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export default async function ManageUsersPage({ searchParams }: { searchParams: 
           <div className="panel-title"><UsersThree /><div><h2>User directory</h2><p>{directory.length} registered {directory.length === 1 ? "account" : "accounts"}</p></div></div>
           <UserDirectory users={directory} actorEmail={actor.email} />
         </section>
-        <section className="workspace-panel admin-audit"><div className="panel-title"><Pulse /><div><h2>{selectedEmail ? `Activity: ${selectedEmail}` : "Recent organization activity"}</h2><p>Immutable administrative and authentication events</p></div>{selectedEmail && <a href="/admin/users"><ArrowLeft /> Show all</a>}</div><div className="audit-list">{events.length ? events.map((event) => <article key={event.id}><span className={`event-dot ${event.outcome.toLowerCase()}`} /><div><strong>{event.action.replaceAll("_", " ")}</strong><span>{event.actorEmail} · {event.resource}</span></div><time>{new Date(event.createdAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</time></article>) : <p className="empty-audit">No activity recorded for this user.</p>}</div></section>
+        <section className="workspace-panel admin-audit"><div className="panel-title"><Pulse /><div><h2>{selectedEmail ? `Activity: ${selectedEmail}` : "Recent organization activity"}</h2><p>Immutable administrative and authentication events</p></div>{selectedEmail && <a href="/admin/users"><ArrowLeft /> Show all</a>}</div><div className="audit-list">{events.length ? events.map((event) => <article key={event.id}><span className={`event-dot ${event.outcome.toLowerCase()}`} /><div><strong>{event.action.replaceAll("_", " ")}</strong><span>{event.actorEmail} · {event.resource}</span></div><time dateTime={event.createdAt}>{formatUtcClock(event.createdAt)}</time></article>) : <p className="empty-audit">No activity recorded for this user.</p>}</div></section>
       </section>
     </main>
   );

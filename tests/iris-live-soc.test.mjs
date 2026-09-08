@@ -77,6 +77,7 @@ test("intelligence and relative time stay on live alerts", () => {
   assert.equal(intel.resolved, 1);
   assert.equal(intel.techniques[0].label, "FIREWALL DISABLED");
   assert.equal(relativeTime(new Date(Date.now() - 20_000).toISOString(), "es"), "ahora mismo");
+  assert.equal(relativeTime("2020-01-01T00:00:00.000Z", "en", Date.parse("2026-09-08T00:00:00.000Z")), "2020-01-01 00:00 UTC");
 });
 
 test("approving a firewall finding queues a real Mac action", () => {

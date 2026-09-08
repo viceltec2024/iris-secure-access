@@ -49,6 +49,23 @@ test("offline Macs show a reconnect command for this IRIS instance", () => {
   assert.match(sidebar, /IRIS_AGENT_SCRIPT_VERSION/);
 });
 
+test("dashboard language and reconnect URL wait until after hydration", () => {
+  const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
+  assert.match(sidebar, /useState<Language>\("es"\)/);
+  assert.match(sidebar, /setPageOrigin\(window\.location\.origin\)/);
+  assert.doesNotMatch(sidebar, /typeof window === "undefined" \? "en"/);
+  assert.doesNotMatch(sidebar, /typeof window === "undefined" \? "" : window\.location\.origin/);
+});
+
+test("admin timestamps do not use the browser locale during SSR", () => {
+  const page = readFileSync(new URL("../app/admin/users/page.tsx", import.meta.url), "utf8");
+  const directory = readFileSync(new URL("../app/admin/users/user-directory.tsx", import.meta.url), "utf8");
+  assert.match(page, /formatUtcClock\(event\.createdAt\)/);
+  assert.match(directory, /formatUtcClock\(user\.lastSeenAt\)/);
+  assert.doesNotMatch(page, /toLocaleString/);
+  assert.doesNotMatch(directory, /toLocaleString/);
+});
+
 test("security operations no longer ships training incidents", () => {
   const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
   const i18n = readFileSync(new URL("../app/dashboard/dashboard-i18n.ts", import.meta.url), "utf8");

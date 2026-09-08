@@ -1,3 +1,5 @@
+import { formatUtcClock } from "./iris-time.ts";
+
 export type LiveAlert = {
   id: string;
   deviceId: string;
@@ -115,7 +117,7 @@ export function relativeTime(value: string | null | undefined, language: "es" | 
     const hours = Math.round(delta / 3_600_000);
     return es ? `hace ${hours} h` : `${hours} hr ago`;
   }
-  return new Date(parsed).toLocaleString(language);
+  return formatUtcClock(parsed);
 }
 
 export function emptyLiveIncident(language: "es" | "en"): LiveIncident {
