@@ -38,8 +38,12 @@ test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
   assert.doesNotMatch(panel, /\/api\/iris-voice/);
   assert.doesNotMatch(panel, /playMpegSpeech/);
   assert.doesNotMatch(panel, /neuralVoice/);
-  assert.match(voice, /window\.speechSynthesis\.speak/);
-  assert.match(voice, /},\s*0\);/);
+  assert.match(voice, /synth\.speak\(/);
+  assert.match(voice, /synth\.getVoices\(\)/);
+  assert.doesNotMatch(voice, /window\.setTimeout\(\(\) => \{[^}]*speakChunk/);
+  assert.match(panel, /onPointerDown=\{event => connectVoice\(event\)\}/);
+  assert.match(panel, /onSpeakerClick/);
+  assert.match(panel, /Conectar la voz de IRIS/);
 });
 
 test("offline Macs show a reconnect command for this IRIS instance", () => {

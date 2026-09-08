@@ -222,18 +222,35 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     stopVoice();
   }
 
-  function stopVoice() { queuedSpeechRef.current = null; browserStopRef.current?.(); browserStopRef.current = null; stopSpeechEnginePlayback(); stopSpeechKeepAlive(); voiceRequestRef.current?.abort(); voiceRequestRef.current = null; audioRef.current?.pause(); audioRef.current = null; if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; } if ("speechSynthesis" in window) window.speechSynthesis.cancel(); speakingRef.current = false; setSpeaking(false); setVoiceLoading(false); }
-  function toggleAutoSpeak() {
-    setAutoSpeak(value => {
-      const next = !value;
-      if (!next) stopVoice();
-      else {
-        const latest = spokenAnswer || messages.filter(item => item.role === "assistant").at(-1)?.content || "";
-        if (latest) void speak(latest, { resume: false });
-      }
-      return next;
-    });
+  function connectVoice(event?: { target?: EventTarget | null }) {
+    const node = event?.target as HTMLElement | null;
+    if (node?.closest("button, textarea, input, a")) return;
+    unlockSpeechEngine();
+    holdSpeechSession();
+    if (greetedRef.current || !autoSpeakRef.current) return;
+    greetedRef.current = true;
+    const phrase = irisListenPhrase(language);
+    setSpokenAnswer(phrase);
+    setVoiceHint(language === "es" ? "IRIS te está hablando. Sube el volumen." : "IRIS is speaking. Turn the volume up.");
+    void speak(phrase, { resume: false });
   }
+
+  function onSpeakerClick() {
+    unlockSpeechEngine();
+    holdSpeechSession();
+    if (speakingRef.current || voiceLoading) {
+      setAutoSpeak(false);
+      stopVoice();
+      return;
+    }
+    setAutoSpeak(true);
+    autoSpeakRef.current = true;
+    const latest = spokenAnswer || messages.filter(item => item.role === "assistant").at(-1)?.content || irisListenPhrase(language);
+    greetedRef.current = true;
+    void speak(latest, { resume: false });
+  }
+
+  function stopVoice() { queuedSpeechRef.current = null; browserStopRef.current?.(); browserStopRef.current = null; stopSpeechEnginePlayback(); stopSpeechKeepAlive(); voiceRequestRef.current?.abort(); voiceRequestRef.current = null; audioRef.current?.pause(); audioRef.current = null; if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; } if ("speechSynthesis" in window) window.speechSynthesis.cancel(); speakingRef.current = false; setSpeaking(false); setVoiceLoading(false); }
 
   async function sendMessage(text = input) {
     unlockSpeechEngine();
@@ -451,10 +468,10 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
 
   if (!open) return <button className="iris-chat-launcher" onClick={() => setOpen(true)}><ChatCircleDots weight="fill" /><span>Ask IRIS</span><i /></button>;
 
-  return <aside className={`iris-chat ${voiceStage ? "voice-open" : ""}${fullScreen ? " full-screen" : ""}`} aria-label="Ask IRIS assistant">
+  return <aside className={`iris-chat ${voiceStage ? "voice-open" : ""}${fullScreen ? " full-screen" : ""}`} aria-label="Ask IRIS assistant" onPointerDown={event => connectVoice(event)}>
     <header>
       <button onClick={() => setFullScreen(value => !value)} aria-label={fullScreen ? (language === "es" ? "Salir de pantalla completa" : "Exit full screen") : (language === "es" ? "Pantalla completa" : "Full screen")} title={fullScreen ? (language === "es" ? "Salir de pantalla completa" : "Exit full screen") : (language === "es" ? "Pantalla completa" : "Full screen")}>{fullScreen ? <CornersIn /> : <CornersOut />}</button>
-      <button onClick={toggleAutoSpeak} aria-label={autoSpeak ? "Silenciar respuestas automáticas" : "Activar respuestas habladas"} title={autoSpeak ? "Silenciar" : "Activar voz"}>{autoSpeak ? <SpeakerHigh /> : <SpeakerSlash />}</button>
+      <button onClick={onSpeakerClick} aria-label={speaking || voiceLoading ? (language === "es" ? "Silenciar a IRIS" : "Mute IRIS") : (language === "es" ? "Conectar la voz de IRIS" : "Connect IRIS voice")} title={speaking || voiceLoading ? (language === "es" ? "Silenciar" : "Mute") : (language === "es" ? "Conectar voz" : "Connect voice")}>{autoSpeak ? <SpeakerHigh /> : <SpeakerSlash />}</button>
       <button onClick={() => { setFullScreen(false); closeVoiceStage(); stopVoice(); setOpen(false); }} aria-label="Close Ask IRIS"><X /></button>
     </header>
     {voiceStage

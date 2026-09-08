@@ -172,16 +172,7 @@ let htmlAudio: HTMLAudioElement | null = null;
 function primeBrowserSpeech() {
   if (typeof window === "undefined" || !("speechSynthesis" in window) || browserSpeechPrimed) return;
   resumeSpeechIfPaused(window.speechSynthesis);
-  const prime = new SpeechSynthesisUtterance(" ");
-  prime.volume = 0.01;
-  prime.rate = 2;
-  prime.lang = "es-MX";
-  try {
-    window.speechSynthesis.speak(prime);
-    browserSpeechPrimed = true;
-  } catch {
-    /* Chrome may still allow later speak() after unlock. */
-  }
+  browserSpeechPrimed = true;
 }
 
 export function unlockSpeechEngine() {
@@ -249,9 +240,11 @@ export function speakBrowserText(
     return () => undefined;
   }
   const synth = window.speechSynthesis;
-  synth.cancel();
-  const catalog = voices.length ? voices : synth.getVoices();
-  const preferred = pickSpeechVoice(catalog, language);
+  resumeSpeechIfPaused(synth);
+  if (synth.speaking || synth.pending) synth.cancel();
+  const catalog = synth.getVoices();
+  const preferred = pickSpeechVoice(catalog.length ? catalog : voices, language);
+  const liveVoice = preferred ? catalog.find(voice => voice.name === preferred.name && voice.lang === preferred.lang) : undefined;
   const chunks = splitSpeechChunks(text);
   let index = 0;
   let stopped = false;
@@ -270,10 +263,10 @@ export function speakBrowserText(
     if (watchdog) window.clearTimeout(watchdog);
     synth.cancel();
   };
-  const makeUtterance = (chunk: string) => {
+  const makeUtterance = (chunk: string, attachVoice: boolean) => {
     const utterance = new SpeechSynthesisUtterance(chunk);
-    utterance.lang = preferred?.lang || (language === "es" ? "es-MX" : "en-US");
-    if (preferred) utterance.voice = preferred as SpeechSynthesisVoice;
+    utterance.lang = liveVoice?.lang || (language === "es" ? "es-MX" : "en-US");
+    if (attachVoice && liveVoice) utterance.voice = liveVoice;
     utterance.rate = 0.96;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -284,41 +277,39 @@ export function speakBrowserText(
     utterance.onend = () => {
       if (stopped) return;
       index += 1;
-      speakChunk();
+      speakChunk(attachVoice);
     };
     utterance.onerror = event => {
       const error = "error" in event ? String((event as { error?: string }).error || "") : "";
       if (error === "canceled" || error === "interrupted") return;
       if (stopped) return;
       index += 1;
-      speakChunk();
+      speakChunk(attachVoice);
     };
     return utterance;
   };
-  const speakChunk = () => {
+  const speakChunk = (attachVoice = true) => {
     if (stopped) return;
     if (index >= chunks.length) {
       finish(false);
       return;
     }
     resumeSpeechIfPaused(synth);
-    synth.speak(makeUtterance(chunks[index]));
+    synth.speak(makeUtterance(chunks[index], attachVoice));
   };
-  window.setTimeout(() => {
-    if (stopped) return;
-    speakChunk();
+  speakChunk(true);
+  watchdog = window.setTimeout(() => {
+    if (stopped || started || finished) return;
+    if (synth.speaking || synth.pending) return;
+    resumeSpeechIfPaused(synth);
+    if (chunks[0]) synth.speak(makeUtterance(chunks[0], false));
     watchdog = window.setTimeout(() => {
       if (stopped || started || finished) return;
-      synth.cancel();
-      resumeSpeechIfPaused(synth);
-      if (chunks[0]) synth.speak(makeUtterance(chunks[0]));
-      watchdog = window.setTimeout(() => {
-        if (stopped || started || finished) return;
-        stop();
-        finish(true);
-      }, 1400);
-    }, 900);
-  }, 0);
+      if (synth.speaking || synth.pending) return;
+      stop();
+      finish(true);
+    }, 1400);
+  }, 900);
   return stop;
 }
 
