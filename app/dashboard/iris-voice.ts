@@ -1,7 +1,9 @@
 export type VoiceErrorCode = "unsupported" | "denied" | "network" | "no-speech" | "audio-capture" | "aborted" | "unknown";
 
 const WAKE_PATTERN = /(?:(?:oye|hey|ok|okay|hola|escucha|okey)\s+)?iris\b/i;
-const STOP_PATTERN = /^(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|callate|quiet|cancel)(?:\s+iris)?$/i;
+const STOP_CORE = /(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|callate|quiet|cancel)/i;
+const STOP_PATTERN = new RegExp(`^(?:(?:oye|hey|ok|okay|hola|escucha)\\s+)?(?:iris\\s+)?${STOP_CORE.source}(?:\\s+(?:iris|ya|ahora|por favor|please|de hablar|talking|speaking))?$`, "i");
+const STOP_PHRASE = /^(?:deja de hablar|stop talking|stop speaking|no hables|shut up|iris para|iris stop|para ya|stop para|para stop)$/i;
 
 export function recognitionLanguage(language: "es" | "en") {
   return language === "es" ? "es-MX" : "en-US";
@@ -15,7 +17,7 @@ export function extractVoiceCommand(transcript: string) {
   const trimmed = transcript.trim();
   if (!trimmed) return "";
   const normalized = normalizeVoiceTranscript(trimmed);
-  if (STOP_PATTERN.test(normalized)) return "";
+  if (isStopCommand(trimmed)) return "";
   const wakeMatch = trimmed.match(WAKE_PATTERN);
   if (wakeMatch) {
     return trimmed.slice((wakeMatch.index || 0) + wakeMatch[0].length).replace(/^[,.:;\s]+/, "").trim();
@@ -31,7 +33,11 @@ export function defaultVoiceQuestion(language: "es" | "en") {
 }
 
 export function isStopCommand(transcript: string) {
-  return STOP_PATTERN.test(normalizeVoiceTranscript(transcript));
+  const normalized = normalizeVoiceTranscript(transcript);
+  if (!normalized) return false;
+  if (STOP_PATTERN.test(normalized)) return true;
+  if (STOP_PHRASE.test(normalized)) return true;
+  return false;
 }
 
 export function hasWakePhrase(transcript: string) {

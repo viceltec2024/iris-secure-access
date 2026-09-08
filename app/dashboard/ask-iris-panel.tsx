@@ -74,6 +74,9 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   messagesRef.current = messages;
   const sendLockRef = useRef(false);
   const sendQueueRef = useRef<string[]>([]);
+  const bargeInRef = useRef<RecognitionInstance | null>(null);
+  const askAbortRef = useRef<AbortController | null>(null);
+  const ignoreAskRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const voiceMode: VoiceStageMode = listening ? "listening" : loading || voiceLoading ? "thinking" : speaking ? "speaking" : "ready";
@@ -147,6 +150,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
           setSpeaking(true);
           setVoiceLoading(false);
           setVoiceHint(speechVolumeHint(language, { speaking: true, voices: Math.max(voices.length, window.speechSynthesis.getVoices().length) }));
+          startBargeIn();
         },
         onBlocked: () => {
           setVoiceHint(speechVolumeHint(language, { blocked: true, voices: window.speechSynthesis.getVoices().length }));
@@ -158,6 +162,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
           }
           browserStopRef.current = null;
           stopSpeechKeepAlive();
+          stopBargeIn();
           speakingRef.current = false;
           setSpeaking(false);
           setVoiceLoading(false);
@@ -196,6 +201,60 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     debounceTimerRef.current = null;
   }
 
+  function honorStop(said = "") {
+    ignoreAskRef.current = true;
+    askAbortRef.current?.abort();
+    autoSpeakRef.current = false;
+    setAutoSpeak(false);
+    stopBargeIn();
+    stopVoice();
+    closeVoiceStage();
+    const reply = language === "es" ? "Paré. Dime cuando quieras seguir." : "Stopped. Tell me when you want to continue.";
+    setSpokenAnswer(reply);
+    setVoiceHint(reply);
+    setMessages(current => {
+      const already = said && current.some(item => item.role === "user" && item.content === said);
+      const withUser = said && !already ? [...current, { role: "user" as const, content: said }] : current;
+      if (withUser.some(item => item.role === "assistant" && item.content === reply)) {
+        messagesRef.current = withUser;
+        return withUser;
+      }
+      const next = [...withUser, { role: "assistant" as const, content: reply }];
+      messagesRef.current = next;
+      return next;
+    });
+  }
+
+  function stopBargeIn() {
+    bargeInRef.current?.abort();
+    bargeInRef.current = null;
+  }
+
+  function startBargeIn() {
+    const RecognitionApi = recognitionApi();
+    if (!RecognitionApi) return;
+    stopBargeIn();
+    const recognition = new RecognitionApi();
+    recognition.lang = recognitionLanguage(language);
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = event => {
+      let finals = "";
+      for (let index = event.resultIndex || 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (result.isFinal) finals += `${result[0]?.transcript || ""} `;
+      }
+      if (isStopCommand(finals)) honorStop(finals.trim());
+    };
+    recognition.onerror = () => undefined;
+    recognition.onend = () => {
+      if (bargeInRef.current === recognition) bargeInRef.current = null;
+    };
+    bargeInRef.current = recognition;
+    try { recognition.start(); } catch { bargeInRef.current = null; }
+  }
+
   function pauseRecognition() {
     listenActiveRef.current = false;
     recognitionRef.current?.abort();
@@ -231,6 +290,8 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     recorderRef.current?.stop();
     recorderRef.current = null;
     recorderOnlyRef.current = false;
+    bargeInRef.current?.abort();
+    bargeInRef.current = null;
     stopLevelMonitorRef.current?.();
     stopLevelMonitorRef.current = null;
     releaseMicrophone(streamRef.current);
@@ -270,10 +331,15 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   function stopVoice() { queuedSpeechRef.current = null; browserStopRef.current?.(); browserStopRef.current = null; stopSpeechEnginePlayback(); stopSpeechKeepAlive(); voiceRequestRef.current?.abort(); voiceRequestRef.current = null; audioRef.current?.pause(); audioRef.current = null; if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; } if ("speechSynthesis" in window) window.speechSynthesis.cancel(); speakingRef.current = false; setSpeaking(false); setVoiceLoading(false); }
 
   async function sendMessage(text = input) {
-    unlockSpeechEngine();
-    holdSpeechSession();
     const clean = text.trim();
     if (!clean) return;
+    if (isStopCommand(clean)) {
+      setInput("");
+      honorStop(clean);
+      return;
+    }
+    unlockSpeechEngine();
+    holdSpeechSession();
     setInput("");
     if (sendLockRef.current) {
       sendQueueRef.current.push(clean);
@@ -287,6 +353,8 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     setLoading(true);
     pauseRecognition();
     const controller = new AbortController();
+    askAbortRef.current = controller;
+    ignoreAskRef.current = false;
     const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch("/api/ask-iris", {
@@ -304,6 +372,9 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       setMessages(withReply);
       if (autoSpeakRef.current) void speak(answer);
     } catch (error) {
+      if (ignoreAskRef.current) {
+        /* stop already handled */
+      } else {
       const message = error instanceof Error && error.name === "AbortError"
         ? (language === "es" ? "IRIS tardó demasiado. Pregúntame otra vez." : "IRIS took too long. Ask me again.")
         : error instanceof Error ? error.message : (language === "es" ? "IRIS no está disponible temporalmente." : "IRIS is temporarily unavailable.");
@@ -312,11 +383,18 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       messagesRef.current = withReply;
       setMessages(withReply);
       if (autoSpeakRef.current) void speak(message);
+      }
     } finally {
       window.clearTimeout(timeout);
       loadingRef.current = false;
       setLoading(false);
       sendLockRef.current = false;
+      askAbortRef.current = null;
+      if (ignoreAskRef.current) {
+        sendQueueRef.current = [];
+        ignoreAskRef.current = false;
+        return;
+      }
       const queued = sendQueueRef.current.shift();
       if (queued) void sendMessage(queued);
     }
@@ -395,10 +473,11 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
         if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = window.setTimeout(() => {
           if (isStopCommand(transcriptBufferRef.current)) {
-            transcriptBufferRef.current = "";
-            closeVoiceStage();
-            return;
-          }
+          const said = transcriptBufferRef.current;
+          transcriptBufferRef.current = "";
+          honorStop(said);
+          return;
+        }
           commitSpokenQuestion(transcriptBufferRef.current);
         }, 900);
         return;
@@ -511,7 +590,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       try {
         const text = await transcribeRecordedAudio(blob, language);
         if (isStopCommand(text)) {
-          closeVoiceStage();
+          honorStop(text);
           return;
         }
         commitSpokenQuestion(text);

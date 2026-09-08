@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { irisMindAnswer } from "../lib/iris-mind.ts";
 import { composeWorldAnswer, irisWorldAnswer } from "../lib/iris-world-knowledge.ts";
-import { extractSearchTopic, isConversationStart, isIdentityQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
+import { extractSearchTopic, isConversationStart, isIdentityQuestion, isSocQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
 
 const base = {
   language: "es",
@@ -46,7 +46,8 @@ test("Ask IRIS evaluates simple math locally", async () => {
 
 test("Ask IRIS extracts a world-knowledge topic", () => {
   assert.equal(extractSearchTopic("¿qué es la fotosíntesis?"), "fotosíntesis");
-  assert.match(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /Fotosíntesis/);
+  assert.match(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /plantas/i);
+  assert.doesNotMatch(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /Eso es lo esencial/i);
 });
 
 test("Ask IRIS answers general questions from public knowledge", async () => {
@@ -83,6 +84,33 @@ test("Ask IRIS stops waiting on hung world knowledge", async () => {
     assert.equal(result.source, "local");
     assert.match(result.answer, /Ezephian|marte/i);
     assert.ok(Date.now() - started < 5000);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Ask IRIS answers live Mac questions instead of Wikipedia", async () => {
+  assert.equal(isSocQuestion("cómo está mi mac"), true);
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ title: "Mac", extract: "Karol G Contigo" }), { status: 200 });
+  try {
+    const result = await irisMindAnswer({
+      ...base,
+      question: "cómo está mi mac",
+      devices: [{
+        id: "mac-1",
+        name: "My Mac",
+        platform: "macOS",
+        status: "ONLINE",
+        risk: "LOW",
+        lastSeenAt: new Date().toISOString(),
+        telemetry: { hostname: "MacBookAir", firewallEnabled: true, fileVaultEnabled: true },
+      }],
+    });
+    assert.equal(result.source, "local");
+    assert.match(result.answer, /ONLINE/i);
+    assert.match(result.answer, /My Mac|MacBookAir/);
+    assert.doesNotMatch(result.answer, /Karol|Contigo/i);
   } finally {
     globalThis.fetch = original;
   }

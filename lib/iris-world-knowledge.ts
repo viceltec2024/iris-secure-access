@@ -17,10 +17,14 @@ async function fetchWiki(url: string, headers: Record<string, string>, ms = 3500
 
 export function composeWorldAnswer(extract: string, title: string, language: "es" | "en", name: string) {
   const clean = extract.replace(/\s+/g, " ").trim();
+  const body = clean.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 3).join(" ");
+  const headed = title && !new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(body)
+    ? `${title}. ${body}`
+    : body;
   if (language === "es") {
-    return `${clean} Eso es lo esencial sobre ${title}. Si quieres, ${name}, lo bajo a un ejemplo, te lo explico más simple o lo aplicamos a tu caso.`;
+    return `${headed} ${name}, si quieres lo vemos con un ejemplo.`.replace(/\s+/g, " ").trim();
   }
-  return `${clean} That is the core of ${title}. If you want, ${name}, I can give an example, simplify it, or apply it to your situation.`;
+  return `${headed} ${name}, say if you want an example.`.replace(/\s+/g, " ").trim();
 }
 
 export async function irisWorldAnswer(question: string, language: "es" | "en", name: string) {

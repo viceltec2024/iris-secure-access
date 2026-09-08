@@ -75,6 +75,9 @@ test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
   assert.match(panel, /onPointerDown=\{event => connectVoice\(event\)\}/);
   assert.match(panel, /onSpeakerClick/);
   assert.match(panel, /Conectar la voz de IRIS/);
+  assert.match(panel, /honorStop/);
+  assert.match(panel, /isStopCommand\(clean\)/);
+  assert.match(panel, /startBargeIn/);
 });
 
 test("offline Macs show a reconnect command for this IRIS instance", () => {

@@ -1,10 +1,18 @@
-const WORKSPACE = /\b(dispositivo|device|alerta|alert|incidente|incident|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|operaciones de seguridad|security operations|estado del sistema|system status)\b/i;
+const WORKSPACE = /\b(dispositivo|device|alerta|alert|incidente|incident|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|operaciones de seguridad|security operations|estado del sistema|system status|macos|macbook|\bmac\b|firewall|filevault|gatekeeper|xprotect|online|offline)\b/i;
 const GREETING = /^(?:hola|hello|hi|buenas|hey|qué tal|que tal|buenos d[ií]as|buenas tardes)(?:\s+iris)?[!.?]*$/i;
 const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|qu[eé] puedes|what can you|c[oó]mo te llamas)\b/i;
 const CONVERSATION = /\b(quiero hablar|hablemos|conversemos|h[áa]blame|platiquemos|podemos hablar|talk with you|let'?s talk)\b/i;
+const SOC = /\b(c[oó]mo est[aá](?:n)?(?:\s+(?:mi|el|la|los|las))?\s+(?:mac|iris|sistema|dispositivo|equipo|agente)|cu[aá]l es el estado|estado de iris|estado del mac|qu[eé] ves|qu[eé] hay en (?:el |este )?sistema|salud del|en l[ií]nea|fuera de l[ií]nea|mi equipo|mi computadora)\b/i;
 
 export function isWorkspaceQuestion(question: string) {
   return WORKSPACE.test(question);
+}
+
+export function isSocQuestion(question: string) {
+  const text = question.trim();
+  if (isWorkspaceQuestion(text)) return true;
+  if (SOC.test(text)) return true;
+  return false;
 }
 
 export function isGreetingQuestion(question: string) {
