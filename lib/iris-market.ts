@@ -275,7 +275,7 @@ export function chartUrl(symbol: string, range: MarketRange) {
   const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
   url.searchParams.set("interval", spec.interval);
   url.searchParams.set("range", spec.range);
-  url.searchParams.set("includePrePost", "false");
+  url.searchParams.set("includePrePost", "true");
   return url.toString();
 }
 

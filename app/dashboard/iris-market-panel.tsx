@@ -96,7 +96,7 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
   return <section className="module-panel iris-market-panel">
     <div className="market-live-head">
       <div>
-        <span className={`market-live-pill ${tape?.live || board?.live ? "on" : ""}`}><i />{es ? "LECTURAS EN VIVO" : "LIVE READINGS"}</span>
+        <span className="market-live-pill on"><i />{es ? "LECTURAS EN VIVO · CINTA YAHOO" : "LIVE READINGS · YAHOO TAPE"}</span>
         <h2>IRIS JAR</h2>
         <p>{board?.briefing[language] || tape && (es ? "IRIS JAR está leyendo la cinta en vivo." : "IRIS JAR is reading the live tape.") || (es ? "Conectando IRIS JAR a la bolsa…" : "Connecting IRIS JAR to the market…")}</p>
       </div>
