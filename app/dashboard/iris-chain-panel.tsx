@@ -8,9 +8,10 @@ import type { Language } from "./dashboard-i18n";
 import { isEvmAddress, type WalletProvider } from "../../lib/iris-chain";
 import { ROBINHOOD_CONNECT_URL, ROBINHOOD_WALLET_URL } from "../../lib/iris-purchases";
 import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient, subscribeMetaMaskDisplayUri } from "./metamask-client";
-import { connectInjectedWallet } from "./wallet-providers";
+import { connectInjectedWallet, detectInjectedProvider } from "./wallet-providers";
 import IrisPurchaseDesk from "./iris-purchase-desk";
 import { IRIS_TOKEN_BYTECODE } from "./iris-token-artifact";
+import { bumpGasLimit, tokenDeployMessage } from "../../lib/iris-token-deploy";
 
 type Block = { height: number; hash: string; transactionCount: number; validator: string };
 type ChainTransaction = { id: string; blockHeight: number | null; type: string; payloadHash: string; status: "PENDING" | "CONFIRMED" };
@@ -228,37 +229,37 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     setNotice(es ? "IRIS Token fue agregado a MetaMask." : "IRIS Token was added to MetaMask.");
   }
   async function deployIrisToken() {
-    if (!wallet || !isAdmin || tokenAddress) return;
+    if (!isAdmin || tokenAddress) return;
     setTokenDeploying(true); setTokenStatus(es ? "Abre MetaMask y confirma la transacción…" : "Open MetaMask and confirm the transaction…"); setNotice("");
     try {
-      const client = await getMetaMaskClient();
-      await client.switchChain({
-        chainId: BASE_MAINNET_CHAIN_ID,
-        chainConfiguration: {
-          chainId: BASE_MAINNET_CHAIN_ID,
-          chainName: "Base Mainnet",
-          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-          rpcUrls: ["https://mainnet.base.org"],
-          blockExplorerUrls: ["https://basescan.org"],
-        },
-      });
-      const provider = client.getProvider() as unknown as { request(args: { method: string; params?: unknown }): Promise<unknown> };
-      const transactionHash = await provider.request({ method: "eth_sendTransaction", params: [{ from: wallet, data: IRIS_TOKEN_BYTECODE }] }) as string;
+      const connected = await connectInjectedWallet("metamask");
+      const injected = connected?.provider || detectInjectedProvider("metamask");
+      const from = connected?.address || "";
+      if (!injected || !isEvmAddress(from)) throw Object.assign(new Error("NO_METAMASK"), { code: "NO_METAMASK" });
+      await persistWallet(from, "metamask");
+      const tx: { from: string; data: string; gas?: string } = { from, data: IRIS_TOKEN_BYTECODE };
+      try {
+        const gas = await injected.request({ method: "eth_estimateGas", params: [{ from, data: IRIS_TOKEN_BYTECODE }] }) as string;
+        if (typeof gas === "string" && gas.startsWith("0x")) tx.gas = bumpGasLimit(gas);
+      } catch { /* MetaMask will estimate gas. */ }
+      const transactionHash = await injected.request({ method: "eth_sendTransaction", params: [tx] }) as string;
+      if (!/^0x[a-fA-F0-9]{64}$/.test(transactionHash)) throw new Error("DEPLOYMENT_NOT_CONFIRMED");
       setTokenStatus(es ? "Transacción enviada. Esperando confirmación de Base…" : "Transaction sent. Waiting for Base confirmation…");
-      let receipt: TransactionReceipt | null = null;
-      for (let attempt = 0; attempt < 80 && !receipt; attempt += 1) {
+      let address = "";
+      for (let attempt = 0; attempt < 90 && !address; attempt += 1) {
         if (attempt) await new Promise(resolve => window.setTimeout(resolve, 3_000));
-        receipt = await provider.request({ method: "eth_getTransactionReceipt", params: [transactionHash] }) as TransactionReceipt | null;
+        const response = await fetch("/api/iris-token", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ transactionHash }) });
+        const data = await response.json().catch(() => ({})) as { address?: string; pending?: boolean; error?: string };
+        if (data.address) { address = data.address; break; }
+        if (response.status === 202 || data.pending) continue;
+        throw new Error(data.error || "DEPLOYMENT_RECORD_FAILED");
       }
-      if (!receipt?.contractAddress || receipt.status !== "0x1") throw new Error("DEPLOYMENT_NOT_CONFIRMED");
-      const response = await fetch("/api/iris-token", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: receipt.contractAddress, transactionHash }) });
-      if (!response.ok) throw new Error("DEPLOYMENT_RECORD_FAILED");
-      setTokenAddress(receipt.contractAddress); setTokenDeployOpen(false); setTokenStatus("");
-      await addIrisToken(receipt.contractAddress);
+      if (!address) throw new Error("DEPLOYMENT_NOT_CONFIRMED");
+      setTokenAddress(address); setTokenDeployOpen(false); setTokenStatus("");
+      await addIrisToken(address);
       setNotice(es ? "IRIS Token fue creado en Base Mainnet y agregado a MetaMask." : "IRIS Token was created on Base Mainnet and added to MetaMask.");
     } catch (error) {
-      const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
-      setTokenStatus(code === 4001 ? (es ? "Cancelaste la transacción en MetaMask." : "You cancelled the transaction in MetaMask.") : (es ? "No se completó el despliegue. No se guardó ninguna dirección." : "Deployment did not complete. No address was saved."));
+      setTokenStatus(tokenDeployMessage(error, language));
     } finally { setTokenDeploying(false); }
   }
   if (!state) return <section className="module-panel chain-loading"><Pulse /> {es ? "Sincronizando IRIS Chain…" : "Syncing IRIS Chain…"}</section>;
