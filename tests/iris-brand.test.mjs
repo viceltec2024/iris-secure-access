@@ -139,6 +139,9 @@ test("local dashboard access signs in on this machine, not ChatGPT", () => {
   assert.match(signIn, /text\/html; charset=utf-8/);
   assert.match(vite, /allowedHosts:\s*true/);
   assert.match(vite, /host:\s*true/);
+  assert.match(vite, /overlay:\s*false/);
+  assert.match(vite, /iris-hmr-behind-proxy/);
+  assert.match(vite, /send was called before connect/);
   assert.doesNotMatch(vite, /host:\s*"::"/);
   assert.match(vite, /isCodexSandbox/);
   assert.match(vite, /IRIS_PUBLIC_ORIGIN/);

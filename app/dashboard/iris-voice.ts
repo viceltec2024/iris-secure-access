@@ -1,4 +1,4 @@
-import { isStopRequest } from "../../lib/iris-query.ts";
+import { isAmbiguousStopPrefix, isBargeInStop, isStopRequest } from "../../lib/iris-query.ts";
 
 export type VoiceErrorCode = "unsupported" | "denied" | "network" | "no-speech" | "audio-capture" | "aborted" | "unknown";
 
@@ -34,6 +34,8 @@ export function defaultVoiceQuestion(language: "es" | "en") {
 export function isStopCommand(transcript: string) {
   return isStopRequest(transcript);
 }
+
+export { isAmbiguousStopPrefix, isBargeInStop };
 
 export function hasWakePhrase(transcript: string) {
   return WAKE_PATTERN.test(transcript);

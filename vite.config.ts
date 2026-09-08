@@ -1,7 +1,30 @@
 import vinext from "vinext";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
+
+function irisHmrBehindProxy(): Plugin {
+  return {
+    name: "iris-hmr-behind-proxy",
+    apply: "serve",
+    transform(code, id) {
+      if (!id.includes("vite/dist/client/client")) return;
+      let next = code.replace(
+        "const hmrPort = __HMR_PORT__;",
+        `const pageUrl = new URL(import.meta.url);\nconst hmrPort = pageUrl.port || (pageUrl.protocol === "https:" ? "443" : "80");`,
+      );
+      next = next.replace(
+        "else throw new Error(\"send was called before connect\");",
+        "else return;",
+      );
+      next = next.replace(
+        "else throw new Error(\"invoke was called before connect\");",
+        "else return undefined;",
+      );
+      return next === code ? undefined : next;
+    },
+  };
+}
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -61,12 +84,16 @@ export default defineConfig(async ({ command, mode }) => {
     server: {
       host: true,
       allowedHosts: true,
+      hmr: {
+        overlay: false,
+      },
       ...(isCodexSandbox || isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),
     },
     define,
     plugins: [
+      irisHmrBehindProxy(),
       vinext(),
       sites(),
       cloudflare({

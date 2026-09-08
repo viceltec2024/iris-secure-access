@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { orbTint, orbWaveEnergy, orbWaveY } from "../app/dashboard/iris-orb.ts";
-import { closeAudioContext, extractVoiceCommand, hasWakePhrase, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, pickSpeechVoice, resumeSpeechIfPaused, scoreSpeechVoice, shouldForceSpeechRetry, shouldRepeatThinkingPhrase, speechVolumeHint, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
+import { closeAudioContext, extractVoiceCommand, hasWakePhrase, irisListenPhrase, isAmbiguousStopPrefix, isBargeInStop, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, pickSpeechVoice, resumeSpeechIfPaused, scoreSpeechVoice, shouldForceSpeechRetry, shouldRepeatThinkingPhrase, speechVolumeHint, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
 import { fileNameForAudioType, mapMediaError, recordingMimeType, shouldFinishRecording } from "../app/dashboard/iris-record.ts";
 
 test("accepts Oye IRIS, Hola IRIS, and IRIS alone as wake phrases", () => {
@@ -18,6 +18,11 @@ test("stop commands do not become questions", () => {
   assert.equal(isStopCommand("para de hablar"), true);
   assert.equal(isStopCommand("para ya"), true);
   assert.equal(isStopCommand("para qué es el firewall"), false);
+  assert.equal(isAmbiguousStopPrefix("para"), true);
+  assert.equal(isAmbiguousStopPrefix("stop"), true);
+  assert.equal(isAmbiguousStopPrefix("para ya"), false);
+  assert.equal(isBargeInStop("para"), false);
+  assert.equal(isBargeInStop("para ya"), true);
   assert.equal(extractVoiceCommand("silencio", "es"), "");
 });
 
@@ -116,6 +121,16 @@ test("volume hints tell the user when voices are missing or audio is blocked", (
   assert.match(speechVolumeHint("es", { voices: 0 }), /voces instaladas/i);
   assert.match(speechVolumeHint("es", { speaking: true, voices: 2 }), /está hablando|volumen/i);
   assert.match(speechVolumeHint("en", { voices: 2 }), /Tap the speaker/i);
+});
+
+test("Ask IRIS stop does not mute the next spoken answer", () => {
+  const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
+  const honor = panel.slice(panel.indexOf("function honorStop"), panel.indexOf("function stopBargeIn"));
+  assert.match(honor, /setAutoSpeak\(true\)/);
+  assert.doesNotMatch(honor, /setAutoSpeak\(false\)/);
+  assert.doesNotMatch(honor, /closeVoiceStage\(\)/);
+  assert.match(panel, /isAmbiguousStopPrefix/);
+  assert.match(panel, /1800/);
 });
 
 test("Ask IRIS connects the microphone before saying Te escucho", () => {

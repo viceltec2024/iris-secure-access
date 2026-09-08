@@ -17,6 +17,16 @@ export function isStopRequest(question: string) {
   return STOP_LINE.test(normalized) || STOP_PHRASE.test(normalized);
 }
 
+export function isAmbiguousStopPrefix(question: string) {
+  const normalized = question.toLocaleLowerCase().replace(/[.,!?¿¡;:]/g, " ").replace(/\s+/g, " ").trim();
+  return /^(?:(?:oye|hey|ok|okay|hola|escucha)\s+)?(?:iris\s+)?(?:para|stop)$/i.test(normalized);
+}
+
+export function isBargeInStop(question: string) {
+  if (isAmbiguousStopPrefix(question)) return false;
+  return isStopRequest(question);
+}
+
 export function isWorkspaceQuestion(question: string) {
   return WORKSPACE.test(question);
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChatCircleDots, CornersIn, CornersOut, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import { holdSpeechSession, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseAudioForMicrophone, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, speechVolumeHint, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
+import { holdSpeechSession, irisListenPhrase, isAmbiguousStopPrefix, isBargeInStop, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseAudioForMicrophone, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, speechVolumeHint, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
 import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
 
@@ -218,11 +218,10 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   function honorStop(said = "") {
     ignoreAskRef.current = true;
     askAbortRef.current?.abort();
-    autoSpeakRef.current = false;
-    setAutoSpeak(false);
     stopBargeIn();
     stopVoice();
-    closeVoiceStage();
+    autoSpeakRef.current = true;
+    setAutoSpeak(true);
     const reply = language === "es" ? "Paré. Dime cuando quieras seguir." : "Stopped. Tell me when you want to continue.";
     setSpokenAnswer(reply);
     setVoiceHint(reply);
@@ -237,6 +236,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       messagesRef.current = next;
       return next;
     });
+    if (voiceStageRef.current) setTimeout(() => void startListeningRef.current(), 400);
   }
 
   function stopBargeIn() {
@@ -259,7 +259,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
         const result = event.results[index];
         if (result.isFinal) finals += `${result[0]?.transcript || ""} `;
       }
-      if (isStopCommand(finals)) honorStop(finals.trim());
+      if (isBargeInStop(finals)) honorStop(finals.trim());
     };
     recognition.onerror = () => undefined;
     recognition.onend = () => {
@@ -509,7 +509,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
           return;
         }
           commitSpokenQuestion(transcriptBufferRef.current);
-        }, 900);
+        }, isAmbiguousStopPrefix(combined) ? 1800 : 900);
         return;
       }
       const live = `${transcriptBufferRef.current} ${interim}`.replace(/\s+/g, " ").trim();
