@@ -1,4 +1,4 @@
-import { chatGPTSignInPath, getChatGPTUser } from "./chatgpt-auth";
+import { getChatGPTUser, irisSignInPath } from "./chatgpt-auth";
 import { Buildings, LockKey, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 import IrisBrandMark from "./iris-brand-mark";
 import { devAuthEnabled } from "./dev-auth";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const user = await getChatGPTUser();
   const localAccess = !user && devAuthEnabled();
-  const destination = user ? "/dashboard" : localAccess ? "/dev/sign-in?return_to=/dashboard" : chatGPTSignInPath("/dashboard");
+  const destination = user ? "/dashboard" : irisSignInPath("/dashboard");
 
   return (
     <main className="auth-shell">

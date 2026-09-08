@@ -85,3 +85,11 @@ test("sidebar and home lockups use the IRIS brand mark", () => {
   assert.doesNotMatch(sidebar, /soc-brand"><ShieldCheck/);
   assert.match(home, /<IrisBrandMark size=\{88\} \/>/);
 });
+
+test("local dashboard access signs in on this machine, not ChatGPT", () => {
+  const auth = readFileSync(new URL("../app/chatgpt-auth.ts", import.meta.url), "utf8");
+  const vite = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
+  assert.match(auth, /redirect\(irisSignInPath\(returnTo\)\)/);
+  assert.match(auth, /\/dev\/sign-in\?return_to=/);
+  assert.match(vite, /allowedHosts:\s*true/);
+});

@@ -51,7 +51,15 @@ export async function requireChatGPTUser(
   const user = await getChatGPTUser();
   if (user) return user;
 
-  redirect(chatGPTSignInPath(returnTo));
+  redirect(irisSignInPath(returnTo));
+}
+
+export function irisSignInPath(returnTo: string): string {
+  const safeReturnTo = safeRelativeReturnPath(returnTo);
+  if (devAuthEnabled()) {
+    return `/dev/sign-in?return_to=${encodeURIComponent(safeReturnTo)}`;
+  }
+  return chatGPTSignInPath(safeReturnTo);
 }
 
 export function chatGPTSignInPath(returnTo: string): string {
