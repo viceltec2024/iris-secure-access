@@ -147,7 +147,6 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     auditCount: liveAuditCount,
     pendingPurchases: purchases.length,
     language,
-    now: new Date().toISOString(),
   }), [devices, wallet, marketLive, liveAuditCount, purchases, language]);
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
