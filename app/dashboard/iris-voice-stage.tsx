@@ -10,8 +10,6 @@ export default function IrisVoiceStage({
   answer,
   hearing = false,
   level = 0,
-  showHear = false,
-  onHear,
   expanded = false,
 }: {
   language: Language;
@@ -20,8 +18,6 @@ export default function IrisVoiceStage({
   answer: string;
   hearing?: boolean;
   level?: number;
-  showHear?: boolean;
-  onHear?: () => void;
   expanded?: boolean;
 }) {
   const es = language === "es";
@@ -38,7 +34,6 @@ export default function IrisVoiceStage({
       <IrisSystemOrb mode={mode} hearing={hearing} level={level} size={expanded ? 360 : 236} />
       <p className="iris-voice-status">{title}</p>
       <p className="iris-voice-caption">{caption}</p>
-      {showHear && onHear ? <button type="button" className="iris-voice-hear" onClick={onHear}>{es ? "Oír a IRIS" : "Hear IRIS"}</button> : null}
     </section>
   );
 }
