@@ -15,6 +15,12 @@ test("token deploy dialog uses the official IRIS token emblem", () => {
   assert.doesNotMatch(source, /RocketLaunch/);
 });
 
+test("voice captions can show the full spoken answer", () => {
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.iris-voice-caption\{[^}]*overflow-y:auto/);
+  assert.doesNotMatch(css, /\.iris-voice-caption\{[^}]*max-width:320px/);
+});
+
 test("Ask IRIS can open in full screen", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");

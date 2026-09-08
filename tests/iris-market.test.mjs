@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   analyzeSeries,
+  briefingFromBoard,
   chartUrl,
   extractTicker,
   isMarketQuestion,
@@ -37,6 +38,18 @@ test("live readings mark a fresh Yahoo tick as live", () => {
   assert.equal(parsed?.quote.live, true);
   assert.equal(parsed?.quote.price, 190.25);
   assert.ok(parsed?.quote.asOf > Date.now() - 5000);
+});
+
+test("live briefing says IRIS and keeps the full sentence", () => {
+  const quote = (symbol, changePercent, price = 100) => ({
+    symbol, name: symbol, kind: "index", group: "indices", price, previousClose: price, change: 0, changePercent, currency: "USD", exchange: "INDEX", volume: 1, asOf: Date.now(), live: true,
+  });
+  const briefing = briefingFromBoard([quote("^GSPC", -0.29), quote("^IXIC", 0.1), quote("^VIX", 0, 15.3)], []);
+  assert.match(briefing.en, /^IRIS is live\./);
+  assert.match(briefing.es, /^IRIS en vivo\./);
+  assert.doesNotMatch(briefing.en, /JAR/);
+  assert.doesNotMatch(briefing.es, /JAR/);
+  assert.match(briefing.en, /Nothing is bought until you approve\.$/);
 });
 
 test("SMA and RSI stay deterministic for the live lesson", () => {
