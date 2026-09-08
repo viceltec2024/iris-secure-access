@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChatCircleDots, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import { defaultVoiceQuestion, extractVoiceCommand, hasWakePhrase, isStopCommand, mapRecognitionError, recognitionLanguage, requestMicrophone, voiceErrorMessage } from "./iris-voice";
+import { mapRecognitionError, recognitionLanguage, requestMicrophone, voiceErrorMessage } from "./iris-voice";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -24,22 +24,17 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const [speaking, setSpeaking] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
-  const [handsFree, setHandsFree] = useState(false);
-  const [wakeHeard, setWakeHeard] = useState(false);
   const [voiceHint, setVoiceHint] = useState("");
   const [neuralVoice, setNeuralVoice] = useState<boolean | null>(null);
   const [voiceStage, setVoiceStage] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
   const [spokenAnswer, setSpokenAnswer] = useState("");
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const wakeRecognitionRef = useRef<RecognitionInstance | null>(null);
-  const handsFreeRef = useRef(false);
   const speakingRef = useRef(false);
   const voiceStageRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const voiceRequestRef = useRef<AbortController | null>(null);
-  const sendMessageRef = useRef<(text: string) => Promise<void>>(async () => undefined);
   const startListeningRef = useRef<() => Promise<void>>(async () => undefined);
 
   const voiceMode: VoiceStageMode = listening ? "listening" : loading || voiceLoading ? "thinking" : speaking ? "speaking" : "ready";
@@ -56,7 +51,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     return () => { window.speechSynthesis.cancel(); window.speechSynthesis.removeEventListener("voiceschanged", refreshVoices); };
   }, []);
 
-  useEffect(() => () => { handsFreeRef.current = false; wakeRecognitionRef.current?.abort(); voiceRequestRef.current?.abort(); audioRef.current?.pause(); if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current); }, []);
+  useEffect(() => () => { voiceRequestRef.current?.abort(); audioRef.current?.pause(); if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current); }, []);
 
   function detectedLanguage(text: string) {
     const spanishSignals = /[áéíóúñ¿¡]|\b(hola|gracias|puedes|quiero|seguridad|amenaza|aplicaciones|equipo|sistema|porque|cómo|qué)\b/i;
@@ -75,7 +70,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     })[0];
     if (preferred) utterance.voice = preferred;
     utterance.rate = 0.94; utterance.pitch = 1.01; utterance.volume = 1;
-    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); if (handsFreeRef.current) setTimeout(startWakeRecognition, 150); };
+    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); };
     utterance.onend = () => { speakingRef.current = false; setSpeaking(false); resumeVoiceConversation(); };
     utterance.onerror = () => { speakingRef.current = false; setSpeaking(false); resumeVoiceConversation(); };
     window.speechSynthesis.speak(utterance);
@@ -92,7 +87,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       if (controller.signal.aborted) return;
       const url = URL.createObjectURL(blob); audioUrlRef.current = url;
       const audio = new Audio(url); audioRef.current = audio;
-      audio.onplay = () => { speakingRef.current = true; setSpeaking(true); setVoiceLoading(false); if (handsFreeRef.current) setTimeout(startWakeRecognition, 150); };
+      audio.onplay = () => { speakingRef.current = true; setSpeaking(true); setVoiceLoading(false); };
       audio.onended = () => finishNeuralVoice();
       audio.onerror = () => { finishNeuralVoice(); browserVoiceFallback(text); };
       await audio.play();
@@ -104,7 +99,6 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   }
 
   function resumeVoiceConversation() {
-    if (handsFreeRef.current) setTimeout(startWakeRecognition, 350);
     if (voiceStageRef.current && !loading) setTimeout(() => void startListeningRef.current(), 500);
   }
 
@@ -148,7 +142,6 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       setMessages(current => [...current, { role: "assistant", content: error instanceof Error ? error.message : (language === "es" ? "IRIS no está disponible temporalmente." : "IRIS is temporarily unavailable.") }]);
     } finally { setLoading(false); }
   }
-  sendMessageRef.current = sendMessage;
 
   function recognitionApi() {
     const speechWindow = window as unknown as { SpeechRecognition?: RecognitionConstructor; webkitSpeechRecognition?: RecognitionConstructor };
@@ -160,64 +153,6 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     if (!message) return;
     setVoiceHint(message);
     setMessages(current => current.some(item => item.content === message) ? current : [...current, { role: "assistant", content: message }]);
-  }
-
-  function startWakeRecognition() {
-    if (!handsFreeRef.current || wakeRecognitionRef.current) return;
-    const RecognitionApi = recognitionApi();
-    if (!RecognitionApi) { reportVoiceError("unsupported"); return; }
-    const recognition = new RecognitionApi();
-    recognition.lang = recognitionLanguage(language);
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.onresult = event => {
-      for (let index = event.resultIndex || 0; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (!result.isFinal) continue;
-        const transcript = result[0]?.transcript?.trim() || "";
-        if (speakingRef.current && isStopCommand(transcript)) {
-          stopVoice(); setWakeHeard(true); setListening(false);
-          setTimeout(() => setWakeHeard(false), 700);
-          continue;
-        }
-        const command = extractVoiceCommand(transcript, language);
-        if (!command && !hasWakePhrase(transcript)) continue;
-        const question = command || defaultVoiceQuestion(language);
-        setWakeHeard(true); setOpen(true); setListening(true); setVoiceHint(""); setLiveTranscript(question); openVoiceStage();
-        recognition.abort();
-        setTimeout(() => { setWakeHeard(false); setListening(false); }, 1200);
-        void sendMessageRef.current(question);
-        break;
-      }
-    };
-    recognition.onerror = event => {
-      wakeRecognitionRef.current = null;
-      const code = mapRecognitionError(event.error || "unknown");
-      if (code !== "aborted" && code !== "no-speech") reportVoiceError(code);
-    };
-    recognition.onend = () => { wakeRecognitionRef.current = null; if (handsFreeRef.current && !speakingRef.current) setTimeout(startWakeRecognition, 400); };
-    wakeRecognitionRef.current = recognition;
-    try { recognition.start(); setVoiceHint(language === "es" ? "Escuchando. Di “Oye IRIS” y tu pregunta." : "Listening. Say “Hey IRIS” and your question."); }
-    catch { wakeRecognitionRef.current = null; reportVoiceError("unknown"); }
-  }
-
-  async function toggleHandsFree() {
-    if (handsFreeRef.current) {
-      handsFreeRef.current = false; setHandsFree(false); setListening(false); setVoiceHint("");
-      wakeRecognitionRef.current?.abort(); wakeRecognitionRef.current = null;
-      return;
-    }
-    try {
-      await requestMicrophone();
-    } catch (error) {
-      const name = error instanceof DOMException ? error.name : "";
-      reportVoiceError(name === "NotAllowedError" || name === "NotFoundError" ? (name === "NotFoundError" ? "audio-capture" : "denied") : "unsupported");
-      return;
-    }
-    handsFreeRef.current = true; setHandsFree(true);
-    openVoiceStage();
-    startWakeRecognition();
-    setMessages(current => [...current, { role: "assistant", content: language === "es" ? "Modo manos libres activado. Di “Oye IRIS” y tu pregunta, o habla con una frase completa. IRIS te va a responder en voz alta." : "Hands-free mode is on. Say “Hey IRIS” and your question, or speak a full sentence. IRIS will answer out loud." }]);
   }
 
   async function startListening() {
@@ -259,8 +194,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     {voiceStage
       ? <IrisVoiceStage language={language} mode={voiceMode} transcript={liveTranscript} answer={spokenAnswer} onClose={closeVoiceStage} />
       : <div className="iris-chat-messages" aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p>{message.role === "assistant" && <button onClick={() => void speak(message.content)} aria-label="Read this answer aloud"><SpeakerHigh /></button>}</article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>}
-    <button type="button" className={`iris-wake-mode ${handsFree ? "active" : ""} ${wakeHeard ? "heard" : ""}`} onClick={() => void toggleHandsFree()} aria-pressed={handsFree}><Microphone weight="fill" /><span><strong>{handsFree ? (language === "es" ? "Oye IRIS · ACTIVO" : "Hey IRIS · ON") : (language === "es" ? "Activar Oye IRIS" : "Enable Hey IRIS")}</strong><small>{voiceHint || (handsFree ? (language === "es" ? "Escuchando. Di “Oye IRIS” o una pregunta completa." : "Listening. Say “Hey IRIS” or a full question.") : (language === "es" ? "Pulsa aquí y permite el micrófono para hablar con IRIS" : "Tap here and allow the microphone to talk to IRIS"))}</small></span><i /></button>
-    <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong> · {selectedIncident.id}</div>
-    <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Habla o escribe tu pregunta para IRIS…" : "Speak or type your question for IRIS…"} rows={2} /><button type="button" className={listening ? "listening" : ""} onClick={() => void startListening()} aria-label="Ask with microphone"><Microphone weight="fill" /></button><button type="submit" disabled={!input.trim() || loading} aria-label="Send question"><ArrowUp weight="bold" /></button></form>
+    <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong> · {selectedIncident.id}{voiceHint ? ` · ${voiceHint}` : ""}</div>
+    <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Habla o escribe tu pregunta para IRIS…" : "Speak or type your question for IRIS…"} rows={2} /><button type="button" className={`iris-voice-command ${listening || voiceStage ? "listening" : ""}`} onClick={() => void startListening()} aria-label={language === "es" ? "Comando de voz" : "Voice command"} title={language === "es" ? "Comando de voz" : "Voice command"}><Microphone weight="fill" /></button><button type="submit" disabled={!input.trim() || loading} aria-label="Send question"><ArrowUp weight="bold" /></button></form>
   </aside>;
 }

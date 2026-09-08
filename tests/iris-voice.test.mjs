@@ -18,4 +18,5 @@ test("voice errors explain microphone problems in Spanish", () => {
   assert.equal(mapRecognitionError("not-allowed"), "denied");
   assert.match(voiceErrorMessage("denied", "es"), /micrófono/i);
   assert.match(voiceErrorMessage("unsupported", "es"), /Chrome|Edge|remota/i);
+  assert.match(voiceErrorMessage("no-speech", "es"), /Pulsa el micrófono y di tu pregunta/i);
 });

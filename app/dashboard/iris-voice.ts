@@ -44,7 +44,7 @@ export function voiceErrorMessage(code: VoiceErrorCode, language: "es" | "en") {
   if (code === "denied") return es ? "El micrófono está bloqueado. En la barra del navegador permite el micrófono para IRIS y vuelve a pulsar el botón." : "The microphone is blocked. Allow the microphone for IRIS in the browser bar, then tap the button again.";
   if (code === "audio-capture") return es ? "No encuentro un micrófono. Conecta uno y vuelve a intentarlo." : "No microphone was found. Connect one and try again.";
   if (code === "network") return es ? "Chrome no pudo usar el servicio de voz. Necesita conexión y un micrófono real en tu equipo." : "Chrome could not reach the speech service. It needs a network connection and a real microphone on your computer.";
-  if (code === "no-speech") return es ? "No escuché nada. Pulsa el micrófono, di “Oye IRIS” y tu pregunta." : "I did not hear anything. Tap the microphone, say “Hey IRIS,” then your question.";
+  if (code === "no-speech") return es ? "No escuché nada. Pulsa el micrófono y di tu pregunta." : "I did not hear anything. Tap the microphone and ask your question.";
   if (code === "aborted") return "";
   return es ? "No pude activar el comando de voz. Pulsa el micrófono otra vez o escribe tu pregunta." : "Voice command could not start. Tap the microphone again or type your question.";
 }
