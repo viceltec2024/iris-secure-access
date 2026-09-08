@@ -50,6 +50,15 @@ export function reportedDeviceStatus(device: { agentTokenHash?: string | null; l
   return reportIsFresh(device.lastSeenAt, now) ? "ONLINE" as const : "OFFLINE" as const;
 }
 
+export function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value || "{}") as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
 export function irisAgentShellCommand(origin: string, enrolled: boolean) {
   const base = origin.replace(/\/$/, "");
   const script = `${base}/iris-agent-macos.sh?v=${IRIS_AGENT_SCRIPT_VERSION}`;
@@ -60,12 +69,8 @@ export function irisAgentShellCommand(origin: string, enrolled: boolean) {
 
 export function deviceView(device: DeviceRecord, trustedNames: string[] = [], now = Date.now()) {
   let telemetry: AgentTelemetry | null = null;
-  try {
-    const parsed = JSON.parse(device.telemetry || "{}");
-    if (parsed && typeof parsed === "object" && Object.keys(parsed).length) telemetry = parsed as AgentTelemetry;
-  } catch {
-    telemetry = null;
-  }
+  const parsed = parseJsonRecord(device.telemetry);
+  if (Object.keys(parsed).length) telemetry = parsed as AgentTelemetry;
   const fresh = reportIsFresh(device.lastSeenAt, now);
   const enrolled = Boolean(device.agentTokenHash);
   if (telemetry) {

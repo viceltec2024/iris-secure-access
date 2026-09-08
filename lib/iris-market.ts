@@ -127,17 +127,19 @@ export function isMarketQuestion(question: string) {
   return MARKET_QUESTION.test(question) || Boolean(extractTicker(question));
 }
 
-const TICKER_STOPWORDS = new Set(["COMO", "PARA", "ESTA", "ESTE", "ESTO", "TODO", "BOLSA", "PRECIO", "MEJOR", "AHORA", "VIVO", "LIVE", "THE", "AND", "QUE", "CUAL", "SON", "LAS", "LOS", "DEL", "UNA", "POR", "CON", "IRIS", "JAR", "USD", "CEO", "OK", "VA", "EN"]);
-
 export function extractTicker(question: string) {
   if (/bitcoin/i.test(question)) return "BTC-USD";
   if (/ethereum|ether\b/i.test(question)) return "ETH-USD";
   if (/\bsolana\b/i.test(question)) return "SOL-USD";
+  const dollar = question.toUpperCase().match(/\$([A-Z]{1,5})\b/);
+  if (dollar?.[1]) {
+    const billed = MARKET_UNIVERSE.find(item => item.symbol === dollar[1] || item.symbol === `${dollar[1]}-USD`);
+    if (billed) return billed.symbol;
+  }
   const tokens = [...question.toUpperCase().matchAll(/\b(\^[A-Z]{2,6}|[A-Z]{1,5}(?:-[A-Z]{3})?(?:\.[A-Z]{1,4})?)\b/g)].map(item => item[1]);
   const known = tokens.find(token => MARKET_UNIVERSE.some(item => item.symbol === token || item.symbol === `${token}-USD`));
   if (known) return MARKET_UNIVERSE.some(item => item.symbol === known) ? known : `${known}-USD`;
-  const ticker = [...tokens].reverse().find(token => !TICKER_STOPWORDS.has(token) && isMarketSymbol(token));
-  return ticker || "";
+  return "";
 }
 
 export function sma(values: number[], period: number) {

@@ -23,6 +23,12 @@ test("IRIS hears market questions and tickers", () => {
   assert.equal(isMarketQuestion("precio de NVDA en vivo"), true);
   assert.equal(extractTicker("como va NVDA ahora"), "NVDA");
   assert.equal(extractTicker("precio del bitcoin"), "BTC-USD");
+  assert.equal(extractTicker("$AAPL"), "AAPL");
+  assert.equal(extractTicker("hola"), "");
+  assert.equal(extractTicker("cuál es el estado del sistema"), "");
+  assert.equal(isMarketQuestion("hola"), false);
+  assert.equal(isMarketQuestion("cuál es el estado del sistema"), false);
+  assert.equal(isMarketQuestion("dime el estado"), false);
 });
 
 test("live readings mark a fresh Yahoo tick as live", () => {

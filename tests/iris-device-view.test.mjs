@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { deviceView, irisAgentShellCommand, reportedDeviceStatus } from "../lib/iris-device-view.ts";
+import { deviceView, irisAgentShellCommand, parseJsonRecord, reportedDeviceStatus } from "../lib/iris-device-view.ts";
+
+test("broken telemetry JSON does not crash device views", () => {
+  assert.deepEqual(parseJsonRecord("{not-json"), {});
+  assert.deepEqual(parseJsonRecord("[]"), {});
+  assert.equal(parseJsonRecord('{"hostname":"Eze-Mac"}').hostname, "Eze-Mac");
+});
 
 test("stale enrolled Macs are OFFLINE even if the database still says ONLINE", () => {
   assert.equal(reportedDeviceStatus({ agentTokenHash: "abc", lastSeenAt: "2026-09-07T21:54:00.000Z" }, Date.parse("2026-09-08T02:25:00.000Z")), "OFFLINE");

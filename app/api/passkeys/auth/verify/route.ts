@@ -5,7 +5,7 @@ import { getDb } from "../../../../../db";
 import { passkeyCredentials } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../../../lib/authz";
-import { consumeChallenge, decodePublicKey, issueBiometricSession, PASSKEY_ORIGIN, PASSKEY_RP_ID } from "../../../../../lib/passkeys";
+import { consumeChallenge, decodePublicKey, issueBiometricSession, parsePasskeyTransports, PASSKEY_ORIGIN, PASSKEY_RP_ID } from "../../../../../lib/passkeys";
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   try {
     const verification = await verifyAuthenticationResponse({
       response, expectedChallenge: challenge, expectedOrigin: PASSKEY_ORIGIN, expectedRPID: PASSKEY_RP_ID, requireUserVerification: true,
-      credential: { id: record.id, publicKey: decodePublicKey(record.publicKey), counter: record.counter, transports: JSON.parse(record.transports) },
+      credential: { id: record.id, publicKey: decodePublicKey(record.publicKey), counter: record.counter, transports: parsePasskeyTransports(record.transports) },
     });
     if (!verification.verified) throw new Error("Touch ID was not verified");
     await db.update(passkeyCredentials).set({ counter: verification.authenticationInfo.newCounter, lastUsedAt: new Date().toISOString() }).where(eq(passkeyCredentials.id, record.id));

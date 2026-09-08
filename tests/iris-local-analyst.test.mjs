@@ -2,6 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { localIrisAnswer } from "../lib/iris-local-analyst.ts";
 
+test("Ask IRIS greets instead of reading the market tape", () => {
+  const answer = localIrisAnswer({
+    language: "es",
+    question: "hola",
+    userName: "Ezephian",
+    section: "operations",
+    devices: [],
+    alerts: [],
+    agents: [],
+    wallet: { connected: false, address: "" },
+  });
+  assert.match(answer, /Hola, Ezephian/);
+  assert.doesNotMatch(answer, /S&P|Nasdaq|VIX|ticker/i);
+});
+
 test("Ask IRIS answers system status in Spanish without OpenAI", () => {
   const answer = localIrisAnswer({
     language: "es",

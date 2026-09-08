@@ -16,6 +16,16 @@ const SESSION_TTL_SECONDS = 12 * 60 * 60;
 export const encodePublicKey = (value: Uint8Array) => isoBase64URL.fromBuffer(value);
 export const decodePublicKey = (value: string) => isoBase64URL.toBuffer(value);
 
+export function parsePasskeyTransports(value: string | null | undefined) {
+  try {
+    const parsed = JSON.parse(value || "[]") as unknown;
+    const allowed = new Set(["ble", "hybrid", "internal", "nfc", "usb"]);
+    return Array.isArray(parsed) ? parsed.filter((item): item is "ble" | "hybrid" | "internal" | "nfc" | "usb" => typeof item === "string" && allowed.has(item)) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function passkeysFor(ownerEmail: string) {
   return getDb().select().from(passkeyCredentials).where(eq(passkeyCredentials.ownerEmail, ownerEmail));
 }
