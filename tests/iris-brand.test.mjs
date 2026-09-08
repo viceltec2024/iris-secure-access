@@ -47,6 +47,14 @@ test("Ask IRIS keeps the written conversation visible while listening", () => {
   assert.match(css, /\.iris-chat\.voice-open\{grid-template-rows:auto auto 1fr auto auto\}/);
 });
 
+test("Ask IRIS voice orb is large enough to read, not a 120px icon", () => {
+  const stage = readFileSync(new URL("../app/dashboard/iris-voice-stage.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(stage, /size=\{expanded \? 520 : 360\}/);
+  assert.doesNotMatch(stage, /size=\{expanded \? 280 : 120\}/);
+  assert.doesNotMatch(css, /\.iris-chat\.voice-open \.iris-voice-stage\{min-height:132px/);
+});
+
 test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   const voice = readFileSync(new URL("../app/dashboard/iris-voice.ts", import.meta.url), "utf8");

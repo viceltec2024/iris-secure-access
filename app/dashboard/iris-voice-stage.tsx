@@ -31,7 +31,7 @@ export default function IrisVoiceStage({
 
   return (
     <section className={`iris-voice-stage ${mode}${hearing ? " hearing" : ""}`} aria-live="polite" aria-label={title}>
-      <IrisSystemOrb mode={mode} hearing={hearing} level={level} size={expanded ? 280 : 120} />
+      <IrisSystemOrb mode={mode} hearing={hearing} level={level} size={expanded ? 520 : 360} />
       <p className="iris-voice-status">{title}</p>
       <p className="iris-voice-caption">{caption}</p>
     </section>
