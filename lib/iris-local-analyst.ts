@@ -96,6 +96,12 @@ export function localIrisAnswer(input: IrisAnalystInput) {
       : `${name}, the agent team is connected and working. ${agentBlock} Detail: ${detail || "no rows yet"}.`;
   }
 
+  if (/(bolsa|mercado|nasdaq|ticker|cotiz|acci[oó]n|jarvis|\bjar\b)/.test(question)) {
+    return es
+      ? `${name}, IRIS JAR se conecta a la bolsa en vivo. En Bolsa en vivo ves la cinta, el gráfico y las lecturas que se actualizan solas cada 8 segundos. Pregúntame por NVDA, AAPL o Bitcoin y te explico el gráfico.`
+      : `${name}, IRIS JAR connects to the live market. In Live market you see the tape, the chart, and readings that refresh every 8 seconds. Ask me about NVDA, AAPL, or Bitcoin and I will teach the chart.`;
+  }
+
   if (/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy)/.test(question)) {
     return es
       ? `${walletBlock} En IRIS Chain puedes conectar MetaMask de forma directa o Robinhood Wallet. IRIS puede programar compras automáticas de ETH, USDC, BTC o SOL, pero nunca paga sola: cada compra espera tu aprobación y se completa en MetaMask o Robinhood.`

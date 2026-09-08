@@ -7,6 +7,7 @@ import { getDb } from "../../../db";
 import { appSettings, devices, securityAlerts } from "../../../db/schema";
 import { ensureAgentsWorking } from "../../../lib/agent-orchestration";
 import { localIrisAnswer } from "../../../lib/iris-local-analyst";
+import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "../../../lib/iris-market";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,37 @@ export async function POST(request: Request) {
     agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),
     wallet: { connected: Boolean(walletRow?.value), address: walletRow?.value || "" },
   };
+
+  if (isMarketQuestion(question) || preferences.section === "market") {
+    try {
+      const ticker = extractTicker(question);
+      const [tape, chart] = await Promise.all([
+        fetchLiveTape(),
+        ticker ? fetchMarketChart(ticker, "1d").catch(() => null) : Promise.resolve(null),
+      ]);
+      const board = {
+        updatedAt: tape.updatedAt,
+        live: tape.live,
+        quotes: tape.quotes,
+        ideas: [],
+        briefing: briefingFromBoard(tape.quotes, []),
+      };
+      const answer = marketAnswer(question, language, board, chart);
+      await logAudit(user.email, "ASK_IRIS_ANALYSIS", "live_market", "SUCCESS", { model: "iris-jar-live", ticker: ticker || "" });
+      return Response.json({ answer, source: "live-market" });
+    } catch {
+      const tape = await fetchLiveTape().catch(() => null);
+      if (tape?.quotes.length) {
+        const lead = tape.quotes.slice(0, 4).map(item => `${item.symbol} ${item.price} (${item.changePercent >= 0 ? "+" : ""}${item.changePercent.toFixed(2)}%)`).join(" · ");
+        return Response.json({
+          answer: language === "es"
+            ? `IRIS JAR en vivo. Cinta ahora: ${lead}. Si quieres una lectura de un ticker, dímelo.`
+            : `IRIS JAR is live. Tape now: ${lead}. Ask for a ticker if you want a reading.`,
+          source: "live-market",
+        });
+      }
+    }
+  }
 
   const localAnswer = localIrisAnswer(analystInput);
   const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;

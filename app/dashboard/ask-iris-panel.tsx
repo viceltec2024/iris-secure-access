@@ -15,11 +15,20 @@ type SpeechResultEvent = { resultIndex?: number; results: ArrayLike<{ 0: { trans
 type RecognitionInstance = { lang: string; continuous?: boolean; interimResults?: boolean; maxAlternatives?: number; start(): void; stop(): void; abort(): void; onend: (() => void) | null; onerror: ((event: { error?: string }) => void) | null; onresult: ((event: SpeechResultEvent) => void) | null };
 type RecognitionConstructor = new () => RecognitionInstance;
 
-const welcomeMessage = (language: Language, userName: string): ChatMessage => ({ role: "assistant", content: language === "es" ? `Hola, ${userName}. Soy IRIS. Estoy lista para revisar contigo lo que ocurre en el sistema. Puedes preguntarme con tus propias palabras.` : `Hi, ${userName}. I'm IRIS. I'm ready to review what's happening in the system with you. Ask me anything in your own words.` });
+const welcomeMessage = (language: Language, userName: string, section = "operations"): ChatMessage => ({ role: "assistant", content: language === "es"
+  ? section === "market"
+    ? `Hola, ${userName}. Soy IRIS JAR. Estoy conectada a la bolsa en vivo: veo precios, te enseño el gráfico y te digo las lecturas más limpias. Pregúntame por un ticker o por las mejores opciones.`
+    : `Hola, ${userName}. Soy IRIS. Estoy lista para revisar contigo lo que ocurre en el sistema. Puedes preguntarme con tus propias palabras.`
+  : section === "market"
+    ? `Hi, ${userName}. I'm IRIS JAR. I am connected to the live market: I see prices, teach the chart, and give you the cleanest readings. Ask me for a ticker or the best options.`
+    : `Hi, ${userName}. I'm IRIS. I'm ready to review what's happening in the system with you. Ask me anything in your own words.` });
 
 export default function AskIrisPanel({ section, selectedIncident, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {
   const [open, setOpen] = useState(true);
-  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(language, userName)]);
+  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(language, userName, section)]);
+  useEffect(() => {
+    setMessages(current => current.length === 1 && current[0].role === "assistant" ? [welcomeMessage(language, userName, section)] : current);
+  }, [language, section, userName]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
