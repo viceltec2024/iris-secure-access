@@ -18,6 +18,7 @@ test("loopback reconnect copies a public origin, never 127.0.0.1", () => {
     "https://iris.example",
   );
   assert.equal(irisReconnectOrigin("http://localhost:5173"), IRIS_PRODUCTION_ORIGIN);
+  assert.equal(irisReconnectOrigin("", "https://iris.example"), "https://iris.example");
   assert.doesNotMatch(irisReconnectOrigin("http://127.0.0.1:5173"), /127\.0\.0\.1|localhost/);
 });
 

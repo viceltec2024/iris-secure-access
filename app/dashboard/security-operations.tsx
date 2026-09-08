@@ -40,7 +40,19 @@ function remediationGuide(code: string, language: Language) {
   return guides[code] || { title: es ? "Revisar el cambio detectado" : "Review the detected change", risk: es ? "IRIS detectó un cambio que debe confirmarse antes de cerrarlo." : "IRIS detected a change that should be confirmed before closure.", steps: es ? ["Revisa el control indicado en Configuración del Sistema.", "Confirma que el cambio fue intencional.", "Restaura la configuración anterior si no lo reconoces."] : ["Review the indicated control in System Settings.", "Confirm the change was intentional.", "Restore the previous setting if you do not recognize it."] };
 }
 
-export default function SecurityOperations({ user, auditCount, signOutPath }: { user: { email: string; displayName: string; role: string }, auditCount: number, signOutPath: string }) {
+export default function SecurityOperations({
+  user,
+  auditCount,
+  signOutPath,
+  initialDevices = [],
+  initialAgentOrigin = "",
+}: {
+  user: { email: string; displayName: string; role: string };
+  auditCount: number;
+  signOutPath: string;
+  initialDevices?: Device[];
+  initialAgentOrigin?: string;
+}) {
   const [language, setLanguage] = useState<Language>("es");
   const [pageOrigin, setPageOrigin] = useState("");
   const [languageReady, setLanguageReady] = useState(false);
@@ -52,14 +64,14 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       if (stored === "en" || stored === "es") setLanguage(stored);
     }
   }
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [selected, setSelected] = useState<Incident>(() => emptyLiveIncident("es"));
+  const [incidents, setIncidents] = useState<Incident[]>(() => buildLiveIncidents({ alerts: [], devices: initialDevices, language: "es" }));
+  const [selected, setSelected] = useState<Incident>(() => buildLiveIncidents({ alerts: [], devices: initialDevices, language: "es" })[0] || emptyLiveIncident("es"));
   const [filter, setFilter] = useState("All");
   const [lastUpdate, setLastUpdate] = useState("ahora mismo");
   const [section, setSection] = useState<Section>("operations");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [executionNote, setExecutionNote] = useState("");
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<Device[]>(initialDevices);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [remediations, setRemediations] = useState<RemediationPlan[]>([]);
   const [remediationAlert, setRemediationAlert] = useState<SecurityAlert | null>(null);
@@ -74,7 +86,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [purchases, setPurchases] = useState<LivePurchase[]>([]);
   const [marketLive, setMarketLive] = useState(false);
   const [liveAuditCount, setLiveAuditCount] = useState(auditCount);
-  const [agentOrigin, setAgentOrigin] = useState("");
+  const [agentOrigin, setAgentOrigin] = useState(initialAgentOrigin);
   const loadSecurityStateRef = useRef<() => void>(() => undefined);
 
   const rebuildIncidents = useCallback((nextAlerts: SecurityAlert[], nextDevices: Device[], nextPurchases: LivePurchase[], saved: { incidentId: string; status: Incident["status"] }[], nextLanguage: Language) => {
@@ -158,6 +170,8 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const activeAlerts = alerts.filter(alert => alert.status !== "RESOLVED" && onlineDevices.some(device => device.id === alert.deviceId));
   const newAlerts = alerts.filter(alert => alert.status === "NEW" && onlineDevices.some(device => device.id === alert.deviceId));
   const reconnectOrigin = irisReconnectOrigin(pageOrigin, agentOrigin || process.env.IRIS_PUBLIC_ORIGIN || "");
+  const waitingDevice = devices.find(device => device.status !== "ONLINE");
+  const reconnectCommand = waitingDevice ? irisAgentShellCommand(reconnectOrigin, waitingDevice.status !== "PENDING") : "";
   const t = (key: Parameters<typeof text>[0]) => text(key, language);
   const localized = (incident: Incident): Incident => incident;
   const connectionLine = liveConnectionLine({ online: metrics.onlineCount, devices: metrics.deviceCount, openAlerts: activeAlerts.length, wallet: wallet.connected, language });
@@ -296,6 +310,18 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     <section className="soc-main">
       <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", market: language === "es" ? "Bolsa en vivo" : "Live market", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => { loadSecurityStateRef.current(); setLastUpdate(t("now")); }}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
 
+      {waitingDevice && reconnectCommand && <section className="ops-reconnect">
+        <div>
+          <strong>{waitingDevice.status === "OFFLINE" ? (language === "es" ? "Mac inscrito, sin reporte fresco" : "Mac enrolled, no fresh report") : (language === "es" ? "Instala el agente en tu Mac" : "Install the agent on your Mac")}</strong>
+          <p>{language === "es" ? "Pega este comando en Terminal en tu Mac. IRIS no puede encender el agente desde el navegador. El comando apunta a esta IRIS pública, no a 127.0.0.1." : "Paste this command in Terminal on your Mac. IRIS cannot start the agent from the browser. The command points at this public IRIS, not 127.0.0.1."}</p>
+        </div>
+        <code className="reconnect-command">{reconnectCommand}</code>
+        <div className="ops-reconnect-actions">
+          <button type="button" className="reconnect-device" onClick={() => void copyReconnectCommand(waitingDevice)}>{copiedDeviceId === waitingDevice.id ? (language === "es" ? "Comando copiado" : "Command copied") : (language === "es" ? "Copiar comando" : "Copy command")}</button>
+          <button type="button" onClick={() => setSection("devices")}>{language === "es" ? "Ver dispositivo" : "View device"}</button>
+        </div>
+      </section>}
+
       {section === "operations" && <><section className="metric-row">
         <article><span>{language === "es" ? "Salud real" : "Real health"}</span><strong>{averageHealth ?? "—"}{averageHealth !== null && <small>/100</small>}</strong><em className={averageHealth === null ? "" : "healthy"}>{averageHealth === null ? (language === "es" ? "NO VERIFICADO" : "UNVERIFIED") : "REAL"}</em></article>
         <article><span>{language === "es" ? "Agentes conectados" : "Connected agents"}</span><strong>{metrics.onlineCount}<small>/{metrics.deviceCount}</small></strong><em>{language === "es" ? "telemetría reciente" : "recent telemetry"}</em></article>
@@ -378,8 +404,9 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
         <div className="module-toolbar"><div><h2>{language === "es" ? "Protección real de dispositivos" : "Real device protection"}</h2><p>{language === "es" ? "IRIS verifica controles, aplicaciones y cambios mediante el agente autorizado." : "IRIS verifies controls, applications, and changes through the authorized agent."}</p></div><button className="add-device" onClick={createDeviceEnrollment} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar mi Mac" : "Register my Mac")}</button></div>
         <div className="device-grid">{devices.map(device => <article key={device.id}>
           <div className="device-card-head"><div className="device-icon"><Desktop weight="duotone" /></div><div><strong>{device.name}</strong><span>{device.telemetry?.hostname || device.platform}</span></div><b className={`provenance-badge ${device.provenance.toLowerCase()}`}>{device.provenance === "REAL" ? "REAL" : (language === "es" ? "NO VERIFICADO" : "UNVERIFIED")}</b></div>
-          <div className="device-status-line"><b className={`device-state ${device.status.toLowerCase()}`}>{device.status === "PENDING" ? (language === "es" ? "PENDIENTE" : "PENDING") : device.status}</b><strong>{language === "es" ? "Salud" : "Health"}: {device.healthScore ?? "—"}{device.healthScore !== null && "/100"}</strong></div>
-          <dl className="security-controls">
+          <div className="device-status-line"><b className={`device-state ${device.status.toLowerCase()}`}>{device.status === "PENDING" ? (language === "es" ? "PENDIENTE" : "PENDING") : device.status}</b><strong>{language === "es" ? "Salud" : "Health"}: {device.status === "ONLINE" ? `${device.healthScore ?? "—"}${device.healthScore !== null ? "/100" : ""}` : (language === "es" ? "sin reporte fresco" : "no fresh report")}</strong></div>
+          {device.status !== "ONLINE" && device.telemetry && <p className="stale-telemetry"><Warning weight="fill" />{language === "es" ? "Los controles de abajo son del último reporte. No son el estado actual hasta que el agente vuelva a conectar." : "The controls below are from the last report. They are not current until the agent reports again."}</p>}
+          <dl className={`security-controls${device.status === "ONLINE" ? "" : " stale"}`}>
             <div><dt>Firewall</dt><dd>{controlMark(device.telemetry?.firewallEnabled)}</dd></div>
             <div><dt>Gatekeeper</dt><dd>{controlMark(device.telemetry?.gatekeeperEnabled)}</dd></div>
             <div><dt>FileVault</dt><dd>{controlMark(device.telemetry?.fileVaultEnabled)}</dd></div>
@@ -398,7 +425,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           {!!device.telemetry?.unsignedPersistenceItems?.length && <div className="security-findings"><strong>{language === "es" ? "PROGRAMAS DE INICIO SIN FIRMA" : "UNSIGNED STARTUP PROGRAMS"}</strong>{device.telemetry.unsignedPersistenceItems.map(item => <span key={item}><Warning weight="fill" />{item}</span>)}</div>}
           {!!device.telemetry?.trustedApplications?.length && <div className="trusted-apps"><strong>{language === "es" ? "APLICACIONES APROBADAS" : "APPROVED APPLICATIONS"}</strong><span><CheckCircle weight="fill" />{device.telemetry.trustedApplications.join(", ")}</span></div>}
           <div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div>
-          {device.status !== "ONLINE" && pageOrigin && <div className="reconnect-box"><p>{device.status === "OFFLINE" ? (language === "es" ? "El agente está inscrito, pero no reporta. Pega este comando en Terminal en tu Mac para reconectar a esta IRIS:" : "The agent is enrolled, but it is not reporting. Paste this command in Terminal on your Mac to reconnect to this IRIS:") : (language === "es" ? "Pega este comando en Terminal en tu Mac e introduce el código de inscripción:" : "Paste this command in Terminal on your Mac and enter the enrollment code:")}</p><code className="reconnect-command">{irisAgentShellCommand(reconnectOrigin, device.status !== "PENDING")}</code></div>}
+          {device.status !== "ONLINE" && reconnectCommand && <div className="reconnect-box"><p>{device.status === "OFFLINE" ? (language === "es" ? "El agente está inscrito, pero no reporta. Pega este comando en Terminal en tu Mac para reconectar a esta IRIS:" : "The agent is enrolled, but it is not reporting. Paste this command in Terminal on your Mac to reconnect to this IRIS:") : (language === "es" ? "Pega este comando en Terminal en tu Mac e introduce el código de inscripción:" : "Paste this command in Terminal on your Mac and enter the enrollment code:")}</p><code className="reconnect-command">{irisAgentShellCommand(reconnectOrigin, device.status !== "PENDING")}</code></div>}
           <div className="device-actions">{device.status !== "ONLINE" && <button type="button" className="reconnect-device" onClick={() => void copyReconnectCommand(device)}>{copiedDeviceId === device.id ? <CheckCircle weight="fill" /> : device.status === "OFFLINE" ? <ArrowClockwise weight="bold" /> : <CopySimple weight="bold" />}{copiedDeviceId === device.id ? (language === "es" ? "Comando copiado" : "Command copied") : device.status === "OFFLINE" ? (language === "es" ? "Reconectar Mac" : "Reconnect Mac") : (language === "es" ? "Copiar instalación" : "Copy install command")}</button>}<a href={`/iris-agent-macos.sh?v=${IRIS_AGENT_SCRIPT_VERSION}`} download>{language === "es" ? "Descargar agente cifrado" : "Download encrypted agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div>
           <p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Protección real activa. El agente revisa cada 2 minutos." : "Real protection active. The agent checks every 2 minutes.") : device.status === "OFFLINE" ? (language === "es" ? "Alerta: el agente dejó de reportar hace más de 5 minutos. IRIS no puede encenderlo desde el navegador." : "Alert: the agent stopped reporting more than 5 minutes ago. IRIS cannot start it from the browser.") : (language === "es" ? "Instala el agente nuevo para comenzar la protección real." : "Install the new agent to start real protection.")}</p>
         </article>)}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra tu Mac e instala el agente para comenzar la protección real." : "Register your Mac and install the agent to begin real protection."}</p></div>}</div>

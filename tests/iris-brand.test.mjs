@@ -52,11 +52,16 @@ test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
 
 test("offline Macs show a reconnect command for this IRIS instance", () => {
   const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../app/dashboard/page.tsx", import.meta.url), "utf8");
   assert.match(sidebar, /Reconectar Mac/);
+  assert.match(sidebar, /ops-reconnect/);
   assert.match(sidebar, /irisAgentShellCommand/);
   assert.match(sidebar, /irisReconnectOrigin/);
   assert.match(sidebar, /liveSocMetrics/);
+  assert.match(sidebar, /stale-telemetry/);
   assert.match(sidebar, /IRIS_AGENT_SCRIPT_VERSION/);
+  assert.match(page, /initialDevices=\{bootstrap\.devices\}/);
+  assert.match(page, /dashboardDeviceBootstrap/);
   assert.doesNotMatch(sidebar, /irisAgentShellCommand\(pageOrigin/);
 });
 
