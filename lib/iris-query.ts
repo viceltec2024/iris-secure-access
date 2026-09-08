@@ -1,6 +1,7 @@
 const WORKSPACE = /\b(dispositivo|device|alerta|alert|incidente|incident|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|operaciones de seguridad|security operations|estado del sistema|system status)\b/i;
 const GREETING = /^(?:hola|hello|hi|buenas|hey|qué tal|que tal|buenos d[ií]as|buenas tardes)(?:\s+iris)?[!.?]*$/i;
 const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|qu[eé] puedes|what can you|c[oó]mo te llamas)\b/i;
+const CONVERSATION = /\b(quiero hablar|hablemos|conversemos|h[áa]blame|platiquemos|podemos hablar|talk with you|let'?s talk)\b/i;
 
 export function isWorkspaceQuestion(question: string) {
   return WORKSPACE.test(question);
@@ -12,6 +13,13 @@ export function isGreetingQuestion(question: string) {
 
 export function isIdentityQuestion(question: string) {
   return IDENTITY.test(question);
+}
+
+export function isConversationStart(question: string) {
+  const trimmed = question.trim();
+  if (CONVERSATION.test(trimmed)) return true;
+  if (!/^(?:hola|hello|hi|buenas|hey)\b/i.test(trimmed)) return false;
+  return !/\b(qu[eé]|c[oó]mo|who|what|where|why|cu[aá]nto|expl[ií]ca)\b/i.test(trimmed);
 }
 
 export function extractSearchTopic(question: string) {

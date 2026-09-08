@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { irisMindAnswer } from "../lib/iris-mind.ts";
 import { composeWorldAnswer, irisWorldAnswer } from "../lib/iris-world-knowledge.ts";
-import { extractSearchTopic, isIdentityQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
+import { extractSearchTopic, isConversationStart, isIdentityQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
 
 const base = {
   language: "es",
@@ -27,6 +27,14 @@ test("Ask IRIS names itself instead of dumping SOC status", async () => {
   assert.equal(result.source, "local");
   assert.match(result.answer, /Soy IRIS/);
   assert.doesNotMatch(result.answer, /0 dispositivo/);
+});
+
+test("Ask IRIS talks when the user wants a conversation", async () => {
+  assert.equal(isConversationStart("hola, quiero hablar contigo"), true);
+  const result = await irisMindAnswer({ ...base, question: "hola, quiero hablar contigo" });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /Hola, Ezephian|Estoy conectada/i);
+  assert.doesNotMatch(result.answer, /Karol|canci[oó]n|Contigo/i);
 });
 
 test("Ask IRIS evaluates simple math locally", async () => {

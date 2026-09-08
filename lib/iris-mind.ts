@@ -1,5 +1,5 @@
 import { localIrisAnswer, type IrisAnalystInput } from "./iris-local-analyst.ts";
-import { isGreetingQuestion, isIdentityQuestion, isWorkspaceQuestion, tryEvaluateMath } from "./iris-query.ts";
+import { isConversationStart, isGreetingQuestion, isIdentityQuestion, isWorkspaceQuestion, tryEvaluateMath } from "./iris-query.ts";
 import { irisWorldAnswer } from "./iris-world-knowledge.ts";
 
 function firstName(value: string) {
@@ -24,7 +24,7 @@ function generalFallback(input: IrisAnalystInput) {
 
 export async function irisMindAnswer(input: IrisAnalystInput) {
   if (isIdentityQuestion(input.question)) return { answer: identityAnswer(input), source: "local" };
-  if (isGreetingQuestion(input.question) || isWorkspaceQuestion(input.question)) {
+  if (isGreetingQuestion(input.question) || isConversationStart(input.question) || isWorkspaceQuestion(input.question)) {
     return { answer: localIrisAnswer(input), source: "local" };
   }
   const math = tryEvaluateMath(input.question, input.language);
