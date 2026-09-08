@@ -29,6 +29,14 @@ test("Ask IRIS can open in full screen", () => {
   assert.match(css, /\.iris-chat\.full-screen\{/);
 });
 
+test("Ask IRIS panel is a large assistant, not a 390px widget", () => {
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /width:min\(820px,46vw,calc\(100vw - 32px\)\)/);
+  assert.match(css, /height:min\(calc\(100vh - 24px\),960px\)/);
+  assert.match(css, /\.iris-chat-messages article p\{margin:0;font-size:16px/);
+  assert.doesNotMatch(css, /width:min\(390px,calc\(100vw - 32px\)\)/);
+});
+
 test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   const voice = readFileSync(new URL("../app/dashboard/iris-voice.ts", import.meta.url), "utf8");
