@@ -14,7 +14,9 @@
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
-    ,"token:compile": "node scripts/compile-iris-token.mjs"
+    ,"token:compile": "node scripts/compile-iris-token.mjs && node scripts/compile-sniperhn.mjs"
+    ,"token:compile:sniperhn": "node scripts/compile-sniperhn.mjs"
+    ,"test:sniperhn": "node --test tests/sniperhn-token.test.mjs"
   },
   "dependencies": {
     "@metamask/connect-evm": "^2.1.1",
