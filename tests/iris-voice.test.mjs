@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { extractVoiceCommand, hasWakePhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
+import { fileNameForAudioType, mapMediaError, recordingMimeType, shouldFinishRecording } from "../app/dashboard/iris-record.ts";
 
 test("accepts Oye IRIS, Hola IRIS, and IRIS alone as wake phrases", () => {
   assert.equal(extractVoiceCommand("Oye IRIS cuál es el estado", "es"), "cuál es el estado");
@@ -17,8 +18,18 @@ test("stop commands do not become questions", () => {
 test("voice errors explain microphone problems in Spanish", () => {
   assert.equal(mapRecognitionError("not-allowed"), "denied");
   assert.match(voiceErrorMessage("denied", "es"), /micrófono/i);
-  assert.match(voiceErrorMessage("unsupported", "es"), /Chrome|Edge|remota/i);
+  assert.match(voiceErrorMessage("unsupported", "es"), /micrófono/i);
+  assert.doesNotMatch(voiceErrorMessage("unsupported", "en"), /Chrome or Edge|remote window/i);
   assert.match(voiceErrorMessage("no-speech", "es"), /Sigo escuchando/i);
+});
+
+test("records speech without the Chrome speech API", () => {
+  assert.equal(recordingMimeType(type => type === "audio/webm"), "audio/webm");
+  assert.equal(fileNameForAudioType("audio/webm;codecs=opus"), "iris.webm");
+  assert.equal(shouldFinishRecording({ speechMs: 800, silentMs: 950, elapsedMs: 2000 }), true);
+  assert.equal(shouldFinishRecording({ speechMs: 0, silentMs: 2000, elapsedMs: 2000 }), false);
+  assert.equal(mapMediaError(Object.assign(new Error("denied"), { name: "NotAllowedError" })), "denied");
+  assert.equal(mapMediaError(Object.assign(new Error("missing"), { name: "NotFoundError" })), "audio-capture");
 });
 
 test("keeps listening through empty Chrome no-speech errors", () => {

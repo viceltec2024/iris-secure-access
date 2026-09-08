@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChatCircleDots, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 import { isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseMicrophone, spokenQuestionFromTranscript, voiceErrorMessage } from "./iris-voice";
+import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -38,6 +39,8 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const hearingRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<RecognitionInstance | null>(null);
+  const recorderRef = useRef<RecordControl | null>(null);
+  const recorderOnlyRef = useRef(false);
   const stopLevelMonitorRef = useRef<(() => void) | null>(null);
   const restartTimerRef = useRef<number | null>(null);
   const debounceTimerRef = useRef<number | null>(null);
@@ -120,6 +123,8 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     listenActiveRef.current = false;
     recognitionRef.current?.abort();
     recognitionRef.current = null;
+    recorderRef.current?.stop();
+    recorderRef.current = null;
     clearVoiceTimers();
     setListening(false);
   }
@@ -151,6 +156,9 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     transcriptBufferRef.current = "";
     recognitionRef.current?.abort();
     recognitionRef.current = null;
+    recorderRef.current?.stop();
+    recorderRef.current = null;
+    recorderOnlyRef.current = false;
     stopLevelMonitorRef.current?.();
     stopLevelMonitorRef.current = null;
     releaseMicrophone(streamRef.current);
@@ -260,13 +268,16 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       const code = mapRecognitionError(event.error || "unknown");
       if (isRetryableVoiceError(code)) return;
       if (code === "network") {
-        setVoiceHint(language === "es" ? "Reconectando el oído de IRIS…" : "Reconnecting IRIS hearing…");
+        recorderOnlyRef.current = true;
+        recognition.abort();
+        void startRecorderListening();
         return;
       }
       reportVoiceError(code);
     };
     recognition.onend = () => {
       recognitionRef.current = null;
+      if (recorderOnlyRef.current) return;
       if (!listenActiveRef.current || speakingRef.current || loadingRef.current) {
         setListening(false);
         return;
@@ -280,7 +291,8 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       setListening(true);
       setVoiceHint(language === "es" ? "Te escucho. Habla ahora." : "Listening. Speak now.");
     } catch {
-      restartTimerRef.current = window.setTimeout(beginRecognition, 400);
+      recorderOnlyRef.current = true;
+      void startRecorderListening();
     }
   }
 
@@ -297,16 +309,56 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       }
       attachLevelMonitor(streamRef.current);
     } catch (error) {
-      const name = error instanceof DOMException ? error.name : "";
       listenActiveRef.current = false;
-      reportVoiceError(name === "NotAllowedError" ? "denied" : name === "NotFoundError" ? "audio-capture" : "unsupported");
+      reportVoiceError(mapMediaError(error));
       return;
     }
-    if (!recognitionApi()) {
-      reportVoiceError("unsupported");
+    if (recognitionApi() && !recorderOnlyRef.current) {
+      beginRecognition();
       return;
     }
-    beginRecognition();
+    if (!canRecordVoice()) {
+      reportVoiceError("unknown");
+      return;
+    }
+    void startRecorderListening();
+  }
+
+  async function startRecorderListening() {
+    const stream = streamRef.current;
+    if (!stream || !canRecordVoice()) {
+      reportVoiceError("unknown");
+      return;
+    }
+    recorderOnlyRef.current = true;
+    setListening(true);
+    setVoiceHint(language === "es" ? "Te escucho. Habla ahora." : "Listening. Speak now.");
+    while (listenActiveRef.current && !speakingRef.current && !loadingRef.current) {
+      const session = recordSpokenUtterance(stream, {
+        isActive: () => listenActiveRef.current && !speakingRef.current && !loadingRef.current,
+        isHearing: () => hearingRef.current,
+      });
+      recorderRef.current = session;
+      const blob = await session.done;
+      recorderRef.current = null;
+      if (!listenActiveRef.current || speakingRef.current || loadingRef.current) return;
+      if (!blob) {
+        setVoiceHint(language === "es" ? "Sigo escuchando. Habla cerca del micrófono." : "Still listening. Speak near the microphone.");
+        continue;
+      }
+      setVoiceHint(language === "es" ? "Convirtiendo lo que dijiste…" : "Turning your speech into text…");
+      try {
+        const text = await transcribeRecordedAudio(blob, language);
+        if (isStopCommand(text)) {
+          closeVoiceStage();
+          return;
+        }
+        commitSpokenQuestion(text);
+        return;
+      } catch {
+        setVoiceHint(language === "es" ? "No entendí eso. Habla otra vez, me quedo escuchando." : "I did not catch that. Speak again, I am still listening.");
+      }
+    }
   }
   startListeningRef.current = startListening;
 
