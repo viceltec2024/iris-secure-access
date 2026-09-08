@@ -3,49 +3,14 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { agentRequestNonces, appSettings, devices, incidentStates, remediationPlans, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
 import { queueAgentCommands } from "../../../lib/iris-agent-commands";
+import { type AgentTelemetry, deviceView } from "../../../lib/iris-device-view";
 import { commandsForAlert } from "../../../lib/iris-live-soc";
 import { listRecentAudit, logAudit, provisionIrisUser } from "../../../lib/authz";
 import { parseWalletSessionValue } from "../../../lib/iris-chain";
 import { approveProposal, parsePurchaseDesk, rejectProposal } from "../../../lib/iris-purchases";
 
-const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 const WALLET_KEY = "iris_local_wallet_session";
 const DESK_KEY = "iris_purchase_desk";
-
-type AgentTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; unsignedPersistenceItems?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string };
-
-function deviceView(device: typeof devices.$inferSelect, trustedNames: string[] = []) {
-  let telemetry: AgentTelemetry | null = null;
-  try {
-    const parsed = JSON.parse(device.telemetry || "{}");
-    if (parsed && typeof parsed === "object" && Object.keys(parsed).length) telemetry = parsed as AgentTelemetry;
-  } catch { telemetry = null; }
-  const reportedAt = device.lastSeenAt ? Date.parse(device.lastSeenAt) : Number.NaN;
-  const fresh = Number.isFinite(reportedAt) && Date.now() - reportedAt <= ONLINE_WINDOW_MS;
-  const enrolled = Boolean(device.agentTokenHash);
-  if (telemetry) {
-    telemetry.trustedApplications = trustedNames;
-    telemetry.riskyApplications = (telemetry.riskyApplications || []).filter(name => !trustedNames.includes(name));
-    if (!telemetry.riskyApplications.length) telemetry.securityFindings = (telemetry.securityFindings || []).filter(finding => finding !== "UNVERIFIED_APPLICATIONS_FOUND");
-  }
-  let healthScore: number | null = telemetry ? 100 : null;
-  if (healthScore !== null) {
-    if (telemetry!.firewallEnabled === false) healthScore -= 30;
-    if (telemetry!.gatekeeperEnabled === false) healthScore -= 20;
-    if (telemetry!.fileVaultEnabled === false) healthScore -= 25;
-    if (telemetry!.sipEnabled === false) healthScore -= 25;
-    if (telemetry!.automaticUpdatesEnabled === false) healthScore -= 10;
-    if (telemetry!.xProtectPresent === false) healthScore -= 30;
-    if (telemetry!.malwareRemovalToolPresent === false) healthScore -= 15;
-    if (telemetry!.unsignedPersistenceItems?.length) healthScore -= Math.min(30, telemetry!.unsignedPersistenceItems.length * 10);
-    if (telemetry!.riskyApplications?.length) healthScore -= Math.min(20, telemetry!.riskyApplications.length * 5);
-    if ((telemetry!.diskUsedPercent ?? 0) >= 95) healthScore -= 30; else if ((telemetry!.diskUsedPercent ?? 0) >= 85) healthScore -= 15;
-    if ((telemetry!.memoryUsedPercent ?? 0) >= 95) healthScore -= 20; else if ((telemetry!.memoryUsedPercent ?? 0) >= 85) healthScore -= 10;
-    if (!fresh) healthScore -= 20;
-    healthScore = Math.max(0, healthScore);
-  }
-  return { id: device.id, name: device.name, platform: device.platform, status: !enrolled ? "PENDING" : fresh ? "ONLINE" : "OFFLINE", risk: device.risk, enrollmentCode: device.enrollmentCode, lastSeenAt: device.lastSeenAt, telemetry, healthScore, provenance: enrolled && telemetry ? "REAL" : "UNVERIFIED" };
-}
 
 async function currentUser() {
   const identity = await getChatGPTUser();

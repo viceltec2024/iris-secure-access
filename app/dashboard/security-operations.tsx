@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, ChartLineUp, CheckCircle, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
+import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import IrisBrandMark from "../iris-brand-mark";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
 import IrisMarketPanel from "./iris-market-panel";
 import { Language, text } from "./dashboard-i18n";
 import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveWorkers, relativeTime, type LiveIncident, type LivePurchase, type LiveWorker } from "../../lib/iris-live-soc";
+import { IRIS_AGENT_SCRIPT_VERSION, irisAgentShellCommand } from "../../lib/iris-device-view";
 
 type Incident = LiveIncident;
 type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "market" | "approvals" | "audit";
@@ -54,6 +55,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [startingRemediation, setStartingRemediation] = useState(false);
   const [responseHistory, setResponseHistory] = useState<ResponseAction[]>([]);
   const [creatingDevice, setCreatingDevice] = useState(false);
+  const [copiedDeviceId, setCopiedDeviceId] = useState<string | null>(null);
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [approvingApplication, setApprovingApplication] = useState<string | null>(null);
   const [agentRuntime, setAgentRuntime] = useState<AgentRuntime[]>([]);
@@ -78,6 +80,8 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     });
     return next;
   }, []);
+
+  const waitingForAgent = devices.some(device => device.status !== "ONLINE");
 
   useEffect(() => {
     const loadSecurityState = () => void fetch("/api/security-state").then(response => response.json()).then((data: {
@@ -106,9 +110,9 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       rebuildIncidents(nextAlerts, nextDevices, nextPurchases, data.incidents || [], language);
     }).catch(() => undefined);
     loadSecurityState();
-    const refreshTimer = window.setInterval(loadSecurityState, 30_000);
+    const refreshTimer = window.setInterval(loadSecurityState, waitingForAgent ? 8_000 : 30_000);
     return () => window.clearInterval(refreshTimer);
-  }, [language, rebuildIncidents]);
+  }, [language, rebuildIncidents, waitingForAgent]);
 
   useEffect(() => {
     const loadMarket = () => void fetch("/api/iris-market?view=live", { cache: "no-store" }).then(response => response.json()).then((data: { live?: boolean }) => {
@@ -173,6 +177,17 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       setExecutionNote(language === "es" ? `Revisión registrada en vivo. IRIS no puede encender un Mac apagado.` : `Review recorded live. IRIS cannot wake a Mac that is offline.`);
     }
     setResponseHistory(current => [{ id: Date.now(), incidentId: selected.id, actorEmail: user.email, action: selected.kind === "purchase" ? "APPROVE_PURCHASE" : "DISPATCH_AGENT_COMMANDS", mode: "LIVE", outcome: "COMPLETED", createdAt: new Date().toISOString() }, ...current]);
+  }
+
+  async function copyReconnectCommand(device: Device) {
+    const command = irisAgentShellCommand(window.location.origin, device.status !== "PENDING");
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopiedDeviceId(device.id);
+      window.setTimeout(() => setCopiedDeviceId(current => current === device.id ? null : current), 5000);
+    } catch {
+      window.prompt(language === "es" ? "Copia este comando y pégalo en Terminal en tu Mac:" : "Copy this command and paste it in Terminal on your Mac:", command);
+    }
   }
 
   async function createDeviceEnrollment() {
@@ -370,8 +385,9 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           {!!device.telemetry?.unsignedPersistenceItems?.length && <div className="security-findings"><strong>{language === "es" ? "PROGRAMAS DE INICIO SIN FIRMA" : "UNSIGNED STARTUP PROGRAMS"}</strong>{device.telemetry.unsignedPersistenceItems.map(item => <span key={item}><Warning weight="fill" />{item}</span>)}</div>}
           {!!device.telemetry?.trustedApplications?.length && <div className="trusted-apps"><strong>{language === "es" ? "APLICACIONES APROBADAS" : "APPROVED APPLICATIONS"}</strong><span><CheckCircle weight="fill" />{device.telemetry.trustedApplications.join(", ")}</span></div>}
           <div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div>
-          <div className="device-actions"><a href="/iris-agent-macos.sh?v=35" download>{language === "es" ? "Descargar agente cifrado" : "Download encrypted agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div>
-          <p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Protección real activa. El agente revisa cada 2 minutos." : "Real protection active. The agent checks every 2 minutes.") : device.status === "OFFLINE" ? (language === "es" ? "Alerta: el agente dejó de reportar hace más de 5 minutos." : "Alert: the agent stopped reporting more than 5 minutes ago.") : (language === "es" ? "Instala el agente nuevo para comenzar la protección real." : "Install the new agent to start real protection.")}</p>
+          {device.status !== "ONLINE" && <div className="reconnect-box"><p>{device.status === "OFFLINE" ? (language === "es" ? "El agente está inscrito, pero no reporta. Pega este comando en Terminal en tu Mac para reconectar a esta IRIS:" : "The agent is enrolled, but it is not reporting. Paste this command in Terminal on your Mac to reconnect to this IRIS:") : (language === "es" ? "Pega este comando en Terminal en tu Mac e introduce el código de inscripción:" : "Paste this command in Terminal on your Mac and enter the enrollment code:")}</p><code className="reconnect-command">{irisAgentShellCommand(typeof window === "undefined" ? "" : window.location.origin, device.status !== "PENDING")}</code></div>}
+          <div className="device-actions">{device.status !== "ONLINE" && <button type="button" className="reconnect-device" onClick={() => void copyReconnectCommand(device)}>{copiedDeviceId === device.id ? <CheckCircle weight="fill" /> : device.status === "OFFLINE" ? <ArrowClockwise weight="bold" /> : <CopySimple weight="bold" />}{copiedDeviceId === device.id ? (language === "es" ? "Comando copiado" : "Command copied") : device.status === "OFFLINE" ? (language === "es" ? "Reconectar Mac" : "Reconnect Mac") : (language === "es" ? "Copiar instalación" : "Copy install command")}</button>}<a href={`/iris-agent-macos.sh?v=${IRIS_AGENT_SCRIPT_VERSION}`} download>{language === "es" ? "Descargar agente cifrado" : "Download encrypted agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div>
+          <p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Protección real activa. El agente revisa cada 2 minutos." : "Real protection active. The agent checks every 2 minutes.") : device.status === "OFFLINE" ? (language === "es" ? "Alerta: el agente dejó de reportar hace más de 5 minutos. IRIS no puede encenderlo desde el navegador." : "Alert: the agent stopped reporting more than 5 minutes ago. IRIS cannot start it from the browser.") : (language === "es" ? "Instala el agente nuevo para comenzar la protección real." : "Install the new agent to start real protection.")}</p>
         </article>)}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra tu Mac e instala el agente para comenzar la protección real." : "Register your Mac and install the agent to begin real protection."}</p></div>}</div>
       </section>}
 

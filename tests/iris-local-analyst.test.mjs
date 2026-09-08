@@ -49,3 +49,31 @@ test("Ask IRIS reports connected agents", () => {
   });
   assert.match(answer, /Mac|sistemas/i);
 });
+
+test("Ask IRIS tells how to reconnect an offline Mac", () => {
+  const answer = localIrisAnswer({
+    language: "es",
+    question: "conect",
+    userName: "owner",
+    section: "devices",
+    origin: "https://iris.example",
+    devices: [{
+      id: "mac-1",
+      name: "My Mac",
+      platform: "macOS",
+      status: "OFFLINE",
+      risk: "MEDIUM",
+      lastSeenAt: "2026-09-07T21:54:00.000Z",
+      telemetry: { hostname: "Eze-Mac", firewallEnabled: false },
+    }],
+    alerts: [{ deviceId: "mac-1", code: "FIREWALL_DISABLED", severity: "MEDIUM", status: "NEW" }],
+    agents: [],
+    wallet: { connected: false, address: "" },
+  });
+  assert.match(answer, /OFFLINE/i);
+  assert.match(answer, /Eze-Mac|My Mac/);
+  assert.match(answer, /iris-agent-macos\.sh/);
+  assert.match(answer, /reconnect/);
+  assert.match(answer, /https:\/\/iris\.example/);
+  assert.match(answer, /firewall/i);
+});

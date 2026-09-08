@@ -29,6 +29,26 @@ test("Ask IRIS can open in full screen", () => {
   assert.match(css, /\.iris-chat\.full-screen\{/);
 });
 
+test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
+  const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
+  const voice = readFileSync(new URL("../app/dashboard/iris-voice.ts", import.meta.url), "utf8");
+  assert.match(panel, /speakBrowserText\(/);
+  assert.match(panel, /irisListenPhrase\(/);
+  assert.match(panel, /Un momento\./);
+  assert.doesNotMatch(panel, /\/api\/iris-voice/);
+  assert.doesNotMatch(panel, /playMpegSpeech/);
+  assert.doesNotMatch(panel, /neuralVoice/);
+  assert.match(voice, /window\.speechSynthesis\.speak/);
+  assert.match(voice, /},\s*0\);/);
+});
+
+test("offline Macs show a reconnect command for this IRIS instance", () => {
+  const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
+  assert.match(sidebar, /Reconectar Mac/);
+  assert.match(sidebar, /irisAgentShellCommand/);
+  assert.match(sidebar, /IRIS_AGENT_SCRIPT_VERSION/);
+});
+
 test("security operations no longer ships training incidents", () => {
   const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
   const i18n = readFileSync(new URL("../app/dashboard/dashboard-i18n.ts", import.meta.url), "utf8");

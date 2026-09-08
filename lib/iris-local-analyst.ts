@@ -1,3 +1,5 @@
+import { irisAgentShellCommand } from "./iris-device-view.ts";
+
 type DeviceContext = {
   id: string;
   name: string;
@@ -29,6 +31,7 @@ export type IrisAnalystInput = {
   question: string;
   userName: string;
   section: string;
+  origin?: string;
   devices: DeviceContext[];
   alerts: AlertContext[];
   agents: AgentContext[];
@@ -87,6 +90,31 @@ export function localIrisAnswer(input: IrisAnalystInput) {
     return es
       ? `Hola, ${name}. Estoy conectada y lista. ${statusBlock} ${agentBlock} ¿Quieres el estado completo o revisamos un dispositivo?`
       : `Hi, ${name}. I'm connected and ready. ${statusBlock} ${agentBlock} Do you want the full status or should we review a device?`;
+  }
+
+  if ((/(\bconect\b|\bconectar(me)?\b|\breconect)/.test(question) && !/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy|agentes|orquest|bolsa|mercado)/.test(question)) || /conectar\s+(el\s+)?(mac|dispositivo|iris)/.test(question)) {
+    const target = offline[0] || pending[0] || online[0];
+    const hostname = typeof target?.telemetry?.hostname === "string" ? target.telemetry.hostname : "";
+    const label = target ? `${target.name}${hostname && hostname !== target.name ? ` (${hostname})` : ""}` : "";
+    const command = irisAgentShellCommand(input.origin || "", Boolean(target) && target.status !== "PENDING");
+    if (!input.devices.length) {
+      return es
+        ? `${name}, todavía no hay un Mac inscrito en esta sesión. En Dispositivos pulsa Registrar mi Mac, copia el código de 16 caracteres y pega este comando en Terminal en tu Mac: ${command}`
+        : `${name}, no Mac is enrolled in this session yet. In Devices tap Register my Mac, copy the 16-character code, and paste this command in Terminal on your Mac: ${command}`;
+    }
+    if (online.length && !offline.length && !pending.length) {
+      return es
+        ? `${name}, ${label || "tu Mac"} ya está ONLINE: el agente reportó hace menos de 5 minutos. El firewall es otra cosa: si ves FIREWALL DISABLED, aprueba esa alerta para que el agente lo active en el siguiente reporte.`
+        : `${name}, ${label || "your Mac"} is already ONLINE: the agent reported less than 5 minutes ago. Firewall is separate: if you see FIREWALL DISABLED, approve that alert so the agent can enable it on the next report.`;
+    }
+    if (pending.length && !offline.length) {
+      return es
+        ? `${name}, ${label || "tu Mac"} está PENDIENTE: IRIS todavía no recibió el primer reporte. En Dispositivos copia el código de inscripción e instala el agente con este comando en Terminal: ${command}`
+        : `${name}, ${label || "your Mac"} is PENDING: IRIS has not received the first report yet. In Devices copy the enrollment code and install the agent with this Terminal command: ${command}`;
+    }
+    return es
+      ? `${name}, ${label || "tu Mac"} está inscrito pero OFFLINE: el agente no envió telemetría en los últimos 5 minutos, así que IRIS no puede tratarlo como un enlace en vivo. No puedo arrancar el LaunchAgent desde aquí. En Dispositivos pulsa Reconectar, o pega esto en Terminal en el Mac (debe estar encendido y en red): ${command} Cuando el reporte llegue, el estado pasa a ONLINE solo. El firewall apagado se arregla después, aprobando la alerta.`
+      : `${name}, ${label || "your Mac"} is enrolled but OFFLINE: the agent did not send telemetry in the last 5 minutes, so IRIS cannot treat it as a live link. I cannot start the LaunchAgent from here. In Devices tap Reconnect, or paste this in Terminal on the Mac (it must be awake and on the network): ${command} When the report arrives, the status flips to ONLINE by itself. A disabled firewall is fixed after that by approving the alert.`;
   }
 
   if (/(agente|agent|orquest)/.test(question)) {

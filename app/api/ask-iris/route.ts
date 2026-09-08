@@ -6,6 +6,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { appSettings, devices, securityAlerts } from "../../../db/schema";
 import { parseWalletSessionValue } from "../../../lib/iris-chain";
+import { reportedDeviceStatus } from "../../../lib/iris-device-view";
 import { liveWorkers } from "../../../lib/iris-live-soc";
 import { localIrisAnswer } from "../../../lib/iris-local-analyst";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "../../../lib/iris-market";
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
   const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, `iris_purchase_desk:${user.email}`)).limit(1);
   const wallet = parseWalletSessionValue(walletRow?.value || "");
   const pendingPurchases = parsePurchaseDesk(deskRow?.value || "").proposals.filter(item => item.status === "awaiting_approval").length;
-  const mappedDevices = deviceRows.map(device => ({ id: device.id, name: device.name, platform: device.platform, status: device.status, risk: device.risk, lastSeenAt: device.lastSeenAt, telemetry: JSON.parse(device.telemetry || "{}") as Record<string, unknown> }));
+  const mappedDevices = deviceRows.map(device => ({ id: device.id, name: device.name, platform: device.platform, status: reportedDeviceStatus(device), risk: device.risk, lastSeenAt: device.lastSeenAt, telemetry: JSON.parse(device.telemetry || "{}") as Record<string, unknown> }));
   const agents = liveWorkers({
     devices: mappedDevices,
     walletConnected: Boolean(wallet),
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
     language,
     question,
     userName: user.displayName || user.email,
+    origin: new URL(request.url).origin,
     section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
     devices: mappedDevices,
     alerts: alertRows.map(alert => ({ deviceId: alert.deviceId, code: alert.code, severity: alert.severity, status: alert.status, evidence: JSON.parse(alert.evidence || "{}") as Record<string, unknown>, lastSeenAt: alert.lastSeenAt })),
