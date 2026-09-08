@@ -1,12 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChartLineUp, MagnifyingGlass, Pulse, TrendDown, TrendUp, Wallet } from "@phosphor-icons/react";
+import { ChartLineUp, MagnifyingGlass, Pulse, Wallet } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 import { LIVE_REFRESH_MS, type MarketAnalysis, type MarketBar, type MarketBoard, type MarketQuote, type MarketRange } from "../../lib/iris-market";
 
 type LiveTape = { updatedAt: string; live: boolean; quotes: MarketQuote[] };
 type LiveChart = { quote: MarketQuote; bars: MarketBar[]; analysis: MarketAnalysis; live?: boolean };
+
+const INDEX_STRIP = ["^GSPC", "^DJI", "^IXIC", "^VIX"] as const;
+const TAPE_LABELS: Record<string, string> = {
+  "^GSPC": "SPX",
+  "^DJI": "DJI",
+  "^IXIC": "COMP",
+  "^RUT": "RUT",
+  "^VIX": "VIX",
+  "^GDAXI": "DAX",
+  "^FTSE": "FTSE",
+  "^N225": "NKY",
+  "BTC-USD": "BTC",
+  "ETH-USD": "ETH",
+  "SOL-USD": "SOL",
+};
 
 const ranges: Array<{ id: MarketRange; es: string; en: string }> = [
   { id: "1d", es: "En vivo", en: "Live" },
@@ -31,6 +46,26 @@ function money(value: number, currency = "USD") {
 
 function signed(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function signedChange(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toLocaleString("en-US", { maximumFractionDigits: Math.abs(value) >= 1 ? 2 : 4 })}`;
+}
+
+function compactVolume(value: number) {
+  if (!value) return "—";
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
+  return value.toLocaleString("en-US");
+}
+
+function tapeLabel(symbol: string) {
+  return TAPE_LABELS[symbol] || symbol.replace("-USD", "");
+}
+
+function tone(value: number) {
+  return value >= 0 ? "up" : "down";
 }
 
 export default function IrisMarketPanel({ language, onOpenPurchases }: { language: Language; onOpenPurchases: () => void }) {
@@ -79,11 +114,12 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
 
   const quotes = board?.quotes.length ? board.quotes : tape?.quotes || [];
   const visible = quotes.filter(item => group === "all" || item.group === group);
+  const indexStrip = INDEX_STRIP.map(id => (tape?.quotes || quotes).find(item => item.symbol === id)).filter((item): item is MarketQuote => Boolean(item));
   const flashes = useMemo(() => {
-    const next: Record<string, "up" | "down"> = {};
+    const next: Record<string, "flash-up" | "flash-down"> = {};
     for (const quote of tape?.quotes || []) {
       const prior = previous.current[quote.symbol];
-      if (prior != null && prior !== quote.price) next[quote.symbol] = quote.price > prior ? "up" : "down";
+      if (prior != null && prior !== quote.price) next[quote.symbol] = quote.price > prior ? "flash-up" : "flash-down";
       previous.current[quote.symbol] = quote.price;
     }
     return next;
@@ -94,35 +130,42 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
     : `Live reading of ${chart.quote.symbol}: price ${money(chart.quote.price, chart.quote.currency)}, trend ${chart.analysis.trend}, RSI ${chart.analysis.rsi14 ?? "—"}. The chart moves on its own. This teaches the market; it is not an order.`);
 
   return <section className="module-panel iris-market-panel">
-    <div className="market-live-head">
-      <div>
-        <span className="market-live-pill on"><i />{es ? "LECTURAS EN VIVO · CINTA YAHOO" : "LIVE READINGS · YAHOO TAPE"}</span>
-        <h2>IRIS</h2>
-        <p>{board?.briefing[language] || tape && (es ? "IRIS está leyendo la cinta en vivo." : "IRIS is reading the live tape.") || (es ? "Conectando IRIS a la bolsa…" : "Connecting IRIS to the market…")}</p>
+    <header className="market-desk-head">
+      <div className="market-desk-title">
+        <span className="market-live-pill on"><i />{es ? "CINTA EN VIVO · YAHOO" : "LIVE TAPE · YAHOO"}</span>
+        <h2>{es ? "Mesa de trading" : "Trading desk"}</h2>
+      </div>
+      <div className="market-index-strip" aria-label={es ? "Índices en vivo" : "Live indexes"}>
+        {indexStrip.map(quote => <button key={quote.symbol} type="button" className={`market-index ${tone(quote.changePercent)} ${symbol === quote.symbol ? "active" : ""}`} onClick={() => setSymbol(quote.symbol)}>
+          <b>{tapeLabel(quote.symbol)}</b>
+          <strong>{quote.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}</strong>
+          <small className="chg">{signed(quote.changePercent)}</small>
+        </button>)}
       </div>
       <div className="market-live-clock">
         <Pulse />
         <strong>{es ? "Sincronizado" : "Synced"}</strong>
-        <small>{tape?.updatedAt ? new Date(tape.updatedAt).toLocaleTimeString(language) : "—"} · {es ? "cada 8 s" : "every 8s"}</small>
+        <small>{tape?.updatedAt ? new Date(tape.updatedAt).toLocaleTimeString(language) : "—"} · {es ? "8s" : "8s"}</small>
       </div>
-    </div>
+    </header>
+    <p className="market-briefing">{board?.briefing[language] || tape && (es ? "IRIS está leyendo la cinta en vivo." : "IRIS is reading the live tape.") || (es ? "Conectando IRIS a la bolsa…" : "Connecting IRIS to the market…")}</p>
 
-    <div className="market-tape">
-      {(tape?.quotes || []).map(quote => <button key={quote.symbol} className={`market-tick ${quote.changePercent >= 0 ? "up" : "down"} ${flashes[quote.symbol] || ""}`} onClick={() => setSymbol(quote.symbol)}>
-        <b>{quote.symbol.replace("-USD", "")}</b>
-        <strong>{quote.price.toLocaleString(language, { maximumFractionDigits: 2 })}</strong>
-        <small>{signed(quote.changePercent)}</small>
+    <div className="market-tape" role="list" aria-label={es ? "Cinta de precios" : "Price tape"}>
+      {(tape?.quotes || []).map(quote => <button key={quote.symbol} type="button" role="listitem" className={`market-tick ${tone(quote.changePercent)} ${symbol === quote.symbol ? "active" : ""} ${flashes[quote.symbol] || ""}`} onClick={() => setSymbol(quote.symbol)}>
+        <b>{tapeLabel(quote.symbol)}</b>
+        <strong>{quote.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}</strong>
+        <small className="chg">{signed(quote.changePercent)}</small>
       </button>)}
-      {!tape && <div className="wallet-empty"><Pulse /><strong>{es ? "Abriendo cinta en vivo…" : "Opening the live tape…"}</strong></div>}
+      {!tape && <div className="market-tape-empty"><Pulse /><strong>{es ? "Abriendo cinta en vivo…" : "Opening the live tape…"}</strong></div>}
     </div>
 
     <form className="market-search" onSubmit={event => { event.preventDefault(); if (query.trim()) { setSymbol(query.trim().toUpperCase()); setHits([]); } }}>
-      <label><MagnifyingGlass /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={es ? "Busca cualquier ticker: AAPL, NVDA, BTC-USD, AMXL.MX…" : "Search any ticker: AAPL, NVDA, BTC-USD, AMXL.MX…"} /></label>
+      <label><MagnifyingGlass /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={es ? "Ticker: AAPL, NVDA, BTC-USD, AMXL.MX…" : "Ticker: AAPL, NVDA, BTC-USD, AMXL.MX…"} /></label>
       <div className="market-groups">
         {(["all", "indices", "actions", "crypto", "latam"] as const).map(item => <button type="button" key={item} className={group === item ? "active" : ""} onClick={() => setGroup(item)}>{{ all: es ? "Todo" : "All", indices: es ? "Índices" : "Indexes", actions: es ? "Acciones" : "Stocks", crypto: "Crypto", latam: "LatAm" }[item]}</button>)}
       </div>
     </form>
-    {!!hits.length && <div className="market-hits">{hits.map(hit => <button key={hit.symbol} onClick={() => { setSymbol(hit.symbol); setQuery(""); setHits([]); }}><b>{hit.symbol}</b><span>{hit.name}</span></button>)}</div>}
+    {!!hits.length && <div className="market-hits">{hits.map(hit => <button key={hit.symbol} type="button" onClick={() => { setSymbol(hit.symbol); setQuery(""); setHits([]); }}><b>{hit.symbol}</b><span>{hit.name}</span></button>)}</div>}
 
     <div className="market-stage">
       <article className="market-chart-card">
@@ -130,9 +173,9 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
           <div>
             <span className={`market-live-pill ${chart?.quote.live ? "on" : ""}`}><i />LIVE · {chart?.quote.exchange || "Yahoo"}</span>
             <h3>{chart?.quote.name || symbol} <code>{symbol}</code></h3>
-            <strong className={chart && chart.quote.changePercent >= 0 ? "up" : "down"}>{chart ? money(chart.quote.price, chart.quote.currency) : "—"} <small>{chart ? signed(chart.quote.changePercent) : ""}</small></strong>
+            <strong>{chart ? money(chart.quote.price, chart.quote.currency) : "—"} <small className={`chg ${chart ? tone(chart.quote.changePercent) : ""}`}>{chart ? `${signedChange(chart.quote.change)}  ${signed(chart.quote.changePercent)}` : ""}</small></strong>
           </div>
-          <div className="market-range">{ranges.map(item => <button key={item.id} className={range === item.id ? "active" : ""} onClick={() => setRange(item.id)}>{es ? item.es : item.en}</button>)}</div>
+          <div className="market-range">{ranges.map(item => <button key={item.id} type="button" className={range === item.id ? "active" : ""} onClick={() => setRange(item.id)}>{es ? item.es : item.en}</button>)}</div>
         </header>
         <svg viewBox="0 0 640 190" preserveAspectRatio="none" role="img" aria-label={es ? "Gráfico en vivo" : "Live chart"}>
           <path className="chart-grid-lines" d="M0 38H640M0 76H640M0 114H640M0 152H640" />
@@ -149,24 +192,37 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
         </div>
       </article>
       <aside className="market-ideas">
-        <h3>{es ? "Mejores lecturas en vivo" : "Best live readings"}</h3>
-        {(board?.ideas || []).map(idea => <button key={idea.symbol} className={`market-idea ${idea.stance}`} onClick={() => setSymbol(idea.symbol)}>
-          <div><b>{idea.symbol}</b><small>{signed(idea.changePercent)}</small></div>
-          <strong>{idea.score}</strong>
+        <h3>{es ? "Lecturas" : "Readings"}</h3>
+        {(board?.ideas || []).map(idea => <button key={idea.symbol} type="button" className={`market-idea ${idea.stance} ${symbol === idea.symbol ? "active" : ""}`} onClick={() => setSymbol(idea.symbol)}>
+          <div className="market-idea-row">
+            <b>{idea.symbol}</b>
+            <small className={`chg ${tone(idea.changePercent)}`}>{signed(idea.changePercent)}</small>
+            <strong>{idea.score}</strong>
+          </div>
           <p>{idea.reason}</p>
-          <em>{idea.lesson}</em>
         </button>)}
-        {!board?.ideas.length && <p>{es ? "IRIS está calculando las lecturas en vivo…" : "IRIS is calculating live readings…"}</p>}
-        <button className="market-buy" onClick={onOpenPurchases}><Wallet />{es ? "Si quieres comprar, IRIS pide tu aprobación" : "If you want to buy, IRIS asks for your approval"}</button>
+        {!board?.ideas.length && <p className="market-ideas-empty">{es ? "IRIS está calculando las lecturas en vivo…" : "IRIS is calculating live readings…"}</p>}
+        <button className="market-buy" type="button" onClick={onOpenPurchases}><Wallet />{es ? "Comprar: IRIS pide tu OK" : "Buy: IRIS asks for your OK"}</button>
       </aside>
     </div>
 
-    <div className="market-board">
-      {visible.map(quote => <button key={quote.symbol} className={`market-row ${quote.changePercent >= 0 ? "up" : "down"}`} onClick={() => setSymbol(quote.symbol)}>
-        <span>{quote.changePercent >= 0 ? <TrendUp /> : <TrendDown />}</span>
-        <div><b>{quote.symbol}</b><small>{quote.name}</small></div>
-        <strong>{quote.price.toLocaleString(language, { maximumFractionDigits: 2 })}</strong>
-        <small>{signed(quote.changePercent)}</small>
+    <div className="market-watchlist" role="table" aria-label={es ? "Watchlist en vivo" : "Live watchlist"}>
+      <div className="market-watchlist-head" role="row">
+        <span>{es ? "Ticker" : "Ticker"}</span>
+        <span>{es ? "Nombre" : "Name"}</span>
+        <span>{es ? "Último" : "Last"}</span>
+        <span>{es ? "Cambio" : "Chg"}</span>
+        <span>%</span>
+        <span>Vol</span>
+        <span>Live</span>
+      </div>
+      {visible.map(quote => <button key={quote.symbol} type="button" role="row" className={`market-row ${tone(quote.changePercent)} ${symbol === quote.symbol ? "active" : ""} ${flashes[quote.symbol] || ""}`} onClick={() => setSymbol(quote.symbol)}>
+        <b>{tapeLabel(quote.symbol)}</b>
+        <small className="market-row-name">{quote.name}</small>
+        <strong>{quote.price.toLocaleString("en-US", { maximumFractionDigits: quote.price >= 100 ? 2 : 4 })}</strong>
+        <span className="chg">{signedChange(quote.change)}</span>
+        <span className="chg">{signed(quote.changePercent)}</span>
+        <span className="market-row-vol">{compactVolume(quote.volume)}</span>
         <i className={quote.live ? "on" : ""} />
       </button>)}
     </div>

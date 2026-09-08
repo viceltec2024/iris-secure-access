@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   analyzeSeries,
@@ -61,4 +62,20 @@ test("SMA and RSI stay deterministic for the live lesson", () => {
   const analysis = analyzeSeries("TEST", bars);
   assert.equal(analysis.trend, "up");
   assert.equal(analysis.rsi14, 100);
+});
+
+test("live market desk is a dense trading watchlist, not stacked cards", () => {
+  const panel = readFileSync(new URL("../app/dashboard/iris-market-panel.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(panel, /market-watchlist/);
+  assert.match(panel, /market-watchlist-head/);
+  assert.match(panel, /market-index-strip/);
+  assert.match(panel, /Último/);
+  assert.match(panel, /Mesa de trading/);
+  assert.doesNotMatch(panel, /market-board/);
+  assert.match(css, /\.market-tape\{[^}]*display:flex/);
+  assert.match(css, /\.market-watchlist\{/);
+  assert.match(css, /font-variant-numeric:tabular-nums/);
+  assert.doesNotMatch(css, /@media\(max-width:980px\)\{[^}]*\.market-tape/);
+  assert.doesNotMatch(css, /\.market-board\{display:grid;grid-template-columns:repeat\(3/);
 });
