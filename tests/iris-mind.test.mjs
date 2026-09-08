@@ -63,3 +63,19 @@ test("Ask IRIS answers general questions from public knowledge", async () => {
     globalThis.fetch = original;
   }
 });
+
+test("Ask IRIS stops waiting on hung world knowledge", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (_input, init) => new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("Aborted"), { name: "AbortError" })));
+  });
+  const started = Date.now();
+  try {
+    const result = await irisMindAnswer({ ...base, question: "cuéntame algo de marte" });
+    assert.equal(result.source, "local");
+    assert.match(result.answer, /Ezephian|marte/i);
+    assert.ok(Date.now() - started < 5000);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

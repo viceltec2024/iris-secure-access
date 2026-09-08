@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const user = await provisionIrisUser(identity);
   if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
 
-  if (!(await enforceRateLimit(`ask-iris:${user.email}`, 20, 60 * 1000))) {
+  if (!(await enforceRateLimit(`ask-iris:${user.email}`, 60, 60 * 1000))) {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "DENIED", { reason: "rate_limited" });
     return Response.json({ error: "Demasiadas consultas. Espera un momento." }, { status: 429, headers: { "Retry-After": "60" } });
   }

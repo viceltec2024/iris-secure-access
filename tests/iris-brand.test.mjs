@@ -37,12 +37,23 @@ test("Ask IRIS panel is a large assistant, not a 390px widget", () => {
   assert.doesNotMatch(css, /width:min\(390px,calc\(100vw - 32px\)\)/);
 });
 
+test("Ask IRIS keeps the written conversation visible while listening", () => {
+  const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(panel, /className="iris-chat-messages"/);
+  assert.match(panel, /sendQueueRef/);
+  assert.match(panel, /controller\.abort\(\), 15000\)/);
+  assert.doesNotMatch(panel, /disabled=\{\!input\.trim\(\) \|\| loading\}/);
+  assert.match(css, /\.iris-chat\.voice-open\{grid-template-rows:auto auto 1fr auto auto\}/);
+});
+
 test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   const voice = readFileSync(new URL("../app/dashboard/iris-voice.ts", import.meta.url), "utf8");
   assert.match(panel, /speakBrowserText\(/);
   assert.match(panel, /irisListenPhrase\(/);
-  assert.match(panel, /Un momento\./);
+  assert.match(panel, /sendQueueRef/);
+  assert.doesNotMatch(panel, /Un momento\./);
   assert.doesNotMatch(panel, /\/api\/iris-voice/);
   assert.doesNotMatch(panel, /playMpegSpeech/);
   assert.doesNotMatch(panel, /neuralVoice/);
