@@ -64,6 +64,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const skipResumeRef = useRef(false);
   const browserStopRef = useRef<(() => void) | null>(null);
   const queuedSpeechRef = useRef<string | null>(null);
+  const speechSeqRef = useRef(0);
   const autoSpeakRef = useRef(true);
   autoSpeakRef.current = autoSpeak;
 
@@ -114,6 +115,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   }
 
   function browserVoiceFallback(text: string, spokenLanguage: "es" | "en") {
+    const seq = speechSeqRef.current;
     return new Promise<void>(resolve => {
       if (!("speechSynthesis" in window)) {
         setVoiceHint(language === "es" ? "IRIS ya contestó por escrito. Este navegador no puede hablar en voz alta." : "IRIS already answered in writing. This browser cannot speak out loud.");
@@ -136,6 +138,10 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
           setVoiceHint(language === "es" ? "El navegador bloqueó el audio. Pulsa el altavoz y sube el volumen del Mac." : "The browser blocked audio. Tap the speaker and turn the Mac volume up.");
         },
         onEnd: () => {
+          if (seq !== speechSeqRef.current) {
+            resolve();
+            return;
+          }
           browserStopRef.current = null;
           stopSpeechKeepAlive();
           speakingRef.current = false;
@@ -147,10 +153,6 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
             void browserVoiceFallback(queued, language === "es" ? "es" : detectedLanguage(queued)).then(resolve);
             return;
           }
-          if (loadingRef.current && autoSpeakRef.current) {
-            void browserVoiceFallback(language === "es" ? "Un momento." : "One moment.", language).then(resolve);
-            return;
-          }
           if (!skipResumeRef.current) resumeVoiceConversation();
           skipResumeRef.current = false;
           resolve();
@@ -160,16 +162,17 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   }
 
   async function speak(text: string, options: { resume?: boolean } = {}) {
+    const clean = text.replace(/\s+/g, " ").trim();
+    if (!clean) return;
     skipResumeRef.current = options.resume === false;
     unlockSpeechEngine();
     holdSpeechSession();
     releaseMicForSpeech();
-    if (browserStopRef.current) {
-      queuedSpeechRef.current = text;
-      return;
-    }
+    speechSeqRef.current += 1;
     queuedSpeechRef.current = null;
-    await browserVoiceFallback(text, language === "es" ? "es" : detectedLanguage(text));
+    browserStopRef.current?.();
+    browserStopRef.current = null;
+    await browserVoiceFallback(clean, language === "es" ? "es" : detectedLanguage(clean));
   }
 
   function clearVoiceTimers() {
@@ -261,10 +264,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     setMessages(nextMessages); setInput(""); loadingRef.current = true; setLoading(true); pauseRecognition();
     if (autoSpeakRef.current) {
       skipResumeRef.current = true;
-      browserStopRef.current?.();
-      browserStopRef.current = null;
-      queuedSpeechRef.current = null;
-      void browserVoiceFallback(language === "es" ? "Un momento." : "One moment.", language);
+      void speak(language === "es" ? "Un momento." : "One moment.");
     }
     try {
       const response = await fetch("/api/ask-iris", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: nextMessages.slice(-12), context: { language, section } }) });
@@ -272,10 +272,16 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       if (!response.ok || !data.answer) throw new Error(data.error || (language === "es" ? "IRIS no pudo completar el análisis." : "IRIS could not complete the analysis."));
       setSpokenAnswer(data.answer!);
       setMessages(current => [...current, { role: "assistant", content: data.answer! }]);
-      if (autoSpeakRef.current || voiceStageRef.current) void speak(data.answer);
+      loadingRef.current = false;
+      setLoading(false);
+      if (autoSpeakRef.current || voiceStageRef.current) void speak(data.answer!);
     } catch (error) {
-      setMessages(current => [...current, { role: "assistant", content: error instanceof Error ? error.message : (language === "es" ? "IRIS no está disponible temporalmente." : "IRIS is temporarily unavailable.") }]);
-      if (voiceStageRef.current) resumeVoiceConversation();
+      const message = error instanceof Error ? error.message : (language === "es" ? "IRIS no está disponible temporalmente." : "IRIS is temporarily unavailable.");
+      setSpokenAnswer(message);
+      setMessages(current => [...current, { role: "assistant", content: message }]);
+      loadingRef.current = false;
+      setLoading(false);
+      if (autoSpeakRef.current || voiceStageRef.current) void speak(message);
     } finally { loadingRef.current = false; setLoading(false); }
   }
 

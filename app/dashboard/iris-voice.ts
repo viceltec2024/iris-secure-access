@@ -228,6 +228,16 @@ export function stopSpeechEnginePlayback() {
   speechSource = null;
 }
 
+export const SPEECH_CANCEL_GAP_MS = 50;
+
+export function shouldRepeatThinkingPhrase(loading: boolean, queuedAnswer?: string | null) {
+  return Boolean(loading && !(queuedAnswer && queuedAnswer.trim()));
+}
+
+export function shouldForceSpeechRetry(started: boolean) {
+  return !started;
+}
+
 export function speakBrowserText(
   text: string,
   language: "es" | "en",
@@ -241,7 +251,8 @@ export function speakBrowserText(
   }
   const synth = window.speechSynthesis;
   resumeSpeechIfPaused(synth);
-  if (synth.speaking || synth.pending) synth.cancel();
+  const needsGap = Boolean(synth.speaking || synth.pending);
+  if (needsGap) synth.cancel();
   const catalog = synth.getVoices();
   const preferred = pickSpeechVoice(catalog.length ? catalog : voices, language);
   const liveVoice = preferred ? catalog.find(voice => voice.name === preferred.name && voice.lang === preferred.lang) : undefined;
@@ -251,16 +262,23 @@ export function speakBrowserText(
   let started = false;
   let finished = false;
   let watchdog = 0;
+  let startTimer = 0;
+  const clearTimers = () => {
+    if (watchdog) window.clearTimeout(watchdog);
+    if (startTimer) window.clearTimeout(startTimer);
+    watchdog = 0;
+    startTimer = 0;
+  };
   const finish = (blocked = false) => {
     if (finished) return;
     finished = true;
-    if (watchdog) window.clearTimeout(watchdog);
+    clearTimers();
     if (blocked) handlers.onBlocked?.();
     handlers.onEnd?.();
   };
   const stop = () => {
     stopped = true;
-    if (watchdog) window.clearTimeout(watchdog);
+    clearTimers();
     synth.cancel();
   };
   const makeUtterance = (chunk: string, attachVoice: boolean) => {
@@ -289,7 +307,7 @@ export function speakBrowserText(
     return utterance;
   };
   const speakChunk = (attachVoice = true) => {
-    if (stopped) return;
+    if (stopped || finished) return;
     if (index >= chunks.length) {
       finish(false);
       return;
@@ -297,18 +315,26 @@ export function speakBrowserText(
     resumeSpeechIfPaused(synth);
     synth.speak(makeUtterance(chunks[index], attachVoice));
   };
-  speakChunk(true);
+  const begin = (attachVoice: boolean) => {
+    if (stopped || finished) return;
+    speakChunk(attachVoice);
+  };
+  if (needsGap) startTimer = window.setTimeout(() => begin(true), SPEECH_CANCEL_GAP_MS);
+  else begin(true);
   watchdog = window.setTimeout(() => {
-    if (stopped || started || finished) return;
-    if (synth.speaking || synth.pending) return;
+    if (stopped || finished || !shouldForceSpeechRetry(started)) return;
     resumeSpeechIfPaused(synth);
-    if (chunks[0]) synth.speak(makeUtterance(chunks[0], false));
-    watchdog = window.setTimeout(() => {
+    try { synth.cancel(); } catch { /* ignore */ }
+    startTimer = window.setTimeout(() => {
       if (stopped || started || finished) return;
-      if (synth.speaking || synth.pending) return;
-      stop();
-      finish(true);
-    }, 1400);
+      index = 0;
+      if (chunks[0]) synth.speak(makeUtterance(chunks[0], false));
+      watchdog = window.setTimeout(() => {
+        if (stopped || started || finished) return;
+        stop();
+        finish(true);
+      }, 1400);
+    }, SPEECH_CANCEL_GAP_MS);
   }, 900);
   return stop;
 }

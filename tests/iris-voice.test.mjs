@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { orbTint, orbWaveEnergy, orbWaveY } from "../app/dashboard/iris-orb.ts";
-import { closeAudioContext, extractVoiceCommand, hasWakePhrase, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, pickSpeechVoice, resumeSpeechIfPaused, scoreSpeechVoice, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
+import { closeAudioContext, extractVoiceCommand, hasWakePhrase, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, pickSpeechVoice, resumeSpeechIfPaused, scoreSpeechVoice, shouldForceSpeechRetry, shouldRepeatThinkingPhrase, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
 import { fileNameForAudioType, mapMediaError, recordingMimeType, shouldFinishRecording } from "../app/dashboard/iris-record.ts";
 
 test("accepts Oye IRIS, Hola IRIS, and IRIS alone as wake phrases", () => {
@@ -93,4 +93,12 @@ test("splits spoken answers so the browser can play them out loud", () => {
   assert.ok(chunks.length > 1);
   assert.ok(chunks.every(chunk => chunk.length <= 80));
   assert.ok(scoreSpeechVoice({ name: "Google Español", lang: "es-MX" }, "es") > scoreSpeechVoice({ name: "English", lang: "en-US" }, "es"));
+});
+
+test("does not keep saying Un momento after the real answer is ready", () => {
+  assert.equal(shouldRepeatThinkingPhrase(true, null), true);
+  assert.equal(shouldRepeatThinkingPhrase(true, "IRIS ve 1 dispositivo"), false);
+  assert.equal(shouldRepeatThinkingPhrase(false, "IRIS ve 1 dispositivo"), false);
+  assert.equal(shouldForceSpeechRetry(false), true);
+  assert.equal(shouldForceSpeechRetry(true), false);
 });
