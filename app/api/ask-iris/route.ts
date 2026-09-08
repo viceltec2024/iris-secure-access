@@ -8,7 +8,7 @@ import { appSettings, devices, securityAlerts } from "../../../db/schema";
 import { parseWalletSessionValue } from "../../../lib/iris-chain";
 import { parseJsonRecord, reportedDeviceStatus } from "../../../lib/iris-device-view";
 import { liveWorkers } from "../../../lib/iris-live-soc";
-import { localIrisAnswer } from "../../../lib/iris-local-analyst";
+import { irisMindAnswer } from "../../../lib/iris-mind";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "../../../lib/iris-market";
 import { parsePurchaseDesk } from "../../../lib/iris-purchases";
 
@@ -95,11 +95,11 @@ export async function POST(request: Request) {
     }
   }
 
-  const localAnswer = localIrisAnswer(analystInput);
+  const mind = await irisMindAnswer(analystInput);
   const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
   if (!apiKey) {
-    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "iris-local-analyst" });
-    return Response.json({ answer: localAnswer, source: "local" });
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: mind.source === "world" ? "iris-world" : "iris-local-analyst" });
+    return Response.json({ answer: mind.answer, source: mind.source });
   }
 
   const safeContext = JSON.stringify({ ...analystInput, question: undefined }).slice(0, 24000);
@@ -121,7 +121,7 @@ When the user asks by voice for the system status, answer aloud naturally and co
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "gpt-5.6-sol" });
     return Response.json({ answer, source: "openai" });
   } catch {
-    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "iris-local-analyst", fallback: true });
-    return Response.json({ answer: localAnswer, source: "local" });
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: mind.source === "world" ? "iris-world" : "iris-local-analyst", fallback: true });
+    return Response.json({ answer: mind.answer, source: mind.source });
   }
 }
