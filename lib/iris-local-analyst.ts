@@ -98,8 +98,8 @@ export function localIrisAnswer(input: IrisAnalystInput) {
 
   if (/(bolsa|mercado|nasdaq|ticker|cotiz|acci[oó]n|jarvis|\bjar\b)/.test(question)) {
     return es
-      ? `${name}, IRIS JAR se conecta a la bolsa en vivo. En Bolsa en vivo ves la cinta, el gráfico y las lecturas que se actualizan solas cada 8 segundos. Pregúntame por NVDA, AAPL o Bitcoin y te explico el gráfico.`
-      : `${name}, IRIS JAR connects to the live market. In Live market you see the tape, the chart, and readings that refresh every 8 seconds. Ask me about NVDA, AAPL, or Bitcoin and I will teach the chart.`;
+      ? `${name}, IRIS se conecta a la bolsa en vivo. En Bolsa en vivo ves la cinta, el gráfico y las lecturas que se actualizan solas cada 8 segundos. Pregúntame por NVDA, AAPL o Bitcoin y te explico el gráfico.`
+      : `${name}, IRIS connects to the live market. In Live market you see the tape, the chart, and readings that refresh every 8 seconds. Ask me about NVDA, AAPL, or Bitcoin and I will teach the chart.`;
   }
 
   if (/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy)/.test(question)) {

@@ -262,11 +262,11 @@ export function briefingFromBoard(quotes: MarketQuote[], ideas: MarketIdea[]) {
   const vix = quotes.find(item => item.symbol === "^VIX");
   const best = ideas[0];
   const es = spy
-    ? `IRIS JAR en vivo. El S&P va ${signed(spy.changePercent)} y el Nasdaq ${nasdaq ? signed(nasdaq.changePercent) : "sin dato"}.${vix ? ` El VIX está en ${vix.price.toFixed(2)}.` : ""} ${best ? `Lectura en vivo más limpia: ${best.symbol} (${best.score}/100). ${best.reason}` : "Sincronizando lecturas en vivo."} Nada se compra hasta que tú apruebes.`
-    : "IRIS JAR se está conectando en vivo a la bolsa.";
+    ? `IRIS en vivo. El S&P va ${signed(spy.changePercent)} y el Nasdaq ${nasdaq ? signed(nasdaq.changePercent) : "sin dato"}.${vix ? ` El VIX está en ${vix.price.toFixed(2)}.` : ""} ${best ? `Lectura en vivo más limpia: ${best.symbol} (${best.score}/100). ${best.reason}` : "Sincronizando lecturas en vivo."} Nada se compra hasta que tú apruebes.`
+    : "IRIS se está conectando en vivo a la bolsa.";
   const en = spy
-    ? `IRIS JAR is live. The S&P is ${signed(spy.changePercent)} and Nasdaq is ${nasdaq ? signed(nasdaq.changePercent) : "unavailable"}.${vix ? ` VIX is ${vix.price.toFixed(2)}.` : ""} ${best ? `Live reading: ${best.symbol} (${best.score}/100). ${best.reason}` : "Syncing live readings."} Nothing is bought until you approve.`
-    : "IRIS JAR is connecting live to the market.";
+    ? `IRIS is live. The S&P is ${signed(spy.changePercent)} and Nasdaq is ${nasdaq ? signed(nasdaq.changePercent) : "unavailable"}.${vix ? ` VIX is ${vix.price.toFixed(2)}.` : ""} ${best ? `Live reading: ${best.symbol} (${best.score}/100). ${best.reason}` : "Syncing live readings."} Nothing is bought until you approve.`
+    : "IRIS is connecting live to the market.";
   return { es, en };
 }
 
@@ -424,14 +424,14 @@ export async function searchMarket(query: string) {
 export function marketAnswer(question: string, language: "es" | "en", board: MarketBoard, chart?: { quote: MarketQuote; analysis: MarketAnalysis } | null) {
   const es = language === "es";
   if (chart) {
-    return `${es ? "IRIS JAR en la bolsa." : "IRIS JAR on the market."} ${teachChart(chart.quote, chart.analysis, language)} ${ideaCopy(chart.quote, chart.analysis, language).reason}`;
+    return `${es ? "IRIS en la bolsa." : "IRIS on the market."} ${teachChart(chart.quote, chart.analysis, language)} ${ideaCopy(chart.quote, chart.analysis, language).reason}`;
   }
   const ticker = extractTicker(question);
   const quote = ticker ? board.quotes.find(item => item.symbol === ticker) : null;
   if (quote) {
     return es
-      ? `IRIS JAR conectada. ${quote.name} (${quote.symbol}) cotiza ${formatMoney(quote.price, quote.currency)} (${signed(quote.changePercent)}). ${board.briefing.es}`
-      : `IRIS JAR is connected. ${quote.name} (${quote.symbol}) is ${formatMoney(quote.price, quote.currency)} (${signed(quote.changePercent)}). ${board.briefing.en}`;
+      ? `IRIS conectada. ${quote.name} (${quote.symbol}) cotiza ${formatMoney(quote.price, quote.currency)} (${signed(quote.changePercent)}). ${board.briefing.es}`
+      : `IRIS is connected. ${quote.name} (${quote.symbol}) is ${formatMoney(quote.price, quote.currency)} (${signed(quote.changePercent)}). ${board.briefing.en}`;
   }
   return language === "es" ? board.briefing.es : board.briefing.en;
 }

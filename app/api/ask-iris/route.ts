@@ -71,8 +71,8 @@ export async function POST(request: Request) {
         const lead = tape.quotes.slice(0, 4).map(item => `${item.symbol} ${item.price} (${item.changePercent >= 0 ? "+" : ""}${item.changePercent.toFixed(2)}%)`).join(" · ");
         return Response.json({
           answer: language === "es"
-            ? `IRIS JAR en vivo. Cinta ahora: ${lead}. Si quieres una lectura de un ticker, dímelo.`
-            : `IRIS JAR is live. Tape now: ${lead}. Ask for a ticker if you want a reading.`,
+            ? `IRIS en vivo. Cinta ahora: ${lead}. Si quieres una lectura de un ticker, dímelo.`
+            : `IRIS is live. Tape now: ${lead}. Ask for a ticker if you want a reading.`,
           source: "live-market",
         });
       }
