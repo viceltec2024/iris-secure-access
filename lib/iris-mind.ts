@@ -1,5 +1,5 @@
-import { localIrisAnswer, type IrisAnalystInput } from "./iris-local-analyst.ts";
-import { isConversationStart, isGreetingQuestion, isIdentityQuestion, isSocQuestion, isStopRequest, tryEvaluateMath } from "./iris-query.ts";
+import { localIrisAnswer, explainIrisControl, type IrisAnalystInput } from "./iris-local-analyst.ts";
+import { isConceptExplainer, isConversationStart, isGreetingQuestion, isIdentityQuestion, isSocFollowUp, isSocQuestion, isStopRequest, tryEvaluateMath } from "./iris-query.ts";
 import { irisWorldAnswer } from "./iris-world-knowledge.ts";
 
 function firstName(value: string) {
@@ -42,12 +42,16 @@ export async function irisMindAnswer(input: IrisAnalystInput) {
   if (isGreetingQuestion(input.question) || isConversationStart(input.question)) {
     return { answer: conversationAnswer(input), source: "local" };
   }
-  if (isSocQuestion(input.question)) return { answer: localIrisAnswer(input), source: "local" };
+  if (isSocQuestion(input.question) || isSocFollowUp(input.question)) return { answer: localIrisAnswer(input), source: "local" };
   const math = tryEvaluateMath(input.question, input.language);
   if (math) return { answer: math, source: "local" };
+  if (isConceptExplainer(input.question)) {
+    const explained = explainIrisControl(input.question, input.language, input.userName);
+    if (explained) return { answer: explained, source: "local" };
+  }
   const world = await irisWorldAnswer(input.question, input.language, firstName(input.userName)).catch(() => "");
   if (world) return { answer: world, source: "world" };
-  if (/(estado|status|sistema|agentes|wallet|dispositivo|mac|firewall)/i.test(input.question)) {
+  if (!isConceptExplainer(input.question) && !/\bsistema (?:solar|nervioso|digestivo|inmun|m[eé]trico|electoral|pol[ií]tico)\b/i.test(input.question) && /(estado|status|sistema|agentes|wallet|dispositivo|mac|firewall)/i.test(input.question)) {
     return { answer: localIrisAnswer(input), source: "local" };
   }
   return { answer: generalFallback(input), source: "local" };

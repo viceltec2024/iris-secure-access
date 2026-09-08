@@ -104,7 +104,21 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     node.scrollTop = node.scrollHeight;
   }, [messages, loading, voiceStage]);
 
-  useEffect(() => () => { listenActiveRef.current = false; clearVoiceTimers(); stopSpeechKeepAlive(); recognitionRef.current?.abort(); stopLevelMonitorRef.current?.(); releaseMicrophone(streamRef.current); streamRef.current = null; voiceRequestRef.current?.abort(); audioRef.current?.pause(); if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current); }, []);
+  useEffect(() => () => {
+    listenActiveRef.current = false;
+    clearVoiceTimers();
+    stopSpeechKeepAlive();
+    recognitionRef.current?.abort();
+    bargeInRef.current?.abort();
+    bargeInRef.current = null;
+    askAbortRef.current?.abort();
+    stopLevelMonitorRef.current?.();
+    releaseMicrophone(streamRef.current);
+    streamRef.current = null;
+    voiceRequestRef.current?.abort();
+    audioRef.current?.pause();
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+  }, []);
 
   function detectedLanguage(text: string) {
     return language === "es" || /[áéíóúñ¿¡]/.test(text) ? "es" : "en";
@@ -360,7 +374,23 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       const response = await fetch("/api/ask-iris", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages.slice(-12), context: { language, section } }),
+        body: JSON.stringify({
+          messages: nextMessages.slice(-12),
+          context: {
+            language,
+            section,
+            incident: selectedIncident.id ? {
+              id: selectedIncident.id,
+              title: selectedIncident.title,
+              subject: selectedIncident.subject,
+              severity: selectedIncident.severity,
+              status: selectedIncident.status,
+              source: selectedIncident.source,
+              evidence: selectedIncident.evidence.slice(0, 8),
+              recommendation: selectedIncident.recommendation,
+            } : null,
+          },
+        }),
         signal: controller.signal,
       });
       const data = await response.json() as { answer?: string; error?: string };

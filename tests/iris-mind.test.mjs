@@ -46,6 +46,7 @@ test("Ask IRIS evaluates simple math locally", async () => {
 
 test("Ask IRIS extracts a world-knowledge topic", () => {
   assert.equal(extractSearchTopic("¿qué es la fotosíntesis?"), "fotosíntesis");
+  assert.equal(extractSearchTopic("para qué sirve el firewall"), "firewall");
   assert.match(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /plantas/i);
   assert.doesNotMatch(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /Eso es lo esencial/i);
 });
@@ -129,4 +130,85 @@ test("Ask IRIS treats stop and para as halt, not Wikipedia", async () => {
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("Ask IRIS routes alerts, system review, and follow-ups to the live stack", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ title: "Alerta tsunamis", extract: "Una alerta de tsunami." }), { status: 200 });
+  const live = {
+    ...base,
+    devices: [{
+      id: "mac-1",
+      name: "My Mac",
+      platform: "macOS",
+      status: "ONLINE",
+      risk: "MEDIUM",
+      lastSeenAt: new Date().toISOString(),
+      telemetry: { hostname: "MacBookAir", firewallEnabled: false, fileVaultEnabled: true },
+    }],
+    alerts: [{ deviceId: "mac-1", code: "FIREWALL_DISABLED", severity: "MEDIUM", status: "NEW" }],
+  };
+  try {
+    assert.equal(isSocQuestion("qué alertas hay"), true);
+    assert.equal(isSocQuestion("revisa el sistema"), true);
+    assert.equal(isSocQuestion("dime el estado"), true);
+    assert.equal(isSocQuestion("el sistema solar"), false);
+    assert.equal(isSocQuestion("para qué sirve el firewall"), false);
+    assert.equal(isSocQuestion("está el firewall"), true);
+    const alerts = await irisMindAnswer({ ...live, question: "qué alertas hay" });
+    assert.equal(alerts.source, "local");
+    assert.match(alerts.answer, /FIREWALL DISABLED|firewall/i);
+    assert.doesNotMatch(alerts.answer, /tsunami/i);
+    const review = await irisMindAnswer({ ...live, question: "revisa el sistema" });
+    assert.equal(review.source, "local");
+    assert.match(review.answer, /My Mac|MacBookAir|ONLINE/i);
+    const status = await irisMindAnswer({ ...live, question: "dime el estado" });
+    assert.equal(status.source, "local");
+    assert.match(status.answer, /dispositivo|ONLINE|My Mac/i);
+    const next = await irisMindAnswer({ ...live, question: "y ahora qué hago" });
+    assert.equal(next.source, "local");
+    assert.match(next.answer, /FIREWALL|firewall|aprueba/i);
+    assert.doesNotMatch(next.answer, /tsunami|telenovela|Ahora qu[eé] hago/i);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Ask IRIS explains firewall instead of dumping live Mac status", async () => {
+  const result = await irisMindAnswer({
+    ...base,
+    question: "para qué sirve el firewall",
+    devices: [{
+      id: "mac-1",
+      name: "My Mac",
+      platform: "macOS",
+      status: "ONLINE",
+      risk: "LOW",
+      lastSeenAt: new Date().toISOString(),
+      telemetry: { hostname: "MacBookAir", firewallEnabled: true },
+    }],
+  });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /barrera|conexiones/i);
+  assert.doesNotMatch(result.answer, /ONLINE/);
+});
+
+test("Ask IRIS uses the selected incident when asked about it", async () => {
+  const result = await irisMindAnswer({
+    ...base,
+    question: "este incidente",
+    incident: {
+      id: "IR-2001",
+      title: "Firewall apagado",
+      subject: "My Mac",
+      severity: "Medium",
+      status: "Open",
+      source: "agent",
+      evidence: ["firewallEnabled=false"],
+      recommendation: "Aprueba ENABLE FIREWALL.",
+    },
+  });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /IR-2001/);
+  assert.match(result.answer, /Aprueba ENABLE FIREWALL/);
 });

@@ -29,6 +29,14 @@ test("IRIS hears market questions and tickers", () => {
   assert.equal(isMarketQuestion("hola"), false);
   assert.equal(isMarketQuestion("cuál es el estado del sistema"), false);
   assert.equal(isMarketQuestion("dime el estado"), false);
+  assert.equal(isMarketQuestion("cómo está mi mac"), false);
+});
+
+test("Ask IRIS does not send every market-section question to the tape", () => {
+  const route = readFileSync(new URL("../app/api/ask-iris/route.ts", import.meta.url), "utf8");
+  assert.match(route, /if \(isMarketQuestion\(question\)\)/);
+  assert.doesNotMatch(route, /isMarketQuestion\(question\) \|\| preferences\.section === ["']market["']/);
+  assert.match(route, /incident/);
 });
 
 test("live readings mark a fresh Yahoo tick as live", () => {

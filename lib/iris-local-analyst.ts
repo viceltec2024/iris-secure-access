@@ -1,4 +1,5 @@
 import { irisAgentShellCommand } from "./iris-device-view.ts";
+import { isConceptExplainer, isSocFollowUp } from "./iris-query.ts";
 
 type DeviceContext = {
   id: string;
@@ -26,6 +27,17 @@ type AgentContext = {
   task?: string;
 };
 
+export type IrisIncidentContext = {
+  id: string;
+  title: string;
+  subject: string;
+  severity: string;
+  status: string;
+  source: string;
+  evidence: string[];
+  recommendation: string;
+};
+
 export type IrisAnalystInput = {
   language: "es" | "en";
   question: string;
@@ -36,6 +48,7 @@ export type IrisAnalystInput = {
   alerts: AlertContext[];
   agents: AgentContext[];
   wallet?: { address?: string; connected?: boolean };
+  incident?: IrisIncidentContext | null;
 };
 
 function firstName(value: string) {
@@ -63,6 +76,68 @@ function controlLine(device: DeviceContext, es: boolean) {
     parts.push(device.telemetry.fileVaultEnabled ? (es ? "FileVault encendido" : "FileVault on") : (es ? "FileVault apagado" : "FileVault off"));
   }
   return parts.join(es ? ", " : ", ");
+}
+
+export function explainIrisControl(question: string, language: "es" | "en", userName: string) {
+  const es = language === "es";
+  const name = firstName(userName);
+  const text = question.toLocaleLowerCase();
+  if (/\bfirewall\b/.test(text)) {
+    return es
+      ? `${name}, el firewall del Mac es la barrera que decide qué conexiones de red entran o salen. En IRIS, si el agente reporta FIREWALL DISABLED, el siguiente paso es aprobar esa alerta para que lo active. Si quieres el estado en vivo, pregúntame “está el firewall”.`
+      : `${name}, the Mac firewall is the barrier that decides which network connections go in or out. In IRIS, if the agent reports FIREWALL DISABLED, the next step is to approve that alert so it can turn it on. For live status, ask “is the firewall on”.`;
+  }
+  if (/\bfilevault\b/.test(text)) {
+    return es
+      ? `${name}, FileVault cifra el disco del Mac para que, si alguien lo pierde o lo abre, no pueda leer tus archivos. IRIS solo confirma si el agente lo vio encendido en el último reporte. Pregúntame “está FileVault” si quieres el dato en vivo.`
+      : `${name}, FileVault encrypts the Mac disk so a lost or opened machine cannot expose your files. IRIS only confirms it when the agent saw it on in the last report. Ask “is FileVault on” for the live reading.`;
+  }
+  if (/\bgatekeeper\b/.test(text)) {
+    return es
+      ? `${name}, Gatekeeper es el control de macOS que comprueba si una app está firmada antes de abrirla. IRIS no inventa malware: solo habla de lo que el agente verificó.`
+      : `${name}, Gatekeeper is the macOS control that checks whether an app is signed before it opens. IRIS does not invent malware: it only talks about what the agent verified.`;
+  }
+  return "";
+}
+
+function nextActionAnswer(input: IrisAnalystInput, es: boolean, name: string, mac: DeviceContext | undefined, online: DeviceContext[], pending: DeviceContext[], offline: DeviceContext[], activeAlerts: AlertContext[]) {
+  if (offline[0]) {
+    const command = irisAgentShellCommand(input.origin || "", true);
+    return es
+      ? `${name}, lo primero es reconectar ${hostLabel(offline[0])}: el agente no reportó en los últimos 5 minutos. En Dispositivos pulsa Reconectar, o pega esto en Terminal: ${command}`
+      : `${name}, first reconnect ${hostLabel(offline[0])}: the agent did not report in the last 5 minutes. In Devices tap Reconnect, or paste this in Terminal: ${command}`;
+  }
+  if (pending[0]) {
+    const command = irisAgentShellCommand(input.origin || "", false);
+    return es
+      ? `${name}, espera el primer reporte de ${hostLabel(pending[0])}. Instala el agente con: ${command}`
+      : `${name}, wait for the first report from ${hostLabel(pending[0])}. Install the agent with: ${command}`;
+  }
+  const firewall = activeAlerts.find(alert => /FIREWALL/i.test(alert.code));
+  if (firewall) {
+    return es
+      ? `${name}, el siguiente paso es aprobar la alerta ${firewall.code.replaceAll("_", " ")} para que el agente encienda el firewall en el próximo reporte.`
+      : `${name}, the next step is to approve the ${firewall.code.replaceAll("_", " ")} alert so the agent can turn the firewall on in the next report.`;
+  }
+  if (input.incident?.id) {
+    return es
+      ? `${name}, sigue con el incidente ${input.incident.id}: ${input.incident.recommendation || "revisa la evidencia y decide si apruebas el plan."}`
+      : `${name}, stay with incident ${input.incident.id}: ${input.incident.recommendation || "review the evidence and decide whether to approve the plan."}`;
+  }
+  if (activeAlerts[0]) {
+    const codes = activeAlerts.map(alert => alert.code.replaceAll("_", " ")).join(", ");
+    return es
+      ? `${name}, abre ${codes} en el tablero y aprueba solo lo que quieras que el agente ejecute.`
+      : `${name}, open ${codes} on the board and approve only what you want the agent to run.`;
+  }
+  if (online[0] || mac) {
+    return es
+      ? `${name}, no hay un paso urgente. ${mac ? describeDevice(mac, es) : ""} Si quieres, te reviso un control o una alerta concreta.`
+      : `${name}, there is no urgent next step. ${mac ? describeDevice(mac, es) : ""} Ask if you want a specific control or alert.`;
+  }
+  return es
+    ? `${name}, registra tu Mac e instala el agente. Sin ese reporte no hay un siguiente paso real.`
+    : `${name}, register your Mac and install the agent. Without that report there is no real next step.`;
 }
 
 function describeDevice(device: DeviceContext, es: boolean) {
@@ -123,6 +198,39 @@ export function localIrisAnswer(input: IrisAnalystInput) {
     return es
       ? `Hola, ${name}. Te escucho. Dime qué quieres saber: tu Mac, una alerta, o cualquier otra cosa.`
       : `Hi, ${name}. I'm listening. Tell me what you want: your Mac, an alert, or anything else.`;
+  }
+
+  if (isConceptExplainer(input.question)) {
+    const explained = explainIrisControl(input.question, input.language, input.userName);
+    if (explained) return explained;
+  }
+
+  if (isSocFollowUp(input.question) || /\b(?:qu[eé] hago|siguiente paso|qu[eé] recomiendas)\b/.test(question)) {
+    return nextActionAnswer(input, es, name, mac, online, pending, offline, activeAlerts);
+  }
+
+  if (/(este incidente|esta alerta|el incidente(?: seleccionado)?)/.test(question)) {
+    if (!input.incident?.id) {
+      return es
+        ? `${name}, no hay un incidente seleccionado en el tablero. Elige uno y pregúntame otra vez.`
+        : `${name}, there is no incident selected on the board. Pick one and ask me again.`;
+    }
+    const evidence = input.incident.evidence.filter(Boolean).slice(0, 4).join(es ? "; " : "; ");
+    return es
+      ? `${name}, el incidente abierto es ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severidad ${input.incident.severity}, estado ${input.incident.status}. ${evidence ? `Evidencia: ${evidence}. ` : ""}${input.incident.recommendation || "Revisa el plan en el tablero antes de aprobar."}`
+      : `${name}, the open incident is ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severity ${input.incident.severity}, status ${input.incident.status}. ${evidence ? `Evidence: ${evidence}. ` : ""}${input.incident.recommendation || "Review the plan on the board before you approve."}`;
+  }
+
+  if (/(alerta|alert|hallazgo)/.test(question) && !/(firewall|filevault|gatekeeper)/.test(question)) {
+    if (!activeAlerts.length) {
+      return es
+        ? `${name}, no hay alertas abiertas. ${mac ? describeDevice(mac, es) : statusBlock}`
+        : `${name}, there are no open alerts. ${mac ? describeDevice(mac, es) : statusBlock}`;
+    }
+    const codes = activeAlerts.map(alert => alert.code.replaceAll("_", " ")).join(", ");
+    return es
+      ? `${name}, alertas abiertas: ${codes}. Si quieres, te digo el siguiente paso o miramos el incidente seleccionado.`
+      : `${name}, open alerts: ${codes}. Ask if you want the next step or the selected incident.`;
   }
 
   if ((/(\bconect\b|\bconectar(me)?\b|\breconect)/.test(question) && !/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy|agentes|orquest|bolsa|mercado)/.test(question)) || /conectar\s+(el\s+)?(mac|dispositivo|iris)/.test(question)) {
@@ -187,7 +295,7 @@ export function localIrisAnswer(input: IrisAnalystInput) {
     return es ? `${name}, hallazgos abiertos: ${codes}. ${pathText}` : `${name}, open findings: ${codes}. ${pathText}`;
   }
 
-  if (/(dispositivo|device|mac|telemetr|c[oó]mo est[aá]|estado|online|offline|en l[ií]nea)/.test(question)) {
+  if (/(dispositivo|device|mac|telemetr|c[oó]mo est[aá]|estado|sistema|online|offline|en l[ií]nea)/.test(question)) {
     if (!input.devices.length) {
       return es
         ? `${name}, no hay dispositivos enrolados. En Dispositivos registra tu Mac e instala el agente para que reciba telemetría real.`

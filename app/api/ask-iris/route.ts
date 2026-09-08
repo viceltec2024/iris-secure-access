@@ -11,10 +11,27 @@ import { liveWorkers } from "../../../lib/iris-live-soc";
 import { irisMindAnswer } from "../../../lib/iris-mind";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "../../../lib/iris-market";
 import { parsePurchaseDesk } from "../../../lib/iris-purchases";
+import type { IrisIncidentContext } from "../../../lib/iris-local-analyst";
 
 export const dynamic = "force-dynamic";
 
 type IncomingMessage = { role: "user" | "assistant"; content: string };
+
+function parseIncident(value: unknown): IrisIncidentContext | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  if (typeof item.id !== "string" || !item.id.trim()) return null;
+  return {
+    id: item.id.slice(0, 80),
+    title: typeof item.title === "string" ? item.title.slice(0, 200) : "",
+    subject: typeof item.subject === "string" ? item.subject.slice(0, 200) : "",
+    severity: typeof item.severity === "string" ? item.severity.slice(0, 40) : "",
+    status: typeof item.status === "string" ? item.status.slice(0, 40) : "",
+    source: typeof item.source === "string" ? item.source.slice(0, 80) : "",
+    evidence: Array.isArray(item.evidence) ? item.evidence.filter((entry): entry is string => typeof entry === "string").slice(0, 8).map(entry => entry.slice(0, 240)) : [],
+    recommendation: typeof item.recommendation === "string" ? item.recommendation.slice(0, 400) : "",
+  };
+}
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
@@ -32,8 +49,9 @@ export async function POST(request: Request) {
   const messages = Array.isArray(body.messages) ? body.messages.slice(-12).filter(message => (message.role === "user" || message.role === "assistant") && typeof message.content === "string").map(message => ({ role: message.role, content: message.content.slice(0, 2400) })) : [];
   if (!messages.some(message => message.role === "user")) return Response.json({ error: "Write a question for IRIS." }, { status: 400 });
 
-  const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown } : {};
+  const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
   const language = preferences.language === "en" ? "en" : "es";
+  const incident = parseIncident(preferences.incident);
   const db = getDb();
   const deviceRows = user.role === "ADMIN" ? await db.select().from(devices).orderBy(desc(devices.createdAt)).limit(25) : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt)).limit(25);
   const alertRows = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(50) : [];
@@ -62,9 +80,10 @@ export async function POST(request: Request) {
     alerts: alertRows.map(alert => ({ deviceId: alert.deviceId, code: alert.code, severity: alert.severity, status: alert.status, evidence: parseJsonRecord(alert.evidence), lastSeenAt: alert.lastSeenAt })),
     agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),
     wallet: { connected: Boolean(wallet), address: wallet?.address || "" },
+    incident,
   };
 
-  if (isMarketQuestion(question) || preferences.section === "market") {
+  if (isMarketQuestion(question)) {
     try {
       const ticker = extractTicker(question);
       const [tape, chart] = await Promise.all([

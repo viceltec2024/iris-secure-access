@@ -92,3 +92,51 @@ test("Ask IRIS tells how to reconnect an offline Mac", () => {
   assert.match(answer, /https:\/\/iris\.example/);
   assert.match(answer, /firewall/i);
 });
+
+test("Ask IRIS lists live alerts instead of a generic dump", () => {
+  const answer = localIrisAnswer({
+    language: "es",
+    question: "qué alertas hay",
+    userName: "Ezephian",
+    section: "operations",
+    devices: [{
+      id: "mac-1",
+      name: "My Mac",
+      platform: "macOS",
+      status: "ONLINE",
+      risk: "MEDIUM",
+      lastSeenAt: new Date().toISOString(),
+      telemetry: { hostname: "Eze-Mac", firewallEnabled: false },
+    }],
+    alerts: [{ deviceId: "mac-1", code: "FIREWALL_DISABLED", severity: "MEDIUM", status: "NEW" }],
+    agents: [],
+    wallet: { connected: false, address: "" },
+  });
+  assert.match(answer, /FIREWALL DISABLED/);
+  assert.doesNotMatch(answer, /wallet|Base/i);
+});
+
+test("Ask IRIS answers the selected incident", () => {
+  const answer = localIrisAnswer({
+    language: "es",
+    question: "este incidente",
+    userName: "Ezephian",
+    section: "operations",
+    devices: [],
+    alerts: [],
+    agents: [],
+    wallet: { connected: false, address: "" },
+    incident: {
+      id: "IR-2001",
+      title: "Firewall apagado",
+      subject: "My Mac",
+      severity: "Medium",
+      status: "Open",
+      source: "agent",
+      evidence: ["firewallEnabled=false"],
+      recommendation: "Aprueba ENABLE FIREWALL.",
+    },
+  });
+  assert.match(answer, /IR-2001/);
+  assert.match(answer, /Aprueba ENABLE FIREWALL/);
+});
