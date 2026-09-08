@@ -43,7 +43,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selected, setSelected] = useState<Incident>(() => emptyLiveIncident("es"));
   const [filter, setFilter] = useState("All");
-  const [lastUpdate, setLastUpdate] = useState("just now");
+  const [lastUpdate, setLastUpdate] = useState("ahora mismo");
   const [section, setSection] = useState<Section>("operations");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [executionNote, setExecutionNote] = useState("");
@@ -148,7 +148,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const selectedView = localized(selected);
   const statusLabel = (status: Incident["status"]) => t(status === "Open" ? "statusOpen" : status === "Investigating" ? "statusInvestigating" : "statusContained");
   const controlMark = (value: boolean | undefined) => value === undefined ? "—" : value ? "✓" : "⚠";
-  const changeLanguage = (next: Language) => { setLanguage(next); localStorage.setItem("iris-language", next); };
+  const changeLanguage = (next: Language) => { setLanguage(next); localStorage.setItem("iris-language", next); setLastUpdate(next === "es" ? "ahora mismo" : "just now"); };
 
   async function decide(decision: "approve" | "reject") {
     if (!selected.id) { setApprovalOpen(false); return; }
