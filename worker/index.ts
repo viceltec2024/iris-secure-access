@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { isPublicAgentPath } from "../lib/iris-origin";
 
 interface Env {
   ASSETS: Fetcher;
@@ -40,8 +41,25 @@ const worker = {
       }, allowedWidths);
     }
 
-    return handler.fetch(request, env, ctx);
+    if (request.method === "OPTIONS" && isPublicAgentPath(url.pathname)) {
+      return new Response(null, { status: 204, headers: agentCorsHeaders() });
+    }
+
+    const response = await handler.fetch(request, env, ctx);
+    if (!isPublicAgentPath(url.pathname)) return response;
+    const headers = new Headers(response.headers);
+    for (const [key, value] of Object.entries(agentCorsHeaders())) headers.set(key, value);
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   },
 };
+
+function agentCorsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Iris-Timestamp, X-Iris-Nonce, X-Iris-Signature",
+    "Cache-Control": "no-store",
+  };
+}
 
 export default worker;

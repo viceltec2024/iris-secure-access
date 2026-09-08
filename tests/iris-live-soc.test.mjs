@@ -7,6 +7,7 @@ import {
   liveConnectionLine,
   liveIncidentsFromAlerts,
   liveIntelligence,
+  liveSocMetrics,
   liveWorkers,
   relativeTime,
 } from "../lib/iris-live-soc.ts";
@@ -78,6 +79,41 @@ test("intelligence and relative time stay on live alerts", () => {
   assert.equal(intel.techniques[0].label, "FIREWALL DISABLED");
   assert.equal(relativeTime(new Date(Date.now() - 20_000).toISOString(), "es"), "ahora mismo");
   assert.equal(relativeTime("2020-01-01T00:00:00.000Z", "en", Date.parse("2026-09-08T00:00:00.000Z")), "2020-01-01 00:00 UTC");
+});
+
+test("offline firewall telemetry does not count as a live protected Mac", () => {
+  const metrics = liveSocMetrics([
+    { status: "OFFLINE", provenance: "REAL", healthScore: 91, telemetry: { firewallEnabled: true } },
+    { status: "ONLINE", provenance: "UNVERIFIED", healthScore: 80, telemetry: { firewallEnabled: true } },
+    { status: "ONLINE", provenance: "REAL", healthScore: 70, telemetry: { firewallEnabled: false } },
+  ]);
+  assert.equal(metrics.onlineCount, 1);
+  assert.equal(metrics.firewallProtected, 0);
+  assert.equal(metrics.firewallKnown, 1);
+  assert.equal(metrics.averageHealth, 70);
+});
+
+test("open intelligence ignores alerts from OFFLINE devices", () => {
+  const intel = liveIntelligence(
+    [alert, { ...alert, id: "alert-online", deviceId: "mac-online", code: "FILEVAULT_DISABLED" }],
+    "es",
+    [
+      { id: "mac-1", name: "Studio", status: "OFFLINE" },
+      { id: "mac-online", name: "Mac", status: "ONLINE" },
+    ],
+  );
+  assert.equal(intel.open, 1);
+  assert.equal(intel.techniques[0].label, "FILEVAULT DISABLED");
+});
+
+test("offline alert copy is a last report, not current state", () => {
+  const incidents = liveIncidentsFromAlerts(
+    [alert],
+    [{ id: "mac-1", name: "Eze-Mac", status: "OFFLINE" }],
+    "es",
+  );
+  assert.match(incidents[0].summary, /Último reporte \(Mac OFFLINE\)/i);
+  assert.match(incidents[0].impact, /no afirma este hallazgo como estado actual/i);
 });
 
 test("approving a firewall finding queues a real Mac action", () => {

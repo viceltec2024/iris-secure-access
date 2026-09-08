@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { orbTint, orbWaveEnergy, orbWaveY } from "../app/dashboard/iris-orb.ts";
-import { closeAudioContext, extractVoiceCommand, hasWakePhrase, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, pickSpeechVoice, resumeSpeechIfPaused, scoreSpeechVoice, shouldForceSpeechRetry, shouldRepeatThinkingPhrase, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
+import { closeAudioContext, extractVoiceCommand, hasWakePhrase, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, pickSpeechVoice, resumeSpeechIfPaused, scoreSpeechVoice, shouldForceSpeechRetry, shouldRepeatThinkingPhrase, speechVolumeHint, splitSpeechChunks, spokenQuestionFromTranscript, voiceErrorMessage } from "../app/dashboard/iris-voice.ts";
 import { fileNameForAudioType, mapMediaError, recordingMimeType, shouldFinishRecording } from "../app/dashboard/iris-record.ts";
 
 test("accepts Oye IRIS, Hola IRIS, and IRIS alone as wake phrases", () => {
@@ -101,4 +101,11 @@ test("does not keep saying Un momento after the real answer is ready", () => {
   assert.equal(shouldRepeatThinkingPhrase(false, "IRIS ve 1 dispositivo"), false);
   assert.equal(shouldForceSpeechRetry(false), true);
   assert.equal(shouldForceSpeechRetry(true), false);
+});
+
+test("volume hints tell the user when voices are missing or audio is blocked", () => {
+  assert.match(speechVolumeHint("es", { blocked: true, voices: 4 }), /bloqueó el audio|volumen/i);
+  assert.match(speechVolumeHint("es", { voices: 0 }), /voces instaladas/i);
+  assert.match(speechVolumeHint("es", { speaking: true, voices: 2 }), /está hablando|volumen/i);
+  assert.match(speechVolumeHint("en", { voices: 2 }), /Tap the speaker/i);
 });

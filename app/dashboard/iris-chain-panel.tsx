@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- chain panel polls wallet, token, and ledger APIs */
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowSquareOut, ArrowUp, ChartLineUp, CheckCircle, Coins, Cube, Link, Plus, Pulse, QrCode, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
 import IrisTokenMark from "../iris-token-mark";
@@ -18,7 +19,6 @@ type ChainTransaction = { id: string; blockHeight: number | null; type: string; 
 type ChainState = { consensus: string; status: string; blocks: Block[]; transactions: ChainTransaction[]; pending: number };
 type WalletMovement = { hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number; status: string; method: string };
 type WalletLiveState = { balance: string; blockNumber: number; transactions: WalletMovement[]; updatedAt: string; explorerUrl: string };
-type TransactionReceipt = { contractAddress?: string | null; status?: string };
 type ActivitySample = { time: number; height: number; transactions: number; pending: number; latency: number };
 type TokenOperations = { contract: string; network: string; chainId: number; blockNumber: number; contractLive: boolean; totalSupply: string; walletBalance: string; holders: number; transfers: Array<{ hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number }>; verified: boolean; distribution: Array<{ label: string; percent: number; amount: string }>; readiness: { contract: boolean; metadata: boolean; treasuryMultisig: boolean; vesting: boolean; liquidity: boolean }; updatedAt: string };
 
@@ -38,14 +38,17 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [wallet, setWallet] = useState("");
   const [walletChain, setWalletChain] = useState("");
   const [walletBusy, setWalletBusy] = useState(false);
-  const [walletLive, setWalletLive] = useState<WalletLiveState | null>(null);
+  const [walletLiveRecord, setWalletLiveRecord] = useState<{ address: string; live: WalletLiveState } | null>(null);
+  const walletLive = walletLiveRecord?.address === wallet ? walletLiveRecord.live : null;
   const [showWalletQr, setShowWalletQr] = useState(false);
   const [walletQrImage, setWalletQrImage] = useState("");
   const [tokenAddress, setTokenAddress] = useState("");
   const [tokenDeployOpen, setTokenDeployOpen] = useState(false);
   const [tokenDeploying, setTokenDeploying] = useState(false);
   const [tokenStatus, setTokenStatus] = useState("");
-  const [tokenOperations, setTokenOperations] = useState<TokenOperations | null>(null);
+  const [tokenOperationsRecord, setTokenOperationsRecord] = useState<{ key: string; live: TokenOperations } | null>(null);
+  const tokenOperationsKey = `${tokenAddress}:${wallet}`;
+  const tokenOperations = tokenOperationsRecord?.key === tokenOperationsKey ? tokenOperationsRecord.live : null;
   const [activityHistory, setActivityHistory] = useState<ActivitySample[]>([]);
   const [notice, setNotice] = useState("");
   const [watchInput, setWatchInput] = useState("");
@@ -89,23 +92,23 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       });
     }).catch(() => undefined);
     return () => { unsubscribe(); window.clearInterval(chainTimer); };
-  }, []);
+  }, [es]);
   useEffect(() => {
-    if (!wallet) { setWalletLive(null); return; }
+    if (!wallet) return;
     let active = true;
-    const load = () => void fetch(`/api/base-wallet?address=${encodeURIComponent(wallet)}`).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setWalletLive(data as WalletLiveState); }).catch(() => undefined);
+    const load = () => void fetch(`/api/base-wallet?address=${encodeURIComponent(wallet)}`).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setWalletLiveRecord({ address: wallet, live: data as WalletLiveState }); }).catch(() => undefined);
     load();
     const timer = window.setInterval(load, 15_000);
     return () => { active = false; window.clearInterval(timer); };
   }, [wallet]);
   useEffect(() => {
-    if (!tokenAddress) { setTokenOperations(null); return; }
+    if (!tokenAddress) return;
     let active = true;
-    const load = () => void fetch(`/api/iris-token-operations${wallet ? `?wallet=${encodeURIComponent(wallet)}` : ""}`, { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setTokenOperations(data as TokenOperations); }).catch(() => undefined);
+    const load = () => void fetch(`/api/iris-token-operations${wallet ? `?wallet=${encodeURIComponent(wallet)}` : ""}`, { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setTokenOperationsRecord({ key: tokenOperationsKey, live: data as TokenOperations }); }).catch(() => undefined);
     load();
     const timer = window.setInterval(load, 15_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [tokenAddress, wallet]);
+  }, [tokenAddress, wallet, tokenOperationsKey]);
   async function submitTransaction() {
     if (!payload.trim()) return;
     setBusy(true); setNotice("");
@@ -281,7 +284,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <p>METAMASK CONNECT</p>
       <h2 id="wallet-qr-title">{es ? "Escanea para conectar" : "Scan to connect"}</h2>
       <span className="wallet-qr-help">{es ? "Abre MetaMask en tu teléfono, toca el escáner y apunta a este código." : "Open MetaMask on your phone, tap the scanner, and point it at this code."}</span>
-      <div className="wallet-qr-frame">{walletQrImage ? <img src={walletQrImage} alt={es ? "Código QR para conectar MetaMask" : "QR code to connect MetaMask"} /> : <div className="wallet-qr-loading"><Pulse /><strong>{es ? "Generando QR seguro…" : "Generating secure QR…"}</strong></div>}</div>
+      <div className="wallet-qr-frame">{walletQrImage ? <img src={walletQrImage} alt={es ? "Código QR para conectar MetaMask" : "QR code to connect MetaMask"} /> : <div className="wallet-qr-loading"><Pulse /><strong>{es ? "Generando QR seguro…" : "Generating secure QR…"}</strong></div>}</div> {/* eslint-disable-line @next/next/no-img-element -- QR is an inline data URL from qrcode */}
       <a className="wallet-mobile-deeplink" href={`https://metamask.app.link/dapp/${typeof window === "undefined" ? "iris-secure-access.taylor-667.chatgpt.site/dashboard" : `${window.location.host}/dashboard`}`}>{es ? "Abrir MetaMask en este teléfono" : "Open MetaMask on this phone"}</a>
       <div className="wallet-qr-status"><i />{es ? "Esperando confirmación en MetaMask" : "Waiting for confirmation in MetaMask"}</div>
       <small>{es ? "El código es temporal. IRIS nunca solicita tu frase secreta." : "The code is temporary. IRIS never asks for your secret phrase."}</small>

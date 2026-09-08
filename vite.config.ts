@@ -42,6 +42,16 @@ export default defineConfig(async ({ command, mode }) => {
 
   const localEnv = loadEnv(mode, process.cwd(), "");
   const allowLocalAuth = command === "serve" && localEnv.IRIS_DEV_SKIP_STEPUP === "1";
+  const publicOrigin = localEnv.IRIS_PUBLIC_ORIGIN || process.env.IRIS_PUBLIC_ORIGIN || "";
+  if (publicOrigin) process.env.IRIS_PUBLIC_ORIGIN = publicOrigin;
+  const define: Record<string, string> = {};
+  if (publicOrigin) define["process.env.IRIS_PUBLIC_ORIGIN"] = JSON.stringify(publicOrigin);
+  if (allowLocalAuth) {
+    define["process.env.IRIS_DEV_SKIP_STEPUP"] = JSON.stringify("1");
+    define["process.env.IRIS_DEV_EMAIL"] = JSON.stringify(localEnv.IRIS_DEV_EMAIL || "owner@iris.local");
+    define["process.env.IRIS_OWNER_EMAIL"] = JSON.stringify(localEnv.IRIS_OWNER_EMAIL || "owner@iris.local");
+    define["process.env.IRIS_DEV_WALLET"] = JSON.stringify(localEnv.IRIS_DEV_WALLET || "0x49BeAEc30C7431235c3262a2B1C0C5d8b5a0d3E1");
+  }
 
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
@@ -54,14 +64,7 @@ export default defineConfig(async ({ command, mode }) => {
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),
     },
-    define: allowLocalAuth
-      ? {
-          "process.env.IRIS_DEV_SKIP_STEPUP": JSON.stringify("1"),
-          "process.env.IRIS_DEV_EMAIL": JSON.stringify(localEnv.IRIS_DEV_EMAIL || "owner@iris.local"),
-          "process.env.IRIS_OWNER_EMAIL": JSON.stringify(localEnv.IRIS_OWNER_EMAIL || "owner@iris.local"),
-          "process.env.IRIS_DEV_WALLET": JSON.stringify(localEnv.IRIS_DEV_WALLET || "0x49BeAEc30C7431235c3262a2B1C0C5d8b5a0d3E1"),
-        }
-      : {},
+    define,
     plugins: [
       vinext(),
       sites(),

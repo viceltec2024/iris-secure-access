@@ -35,9 +35,11 @@ export default function IrisSystemOrb({
   const modeRef = useRef(mode);
   const hearingRef = useRef(hearing);
   const levelRef = useRef(level);
-  modeRef.current = mode;
-  hearingRef.current = hearing;
-  levelRef.current = level;
+  useEffect(() => {
+    modeRef.current = mode;
+    hearingRef.current = hearing;
+    levelRef.current = level;
+  }, [mode, hearing, level]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

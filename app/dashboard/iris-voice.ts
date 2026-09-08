@@ -11,7 +11,7 @@ export function normalizeVoiceTranscript(value: string) {
   return value.toLocaleLowerCase().replace(/[.,!?¿¡;:]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-export function extractVoiceCommand(transcript: string, language: "es" | "en") {
+export function extractVoiceCommand(transcript: string, _language: "es" | "en") {
   const trimmed = transcript.trim();
   if (!trimmed) return "";
   const normalized = normalizeVoiceTranscript(trimmed);
@@ -156,6 +156,14 @@ export function pickSpeechVoice(voices: Array<{ name: string; lang: string; loca
   const ranked = [...voices].sort((left, right) => scoreSpeechVoice(right, language) - scoreSpeechVoice(left, language));
   const best = ranked[0];
   return best && scoreSpeechVoice(best, language) >= 1 ? best : undefined;
+}
+
+export function speechVolumeHint(language: "es" | "en", state: { blocked?: boolean; voices?: number; speaking?: boolean }) {
+  const es = language === "es";
+  if (state.blocked) return es ? "El navegador bloqueó el audio. Pulsa el altavoz, permite el sonido de esta pestaña y sube el volumen del Mac." : "The browser blocked audio. Tap the speaker, allow sound for this tab, and turn the Mac volume up.";
+  if (!state.voices) return es ? "Este equipo no tiene voces instaladas. En el Mac: Ajustes → Accesibilidad → Contenido hablado. Luego pulsa el altavoz de IRIS." : "This computer has no voices installed. On the Mac: Settings → Accessibility → Spoken Content. Then tap the IRIS speaker.";
+  if (state.speaking) return es ? "IRIS te está hablando. Si no oyes nada, sube el volumen y comprueba que el Mac no está en silencio." : "IRIS is speaking. If you hear nothing, turn the volume up and check the Mac is not muted.";
+  return es ? "IRIS ya contestó por escrito. Pulsa el altavoz para oírla." : "IRIS already answered in writing. Tap the speaker to hear it.";
 }
 
 export function irisListenPhrase(language: "es" | "en") {

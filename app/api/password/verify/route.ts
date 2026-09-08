@@ -15,6 +15,6 @@ export async function POST(request: Request) {
   const verified = typeof body.password === "string" && await verifyPassword(user.email, body.password);
   await logAudit(user.email, "IRIS_PASSWORD_VERIFIED", "step_up_access", verified ? "SUCCESS" : "DENIED");
   if (!verified) return Response.json({ error: "Contraseña incorrecta." }, { status: 401 });
-  await issueBiometricSession(user.email);
+  await issueBiometricSession(user.email, request.url);
   return Response.json({ verified: true });
 }

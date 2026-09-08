@@ -1,9 +1,10 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- Ask IRIS loads browser voices after mount */
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChatCircleDots, CornersIn, CornersOut, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import { holdSpeechSession, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
+import { holdSpeechSession, irisListenPhrase, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, speechVolumeHint, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
 import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
 
@@ -25,9 +26,12 @@ const welcomeMessage = (language: Language, userName: string, section = "operati
 export default function AskIrisPanel({ section, selectedIncident, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {
   const [open, setOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(language, userName, section)]);
-  useEffect(() => {
+  const [welcomeKey, setWelcomeKey] = useState(`${language}:${userName}:${section}`);
+  const nextWelcomeKey = `${language}:${userName}:${section}`;
+  if (welcomeKey !== nextWelcomeKey) {
+    setWelcomeKey(nextWelcomeKey);
     setMessages(current => current.length === 1 && current[0].role === "assistant" ? [welcomeMessage(language, userName, section)] : current);
-  }, [language, section, userName]);
+  }
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
@@ -132,10 +136,10 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
           speakingRef.current = true;
           setSpeaking(true);
           setVoiceLoading(false);
-          setVoiceHint(language === "es" ? "IRIS te está hablando. Sube el volumen." : "IRIS is speaking. Turn the volume up.");
+          setVoiceHint(speechVolumeHint(language, { speaking: true, voices: Math.max(voices.length, window.speechSynthesis.getVoices().length) }));
         },
         onBlocked: () => {
-          setVoiceHint(language === "es" ? "El navegador bloqueó el audio. Pulsa el altavoz y sube el volumen del Mac." : "The browser blocked audio. Tap the speaker and turn the Mac volume up.");
+          setVoiceHint(speechVolumeHint(language, { blocked: true, voices: window.speechSynthesis.getVoices().length }));
         },
         onEnd: () => {
           if (seq !== speechSeqRef.current) {

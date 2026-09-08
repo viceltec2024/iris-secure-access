@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+/* eslint-disable react-hooks/set-state-in-effect -- SOC polls live security-state and market APIs */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import IrisBrandMark from "../iris-brand-mark";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
 import IrisMarketPanel from "./iris-market-panel";
 import { Language, text } from "./dashboard-i18n";
-import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveWorkers, relativeTime, type LiveIncident, type LivePurchase, type LiveWorker } from "../../lib/iris-live-soc";
+import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase, type LiveWorker } from "../../lib/iris-live-soc";
 import { IRIS_AGENT_SCRIPT_VERSION, irisAgentShellCommand } from "../../lib/iris-device-view";
+import { irisReconnectOrigin } from "../../lib/iris-origin";
 import { formatUtcClock } from "../../lib/iris-time";
 
 type Incident = LiveIncident;
@@ -43,6 +45,15 @@ function remediationGuide(code: string, language: Language) {
 export default function SecurityOperations({ user, auditCount, signOutPath }: { user: { email: string; displayName: string; role: string }, auditCount: number, signOutPath: string }) {
   const [language, setLanguage] = useState<Language>("es");
   const [pageOrigin, setPageOrigin] = useState("");
+  const [languageReady, setLanguageReady] = useState(false);
+  if (typeof window !== "undefined") {
+    if (!pageOrigin) setPageOrigin(window.location.origin);
+    if (!languageReady) {
+      setLanguageReady(true);
+      const stored = localStorage.getItem("iris-language");
+      if (stored === "en" || stored === "es") setLanguage(stored);
+    }
+  }
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selected, setSelected] = useState<Incident>(() => emptyLiveIncident("es"));
   const [filter, setFilter] = useState("All");
@@ -60,12 +71,13 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const [copiedDeviceId, setCopiedDeviceId] = useState<string | null>(null);
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [approvingApplication, setApprovingApplication] = useState<string | null>(null);
-  const [agentRuntime, setAgentRuntime] = useState<AgentRuntime[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [wallet, setWallet] = useState<WalletState>({ connected: false, address: "" });
   const [purchases, setPurchases] = useState<LivePurchase[]>([]);
   const [marketLive, setMarketLive] = useState(false);
   const [liveAuditCount, setLiveAuditCount] = useState(auditCount);
+  const [agentOrigin, setAgentOrigin] = useState("");
+  const loadSecurityStateRef = useRef<() => void>(() => undefined);
 
   const rebuildIncidents = useCallback((nextAlerts: SecurityAlert[], nextDevices: Device[], nextPurchases: LivePurchase[], saved: { incidentId: string; status: Incident["status"] }[], nextLanguage: Language) => {
     const next = buildLiveIncidents({
@@ -86,15 +98,6 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   const waitingForAgent = devices.some(device => device.status !== "ONLINE");
 
   useEffect(() => {
-    const stored = localStorage.getItem("iris-language");
-    if (stored === "en" || stored === "es") {
-      setLanguage(stored);
-      setLastUpdate(stored === "es" ? "ahora mismo" : "just now");
-    }
-    setPageOrigin(window.location.origin);
-  }, []);
-
-  useEffect(() => {
     const loadSecurityState = () => void fetch("/api/security-state").then(response => response.json()).then((data: {
       incidents?: { incidentId: string; status: Incident["status"] }[];
       devices?: Device[];
@@ -104,6 +107,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       audit?: AuditEvent[];
       purchases?: LivePurchase[];
       wallet?: WalletState;
+      agentOrigin?: string;
     }) => {
       const nextDevices = data.devices || [];
       const nextAlerts = data.alerts || [];
@@ -118,8 +122,11 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
       }
       if (data.purchases) setPurchases(nextPurchases);
       if (data.wallet) setWallet(data.wallet);
+      if (data.agentOrigin) setAgentOrigin(data.agentOrigin);
       rebuildIncidents(nextAlerts, nextDevices, nextPurchases, data.incidents || [], language);
+      setLastUpdate(language === "es" ? "ahora mismo" : "just now");
     }).catch(() => undefined);
+    loadSecurityStateRef.current = loadSecurityState;
     loadSecurityState();
     const refreshTimer = window.setInterval(loadSecurityState, waitingForAgent ? 8_000 : 30_000);
     return () => window.clearInterval(refreshTimer);
@@ -134,32 +141,30 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     return () => window.clearInterval(marketTimer);
   }, []);
 
-  useEffect(() => {
-    setAgentRuntime(liveWorkers({
-      devices,
-      walletConnected: wallet.connected,
-      walletAddress: wallet.address,
-      marketLive,
-      auditCount: liveAuditCount,
-      pendingPurchases: purchases.length,
-      language,
-      now: new Date().toISOString(),
-    }));
-  }, [devices, wallet, marketLive, liveAuditCount, purchases, language]);
+  const agentRuntime = useMemo(() => liveWorkers({
+    devices,
+    walletConnected: wallet.connected,
+    walletAddress: wallet.address,
+    marketLive,
+    auditCount: liveAuditCount,
+    pendingPurchases: purchases.length,
+    language,
+    now: new Date().toISOString(),
+  }), [devices, wallet, marketLive, liveAuditCount, purchases, language]);
 
   const visible = useMemo(() => incidents.filter(i => filter === "All" || i.severity === filter), [incidents, filter]);
   const open = incidents.filter(i => i.status !== "Contained").length;
-  const verifiedDevices = devices.filter(device => device.provenance === "REAL");
-  const onlineDevices = verifiedDevices.filter(device => device.status === "ONLINE");
-  const measuredHealth = verifiedDevices.map(device => device.healthScore).filter((score): score is number => score !== null);
-  const averageHealth = measuredHealth.length ? Math.round(measuredHealth.reduce((sum, score) => sum + score, 0) / measuredHealth.length) : null;
-  const firewallProtected = verifiedDevices.filter(device => device.telemetry?.firewallEnabled === true).length;
-  const activeAlerts = alerts.filter(alert => alert.status !== "RESOLVED");
-  const newAlerts = alerts.filter(alert => alert.status === "NEW");
+  const metrics = liveSocMetrics(devices);
+  const onlineDevices = devices.filter(device => device.status === "ONLINE" && device.provenance !== "UNVERIFIED");
+  const averageHealth = metrics.averageHealth;
+  const firewallProtected = metrics.firewallProtected;
+  const activeAlerts = alerts.filter(alert => alert.status !== "RESOLVED" && onlineDevices.some(device => device.id === alert.deviceId));
+  const newAlerts = alerts.filter(alert => alert.status === "NEW" && onlineDevices.some(device => device.id === alert.deviceId));
+  const reconnectOrigin = irisReconnectOrigin(pageOrigin, agentOrigin || process.env.IRIS_PUBLIC_ORIGIN || "");
   const t = (key: Parameters<typeof text>[0]) => text(key, language);
   const localized = (incident: Incident): Incident => incident;
-  const connectionLine = liveConnectionLine({ online: onlineDevices.length, devices: devices.length, openAlerts: activeAlerts.length, wallet: wallet.connected, language });
-  const intel = liveIntelligence(alerts, language);
+  const connectionLine = liveConnectionLine({ online: metrics.onlineCount, devices: metrics.deviceCount, openAlerts: activeAlerts.length, wallet: wallet.connected, language });
+  const intel = liveIntelligence(alerts, language, devices);
   const selectedView = localized(selected);
   const statusLabel = (status: Incident["status"]) => t(status === "Open" ? "statusOpen" : status === "Investigating" ? "statusInvestigating" : "statusContained");
   const controlMark = (value: boolean | undefined) => value === undefined ? "—" : value ? "✓" : "⚠";
@@ -191,7 +196,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
   }
 
   async function copyReconnectCommand(device: Device) {
-    const command = irisAgentShellCommand(window.location.origin, device.status !== "PENDING");
+    const command = irisAgentShellCommand(reconnectOrigin, device.status !== "PENDING");
     try {
       await navigator.clipboard.writeText(command);
       setCopiedDeviceId(device.id);
@@ -292,12 +297,12 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
     </aside>
 
     <section className="soc-main">
-      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", market: language === "es" ? "Bolsa en vivo" : "Live market", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => setLastUpdate(t("now"))}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
+      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", market: language === "es" ? "Bolsa en vivo" : "Live market", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => { loadSecurityStateRef.current(); setLastUpdate(t("now")); }}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
 
       {section === "operations" && <><section className="metric-row">
         <article><span>{language === "es" ? "Salud real" : "Real health"}</span><strong>{averageHealth ?? "—"}{averageHealth !== null && <small>/100</small>}</strong><em className={averageHealth === null ? "" : "healthy"}>{averageHealth === null ? (language === "es" ? "NO VERIFICADO" : "UNVERIFIED") : "REAL"}</em></article>
-        <article><span>{language === "es" ? "Agentes conectados" : "Connected agents"}</span><strong>{onlineDevices.length}<small>/{devices.length}</small></strong><em>{language === "es" ? "telemetría reciente" : "recent telemetry"}</em></article>
-        <article><span>{language === "es" ? "Firewall activo" : "Firewall enabled"}</span><strong>{firewallProtected}<small>/{verifiedDevices.length || "—"}</small></strong><em className={firewallProtected === verifiedDevices.length && verifiedDevices.length ? "healthy" : ""}>REAL</em></article>
+        <article><span>{language === "es" ? "Agentes conectados" : "Connected agents"}</span><strong>{metrics.onlineCount}<small>/{metrics.deviceCount}</small></strong><em>{language === "es" ? "telemetría reciente" : "recent telemetry"}</em></article>
+        <article><span>{language === "es" ? "Firewall activo" : "Firewall enabled"}</span><strong>{firewallProtected}<small>/{metrics.firewallKnown || "—"}</small></strong><em className={firewallProtected === metrics.firewallKnown && metrics.firewallKnown ? "healthy" : ""}>REAL</em></article>
         <article><span>{language === "es" ? "Alertas reales activas" : "Active real alerts"}</span><strong>{activeAlerts.length}</strong><em className={activeAlerts.length ? "" : "healthy"}>REAL · {newAlerts.length} {language === "es" ? "nuevas" : "new"}</em></article>
       </section>
 
@@ -396,7 +401,7 @@ export default function SecurityOperations({ user, auditCount, signOutPath }: { 
           {!!device.telemetry?.unsignedPersistenceItems?.length && <div className="security-findings"><strong>{language === "es" ? "PROGRAMAS DE INICIO SIN FIRMA" : "UNSIGNED STARTUP PROGRAMS"}</strong>{device.telemetry.unsignedPersistenceItems.map(item => <span key={item}><Warning weight="fill" />{item}</span>)}</div>}
           {!!device.telemetry?.trustedApplications?.length && <div className="trusted-apps"><strong>{language === "es" ? "APLICACIONES APROBADAS" : "APPROVED APPLICATIONS"}</strong><span><CheckCircle weight="fill" />{device.telemetry.trustedApplications.join(", ")}</span></div>}
           <div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div>
-          {device.status !== "ONLINE" && pageOrigin && <div className="reconnect-box"><p>{device.status === "OFFLINE" ? (language === "es" ? "El agente está inscrito, pero no reporta. Pega este comando en Terminal en tu Mac para reconectar a esta IRIS:" : "The agent is enrolled, but it is not reporting. Paste this command in Terminal on your Mac to reconnect to this IRIS:") : (language === "es" ? "Pega este comando en Terminal en tu Mac e introduce el código de inscripción:" : "Paste this command in Terminal on your Mac and enter the enrollment code:")}</p><code className="reconnect-command">{irisAgentShellCommand(pageOrigin, device.status !== "PENDING")}</code></div>}
+          {device.status !== "ONLINE" && pageOrigin && <div className="reconnect-box"><p>{device.status === "OFFLINE" ? (language === "es" ? "El agente está inscrito, pero no reporta. Pega este comando en Terminal en tu Mac para reconectar a esta IRIS:" : "The agent is enrolled, but it is not reporting. Paste this command in Terminal on your Mac to reconnect to this IRIS:") : (language === "es" ? "Pega este comando en Terminal en tu Mac e introduce el código de inscripción:" : "Paste this command in Terminal on your Mac and enter the enrollment code:")}</p><code className="reconnect-command">{irisAgentShellCommand(reconnectOrigin, device.status !== "PENDING")}</code></div>}
           <div className="device-actions">{device.status !== "ONLINE" && <button type="button" className="reconnect-device" onClick={() => void copyReconnectCommand(device)}>{copiedDeviceId === device.id ? <CheckCircle weight="fill" /> : device.status === "OFFLINE" ? <ArrowClockwise weight="bold" /> : <CopySimple weight="bold" />}{copiedDeviceId === device.id ? (language === "es" ? "Comando copiado" : "Command copied") : device.status === "OFFLINE" ? (language === "es" ? "Reconectar Mac" : "Reconnect Mac") : (language === "es" ? "Copiar instalación" : "Copy install command")}</button>}<a href={`/iris-agent-macos.sh?v=${IRIS_AGENT_SCRIPT_VERSION}`} download>{language === "es" ? "Descargar agente cifrado" : "Download encrypted agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div>
           <p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Protección real activa. El agente revisa cada 2 minutos." : "Real protection active. The agent checks every 2 minutes.") : device.status === "OFFLINE" ? (language === "es" ? "Alerta: el agente dejó de reportar hace más de 5 minutos. IRIS no puede encenderlo desde el navegador." : "Alert: the agent stopped reporting more than 5 minutes ago. IRIS cannot start it from the browser.") : (language === "es" ? "Instala el agente nuevo para comenzar la protección real." : "Install the new agent to start real protection.")}</p>
         </article>)}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra tu Mac e instala el agente para comenzar la protección real." : "Register your Mac and install the agent to begin real protection."}</p></div>}</div>

@@ -44,6 +44,7 @@ test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
   assert.match(voice, /shouldForceSpeechRetry/);
   assert.match(panel, /speechSeqRef/);
   assert.doesNotMatch(panel, /queuedSpeechRef\.current = text/);
+  assert.match(panel, /speechVolumeHint\(/);
   assert.match(panel, /onPointerDown=\{event => connectVoice\(event\)\}/);
   assert.match(panel, /onSpeakerClick/);
   assert.match(panel, /Conectar la voz de IRIS/);
@@ -53,7 +54,10 @@ test("offline Macs show a reconnect command for this IRIS instance", () => {
   const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
   assert.match(sidebar, /Reconectar Mac/);
   assert.match(sidebar, /irisAgentShellCommand/);
+  assert.match(sidebar, /irisReconnectOrigin/);
+  assert.match(sidebar, /liveSocMetrics/);
   assert.match(sidebar, /IRIS_AGENT_SCRIPT_VERSION/);
+  assert.doesNotMatch(sidebar, /irisAgentShellCommand\(pageOrigin/);
 });
 
 test("dashboard language and reconnect URL wait until after hydration", () => {
@@ -98,4 +102,12 @@ test("local dashboard access signs in on this machine, not ChatGPT", () => {
   assert.match(signIn, /text\/html; charset=utf-8/);
   assert.match(vite, /allowedHosts:\s*true/);
   assert.match(vite, /host:\s*"::"/);
+  assert.match(vite, /IRIS_PUBLIC_ORIGIN/);
+});
+
+test("dashboard fonts come from Inter, not vinext Geist filesystem URLs", () => {
+  const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.doesNotMatch(layout, /next\/font|GeistSans|GeistMono|geist/);
+  assert.match(css, /fonts\.googleapis\.com\/css2\?family=Inter/);
 });

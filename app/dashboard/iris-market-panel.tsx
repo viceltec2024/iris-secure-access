@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- market panel polls Yahoo tape, board, and charts */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MagnifyingGlass, Pulse, Wallet } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
@@ -120,9 +121,11 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
     for (const quote of tape?.quotes || []) {
       const prior = previous.current[quote.symbol];
       if (prior != null && prior !== quote.price) next[quote.symbol] = quote.price > prior ? "flash-up" : "flash-down";
-      previous.current[quote.symbol] = quote.price;
     }
     return next;
+  }, [tape, tick]);
+  useEffect(() => {
+    for (const quote of tape?.quotes || []) previous.current[quote.symbol] = quote.price;
   }, [tape, tick]);
 
   const trendLabel = chart?.analysis.trend === "up" ? (es ? "Alcista" : "Bullish") : chart?.analysis.trend === "down" ? (es ? "Bajista" : "Bearish") : es ? "Lateral" : "Sideways";

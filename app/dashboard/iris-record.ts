@@ -61,7 +61,7 @@ export function recordSpokenUtterance(
   const chunks: Blob[] = [];
   let speechMs = 0;
   let silentMs = 0;
-  let started = performance.now();
+  const started = performance.now();
   let last = started;
   let timer = 0;
 

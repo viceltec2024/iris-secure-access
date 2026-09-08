@@ -172,6 +172,17 @@ async function syncAlerts(device: typeof devices.$inferSelect, telemetry: Teleme
   }
 }
 
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Iris-Timestamp, X-Iris-Nonce, X-Iris-Signature",
+    },
+  });
+}
+
 export async function POST(request: Request) {
   const declaredLength = Number(request.headers.get("content-length") || 0);
   if (declaredLength > MAX_BODY_BYTES) return Response.json({ error: "Request too large" }, { status: 413 });

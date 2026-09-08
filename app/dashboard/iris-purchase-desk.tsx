@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- purchase desk polls scheduled buys */
 import { useEffect, useState } from "react";
 import { ArrowSquareOut, CheckCircle, CurrencyBtc, CurrencyEth, Pulse, ShieldCheck, Warning, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
@@ -15,8 +16,10 @@ function sourceLabel(source: PurchaseSource, es: boolean) {
 export default function IrisPurchaseDesk({ language, wallet, walletMode }: { language: Language; wallet: string; walletMode: WalletProvider }) {
   const es = language === "es";
   const [desk, setDesk] = useState<PurchaseDeskState>(emptyDesk);
-  const [asset, setAsset] = useState<PurchaseAsset>("ETH");
-  const [source, setSource] = useState<PurchaseSource>(walletMode === "robinhood" ? "robinhood" : "metamask");
+  const [assetChoice, setAssetChoice] = useState<PurchaseAsset>("ETH");
+  const [sourceChoice, setSourceChoice] = useState<PurchaseSource | null>(null);
+  const source: PurchaseSource = walletMode === "robinhood" || walletMode === "metamask" ? walletMode : (sourceChoice || "metamask");
+  const asset: PurchaseAsset = (PURCHASE_ASSETS[assetChoice].sources as readonly string[]).includes(source) ? assetChoice : "ETH";
   const [cadence, setCadence] = useState<PurchaseCadence>("once");
   const [amount, setAmount] = useState("25");
   const [busy, setBusy] = useState(false);
@@ -33,13 +36,6 @@ export default function IrisPurchaseDesk({ language, wallet, walletMode }: { lan
     const timer = window.setInterval(() => void refresh(), 20_000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (walletMode === "robinhood" || walletMode === "metamask") setSource(walletMode);
-  }, [walletMode]);
-  useEffect(() => {
-    if (!(PURCHASE_ASSETS[asset].sources as readonly string[]).includes(source)) setAsset("ETH");
-  }, [asset, source]);
 
   async function post(body: Record<string, unknown>) {
     setBusy(true); setNotice("");
@@ -118,13 +114,13 @@ export default function IrisPurchaseDesk({ language, wallet, walletMode }: { lan
 
     <form className="purchase-composer" onSubmit={event => { event.preventDefault(); void createPlan(); }}>
       <label><span>{es ? "Origen" : "Source"}</span>
-        <select value={source} onChange={event => setSource(event.target.value as PurchaseSource)}>
+        <select value={source} onChange={event => setSourceChoice(event.target.value as PurchaseSource)}>
           <option value="metamask">MetaMask</option>
           <option value="robinhood">Robinhood</option>
         </select>
       </label>
       <label><span>{es ? "Activo" : "Asset"}</span>
-        <select value={asset} onChange={event => setAsset(event.target.value as PurchaseAsset)}>
+        <select value={asset} onChange={event => setAssetChoice(event.target.value as PurchaseAsset)}>
           {Object.values(PURCHASE_ASSETS).filter(item => (item.sources as readonly string[]).includes(source)).map(item => <option key={item.symbol} value={item.symbol}>{item.symbol} · {item.name}</option>)}
         </select>
       </label>

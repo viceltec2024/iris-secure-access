@@ -161,11 +161,17 @@ export function liveIncidentsFromAlerts(alerts: LiveAlert[], devices: LiveDevice
       status: STATUS[alert.status],
       time: alert.lastSeenAt,
       source: es ? "Agente IRIS" : "IRIS agent",
-      summary: es
-        ? `El agente reportó ${title.toLowerCase()} en ${host}. Esto viene de telemetría verificada, no de un escenario de entrenamiento.`
-        : `The agent reported ${title.toLowerCase()} on ${host}. This comes from verified telemetry, not a training scenario.`,
+      summary: device?.status === "OFFLINE"
+        ? (es
+          ? `Último reporte (Mac OFFLINE): ${title.toLowerCase()} en ${host}. No es el estado actual hasta que el agente vuelva a reportar.`
+          : `Last report (Mac OFFLINE): ${title.toLowerCase()} on ${host}. This is not current until the agent reports again.`)
+        : (es
+          ? `El agente reportó ${title.toLowerCase()} en ${host}. Esto viene de telemetría verificada, no de un escenario de entrenamiento.`
+          : `The agent reported ${title.toLowerCase()} on ${host}. This comes from verified telemetry, not a training scenario.`),
       cause: es ? "Un control o cambio real en el equipo protegido." : "A real control or change on the protected device.",
-      impact: es ? "El riesgo permanece mientras el agente siga viendo el mismo hallazgo." : "The risk remains while the agent still sees the same finding.",
+      impact: device?.status === "OFFLINE"
+        ? (es ? "Sin reporte fresco IRIS no afirma este hallazgo como estado actual." : "Without a fresh report IRIS does not treat this finding as current.")
+        : (es ? "El riesgo permanece mientras el agente siga viendo el mismo hallazgo." : "The risk remains while the agent still sees the same finding."),
       confidence: 92,
       evidence: extras.length ? extras : [es ? "Reporte del agente autorizado" : "Authorized agent report"],
       actions: es
@@ -257,6 +263,24 @@ export function buildLiveIncidents(input: {
   return applySavedStatuses(incidents, input.saved || []);
 }
 
+export function liveSocMetrics(devices: Array<{
+  status?: string;
+  provenance?: string;
+  healthScore?: number | null;
+  telemetry?: { firewallEnabled?: boolean } | null;
+}>) {
+  const online = devices.filter(device => device.status === "ONLINE" && device.provenance !== "UNVERIFIED");
+  const healthScores = online.map(device => device.healthScore).filter((score): score is number => typeof score === "number");
+  const firewallKnown = online.filter(device => typeof device.telemetry?.firewallEnabled === "boolean");
+  return {
+    onlineCount: online.length,
+    deviceCount: devices.length,
+    averageHealth: healthScores.length ? Math.round(healthScores.reduce((sum, score) => sum + score, 0) / healthScores.length) : null,
+    firewallProtected: firewallKnown.filter(device => device.telemetry?.firewallEnabled === true).length,
+    firewallKnown: firewallKnown.length,
+  };
+}
+
 export function liveConnectionLine(input: {
   online: number;
   devices: number;
@@ -277,8 +301,10 @@ export function liveConnectionLine(input: {
   return wallet;
 }
 
-export function liveIntelligence(alerts: LiveAlert[], language: "es" | "en") {
-  const open = alerts.filter(item => item.status !== "RESOLVED");
+export function liveIntelligence(alerts: LiveAlert[], language: "es" | "en", devices: LiveDevice[] = []) {
+  const onlineIds = new Set(devices.filter(device => device.status === "ONLINE").map(device => device.id));
+  const current = devices.length ? alerts.filter(alert => alert.status === "RESOLVED" || onlineIds.has(alert.deviceId)) : alerts;
+  const open = current.filter(item => item.status !== "RESOLVED");
   const resolved = alerts.filter(item => item.status === "RESOLVED").length;
   const critical = open.filter(item => item.severity === "CRITICAL" || item.severity === "HIGH").length;
   const counts = new Map<string, number>();

@@ -5,6 +5,7 @@ import { agentRequestNonces, appSettings, devices, incidentStates, remediationPl
 import { queueAgentCommands } from "../../../lib/iris-agent-commands";
 import { type AgentTelemetry, deviceView } from "../../../lib/iris-device-view";
 import { commandsForAlert } from "../../../lib/iris-live-soc";
+import { irisReconnectOrigin } from "../../../lib/iris-origin";
 import { listRecentAudit, logAudit, provisionIrisUser } from "../../../lib/authz";
 import { parseWalletSessionValue } from "../../../lib/iris-chain";
 import { approveProposal, parsePurchaseDesk, rejectProposal } from "../../../lib/iris-purchases";
@@ -18,7 +19,7 @@ async function currentUser() {
   return provisionIrisUser(identity);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
   const db = getDb();
@@ -37,6 +38,7 @@ export async function GET() {
   const purchases = parsePurchaseDesk(deskRow?.value || "").proposals.filter(item => item.status === "awaiting_approval");
   return Response.json({
     live: true,
+    agentOrigin: irisReconnectOrigin(new URL(request.url).origin, process.env.IRIS_PUBLIC_ORIGIN || ""),
     incidents,
     actions,
     alerts,
