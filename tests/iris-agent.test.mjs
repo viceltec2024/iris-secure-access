@@ -8,6 +8,7 @@ test("IRIS agent tools are read-only security lookups", () => {
   assert.match(source, /list_active_alerts/);
   assert.match(source, /get_device_details/);
   assert.match(source, /reportedDeviceStatus/);
+  assert.doesNotMatch(source, /OPENAI_API_KEY\s*[:=]\s*['\"]sk-/);
   assert.doesNotMatch(source, /child_process|execSync|privateKey/);
   assert.doesNotMatch(source, /name: "execute_/);
 });

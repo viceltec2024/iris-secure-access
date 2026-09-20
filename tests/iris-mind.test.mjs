@@ -154,6 +154,8 @@ test("Ask IRIS routes alerts, system review, and follow-ups to the live stack", 
     assert.equal(isSocQuestion("qué alertas hay"), true);
     assert.equal(isSocQuestion("revisa el sistema"), true);
     assert.equal(isSocQuestion("dime el estado"), true);
+    assert.equal(isSocQuestion("Usa la herramienta get_security_overview y dime el estado de seguridad de IRIS."), true);
+    assert.equal(isSocQuestion("Revisa el overview de seguridad ahora."), true);
     assert.equal(isSocQuestion("el sistema solar"), false);
     assert.equal(isSocQuestion("para qué sirve el firewall"), false);
     assert.equal(isSocQuestion("está el firewall"), true);

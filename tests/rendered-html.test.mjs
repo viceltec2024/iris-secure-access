@@ -1,5 +1,9 @@
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
+
+register(new URL("../scripts/cloudflare-validation-loader.mjs", import.meta.url), pathToFileURL("./"));
 
 const developmentPreviewMeta =
   /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
