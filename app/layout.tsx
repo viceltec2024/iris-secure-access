@@ -1,16 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "IRIS Enterprise — Secure Access",
@@ -30,10 +19,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="es">
+      <body className="antialiased">
+        <script dangerouslySetInnerHTML={{ __html: `(function(){function hide(){document.querySelectorAll("vite-error-overlay").forEach(function(n){n.remove();});}window.addEventListener("unhandledrejection",function(e){var m=String(e.reason&&e.reason.message||e.reason||"");if(m.indexOf("send was called before connect")!==-1){e.preventDefault();hide();}});hide();})();` }} />
         {children}
       </body>
     </html>

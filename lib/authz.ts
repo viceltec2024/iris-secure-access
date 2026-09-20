@@ -23,6 +23,12 @@ export async function provisionIrisUser(identity: ChatGPTUser) {
   return created;
 }
 
+export async function findIrisUser(identity: ChatGPTUser) {
+  const normalizedEmail = identity.email.trim().toLowerCase();
+  const [existing] = await getDb().select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
+  return existing || null;
+}
+
 export async function logAudit(actorEmail: string, action: string, resource: string, outcome: "SUCCESS" | "DENIED", metadata: Record<string, unknown> = {}) {
   const db = getDb();
   const normalizedMetadata = JSON.stringify(metadata);

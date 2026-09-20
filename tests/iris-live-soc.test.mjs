@@ -1,0 +1,124 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  applySavedStatuses,
+  buildLiveIncidents,
+  emptyLiveIncident,
+  liveConnectionLine,
+  liveIncidentsFromAlerts,
+  liveIntelligence,
+  liveSocMetrics,
+  liveWorkers,
+  relativeTime,
+} from "../lib/iris-live-soc.ts";
+import { commandsForAlert } from "../lib/iris-live-soc.ts";
+
+const alert = {
+  id: "alert-1",
+  deviceId: "mac-1",
+  code: "FIREWALL_DISABLED",
+  severity: "MEDIUM",
+  status: "NEW",
+  evidence: JSON.stringify({ hostname: "Eze-Mac", applications: [] }),
+  lastSeenAt: "2026-09-08T01:00:00.000Z",
+};
+
+test("live incidents come from agent alerts, not training IDs", () => {
+  const incidents = liveIncidentsFromAlerts([alert], [{ id: "mac-1", name: "Mac de Eze" }], "es");
+  assert.equal(incidents.length, 1);
+  assert.equal(incidents[0].id, "alert-1");
+  assert.doesNotMatch(incidents[0].id, /^IR-10/);
+  assert.match(incidents[0].title, /FIREWALL/i);
+  assert.match(incidents[0].summary, /telemetr[ií]a verificada/i);
+  assert.equal(incidents[0].kind, "alert");
+});
+
+test("offline Mac and pending purchases become real approval items", () => {
+  const incidents = buildLiveIncidents({
+    alerts: [],
+    devices: [{ id: "mac-2", name: "Studio", status: "OFFLINE", lastSeenAt: "2026-09-08T00:00:00.000Z" }],
+    purchases: [{ id: "buy-1", asset: "ETH", amountUsd: 25, source: "robinhood", checkoutUrl: "https://robinhood.com/crypto/ETH", status: "awaiting_approval" }],
+    language: "es",
+  });
+  assert.equal(incidents.some(item => item.id === "device:mac-2"), true);
+  assert.equal(incidents.some(item => item.id === "purchase:buy-1"), true);
+  assert.equal(incidents.find(item => item.id === "purchase:buy-1")?.checkoutUrl, "https://robinhood.com/crypto/ETH");
+});
+
+test("saved statuses overlay live incidents without inventing demo rows", () => {
+  const incidents = applySavedStatuses(
+    [{ ...emptyLiveIncident("en"), id: "device:mac-2", status: "Open", kind: "device" }],
+    [{ incidentId: "device:mac-2", status: "Contained" }],
+  );
+  assert.equal(incidents[0].status, "Contained");
+  assert.equal(emptyLiveIncident("es").kind, "empty");
+});
+
+test("connection line and workers reflect live Mac, wallet, and market", () => {
+  assert.match(liveConnectionLine({ online: 1, devices: 1, openAlerts: 2, wallet: true, language: "es" }), /agente.*en vivo/i);
+  assert.match(liveConnectionLine({ online: 0, devices: 0, openAlerts: 0, language: "en" }), /No agent connected/);
+  const workers = liveWorkers({
+    devices: [{ id: "mac-1", name: "Mac", status: "ONLINE" }],
+    walletConnected: true,
+    walletAddress: "0x49BeAEc30C7431235c3262a2B1C0C5d8b5a0d3E1",
+    marketLive: true,
+    auditCount: 12,
+    pendingPurchases: 1,
+    language: "es",
+  });
+  assert.equal(workers.find(item => item.id === "mac-agent")?.status, "RUNNING");
+  assert.equal(workers.find(item => item.id === "wallet")?.status, "RUNNING");
+  assert.equal(workers.find(item => item.id === "market")?.status, "RUNNING");
+  assert.doesNotMatch(workers.map(item => item.id).join(" "), /architect|backend-auth|frontend-ux/);
+});
+
+test("intelligence and relative time stay on live alerts", () => {
+  const intel = liveIntelligence([alert, { ...alert, id: "alert-2", status: "RESOLVED", severity: "HIGH" }], "es");
+  assert.equal(intel.open, 1);
+  assert.equal(intel.resolved, 1);
+  assert.equal(intel.techniques[0].label, "FIREWALL DISABLED");
+  assert.equal(relativeTime(new Date(Date.now() - 20_000).toISOString(), "es"), "ahora mismo");
+  assert.equal(relativeTime("2020-01-01T00:00:00.000Z", "en", Date.parse("2026-09-08T00:00:00.000Z")), "2020-01-01 00:00 UTC");
+});
+
+test("offline firewall telemetry does not count as a live protected Mac", () => {
+  const metrics = liveSocMetrics([
+    { status: "OFFLINE", provenance: "REAL", healthScore: 91, telemetry: { firewallEnabled: true } },
+    { status: "ONLINE", provenance: "UNVERIFIED", healthScore: 80, telemetry: { firewallEnabled: true } },
+    { status: "ONLINE", provenance: "REAL", healthScore: 70, telemetry: { firewallEnabled: false } },
+  ]);
+  assert.equal(metrics.onlineCount, 1);
+  assert.equal(metrics.firewallProtected, 0);
+  assert.equal(metrics.firewallKnown, 1);
+  assert.equal(metrics.averageHealth, 70);
+});
+
+test("open intelligence ignores alerts from OFFLINE devices", () => {
+  const intel = liveIntelligence(
+    [alert, { ...alert, id: "alert-online", deviceId: "mac-online", code: "FILEVAULT_DISABLED" }],
+    "es",
+    [
+      { id: "mac-1", name: "Studio", status: "OFFLINE" },
+      { id: "mac-online", name: "Mac", status: "ONLINE" },
+    ],
+  );
+  assert.equal(intel.open, 1);
+  assert.equal(intel.techniques[0].label, "FILEVAULT DISABLED");
+});
+
+test("offline alert copy is a last report, not current state", () => {
+  const incidents = liveIncidentsFromAlerts(
+    [alert],
+    [{ id: "mac-1", name: "Eze-Mac", status: "OFFLINE" }],
+    "es",
+  );
+  assert.match(incidents[0].summary, /Último reporte \(Mac OFFLINE\)/i);
+  assert.match(incidents[0].impact, /no afirma este hallazgo como estado actual/i);
+});
+
+test("approving a firewall finding queues a real Mac action", () => {
+  const commands = commandsForAlert("FIREWALL_DISABLED", "es");
+  assert.equal(commands.some(item => item.code === "ENABLE_FIREWALL"), true);
+  assert.equal(commands.some(item => item.code === "NOTIFY"), true);
+  assert.equal(commandsForAlert("FILEVAULT_DISABLED", "en").some(item => item.code === "ENABLE_FIREWALL"), false);
+});

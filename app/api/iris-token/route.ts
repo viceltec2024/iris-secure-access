@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { appSettings } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
+import { deploymentFromReceipt } from "../../../lib/iris-token-deploy";
 
 const CONTRACT_KEY = "iris_token_base_mainnet_contract";
 const BASE_RPC = "https://mainnet.base.org";
@@ -46,13 +47,21 @@ export async function POST(request: Request) {
   if (user.role !== "ADMIN") return Response.json({ error: "Administrator approval required" }, { status: 403 });
 
   const body = await request.json().catch(() => ({})) as { address?: string; transactionHash?: string };
-  const address = String(body.address || "");
+  const claimed = String(body.address || "");
   const transactionHash = String(body.transactionHash || "");
-  if (!ADDRESS_PATTERN.test(address) || !HASH_PATTERN.test(transactionHash)) return Response.json({ error: "Invalid deployment details" }, { status: 400 });
+  if (!HASH_PATTERN.test(transactionHash)) return Response.json({ error: "Invalid deployment details" }, { status: 400 });
+  if (claimed && !ADDRESS_PATTERN.test(claimed)) return Response.json({ error: "Invalid deployment details" }, { status: 400 });
 
-  const receipt = await rpc("eth_getTransactionReceipt", [transactionHash]) as { contractAddress?: string; status?: string } | null;
-  if (!receipt || receipt.status !== "0x1" || receipt.contractAddress?.toLowerCase() !== address.toLowerCase()) {
-    await logAudit(user.email, "IRIS_TOKEN_DEPLOYMENT_RECORDED", address, "DENIED", { transactionHash, reason: "receipt_verification_failed" });
+  const receipt = await rpc("eth_getTransactionReceipt", [transactionHash]) as { contractAddress?: string | null; status?: string | number | null } | null;
+  const parsed = deploymentFromReceipt(receipt);
+  if ("pending" in parsed) return Response.json({ pending: true, transactionHash }, { status: 202 });
+  if ("failed" in parsed) {
+    await logAudit(user.email, "IRIS_TOKEN_DEPLOYMENT_RECORDED", claimed || transactionHash, "DENIED", { transactionHash, reason: "receipt_failed" });
+    return Response.json({ error: "The Base deployment could not be verified" }, { status: 409 });
+  }
+  const address = parsed.address;
+  if (claimed && claimed.toLowerCase() !== address.toLowerCase()) {
+    await logAudit(user.email, "IRIS_TOKEN_DEPLOYMENT_RECORDED", claimed, "DENIED", { transactionHash, reason: "address_mismatch" });
     return Response.json({ error: "The Base deployment could not be verified" }, { status: 409 });
   }
   const code = await rpc("eth_getCode", [address, "latest"]);

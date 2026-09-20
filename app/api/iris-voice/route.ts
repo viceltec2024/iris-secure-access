@@ -4,6 +4,13 @@ import { provisionIrisUser } from "../../../lib/authz";
 
 export const dynamic = "force-dynamic";
 
+export async function GET() {
+  const identity = await getChatGPTUser();
+  if (!identity) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
+  return Response.json({ tts: Boolean(apiKey) });
+}
+
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
   if (!identity) return Response.json({ error: "Your IRIS session has expired." }, { status: 401 });

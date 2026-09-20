@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if (!body.password || body.password !== body.confirmation) return Response.json({ error: "Las contraseñas no coinciden." }, { status: 400 });
   try {
     await createPassword(user.email, body.password);
-    await issueBiometricSession(user.email);
+    await issueBiometricSession(user.email, request.url);
     await logAudit(user.email, "IRIS_PASSWORD_CREATED", "step_up_access", "SUCCESS");
     return Response.json({ configured: true });
   } catch (error) {

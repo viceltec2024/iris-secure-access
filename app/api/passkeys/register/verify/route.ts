@@ -4,7 +4,8 @@ import { getDb } from "../../../../../db";
 import { passkeyCredentials } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../../../lib/authz";
-import { consumeChallenge, encodePublicKey, issueBiometricSession, PASSKEY_ORIGIN, PASSKEY_RP_ID } from "../../../../../lib/passkeys";
+import { consumeChallenge, encodePublicKey, issueBiometricSession } from "../../../../../lib/passkeys";
+import { passkeyRelyingParty } from "../../../../../lib/iris-origin";
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
@@ -14,7 +15,8 @@ export async function POST(request: Request) {
   const challenge = await consumeChallenge(user.email, "REGISTER");
   if (!challenge) return Response.json({ error: "The verification expired. Try again." }, { status: 400 });
   try {
-    const verification = await verifyRegistrationResponse({ response, expectedChallenge: challenge, expectedOrigin: PASSKEY_ORIGIN, expectedRPID: PASSKEY_RP_ID, requireUserVerification: true });
+    const { origin, rpID } = passkeyRelyingParty(request.url);
+    const verification = await verifyRegistrationResponse({ response, expectedChallenge: challenge, expectedOrigin: origin, expectedRPID: rpID, requireUserVerification: true });
     if (!verification.verified || !verification.registrationInfo) throw new Error("Touch ID was not verified");
     const info = verification.registrationInfo;
     await getDb().insert(passkeyCredentials).values({
@@ -22,7 +24,7 @@ export async function POST(request: Request) {
       counter: info.credential.counter, transports: JSON.stringify(info.credential.transports || []),
       deviceType: info.credentialDeviceType, backedUp: info.credentialBackedUp,
     }).onConflictDoNothing();
-    await issueBiometricSession(user.email);
+    await issueBiometricSession(user.email, request.url);
     await logAudit(user.email, "PASSKEY_REGISTERED", "biometric_access", "SUCCESS", { deviceType: info.credentialDeviceType });
     return Response.json({ verified: true });
   } catch (error) {

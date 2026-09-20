@@ -8,6 +8,8 @@
   "scripts": {
     "install:ci": "bash scripts/install-ci.sh",
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
+    "dev:local": "bash scripts/dev-local.sh",
+    "db:local": "node --experimental-sqlite scripts/apply-local-d1-migrations.mjs",
     "build": "bash scripts/build-verified.sh",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --experimental-loader ./scripts/cloudflare-validation-loader.mjs --test tests/rendered-html.test.mjs",

@@ -1,18 +1,24 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- chain panel polls wallet, token, and ledger APIs */
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowSquareOut, ArrowUp, ChartLineUp, CheckCircle, Coins, Cube, Link, Plus, Pulse, QrCode, RocketLaunch, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
+import { ArrowDown, ArrowSquareOut, ArrowUp, ChartLineUp, CheckCircle, Coins, Cube, Link, Plus, Pulse, QrCode, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
+import IrisTokenMark from "../iris-token-mark";
 import QRCode from "qrcode";
 import type { Language } from "./dashboard-i18n";
+import { isEvmAddress, type WalletProvider } from "../../lib/iris-chain";
+import { ROBINHOOD_CONNECT_URL, ROBINHOOD_WALLET_URL } from "../../lib/iris-purchases";
 import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient, subscribeMetaMaskDisplayUri } from "./metamask-client";
+import { connectInjectedWallet, detectInjectedProvider } from "./wallet-providers";
+import IrisPurchaseDesk from "./iris-purchase-desk";
 import { IRIS_TOKEN_BYTECODE } from "./iris-token-artifact";
+import { bumpGasLimit, tokenDeployMessage } from "../../lib/iris-token-deploy";
 
 type Block = { height: number; hash: string; transactionCount: number; validator: string };
 type ChainTransaction = { id: string; blockHeight: number | null; type: string; payloadHash: string; status: "PENDING" | "CONFIRMED" };
 type ChainState = { consensus: string; status: string; blocks: Block[]; transactions: ChainTransaction[]; pending: number };
 type WalletMovement = { hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number; status: string; method: string };
 type WalletLiveState = { balance: string; blockNumber: number; transactions: WalletMovement[]; updatedAt: string; explorerUrl: string };
-type TransactionReceipt = { contractAddress?: string | null; status?: string };
 type ActivitySample = { time: number; height: number; transactions: number; pending: number; latency: number };
 type TokenOperations = { contract: string; network: string; chainId: number; blockNumber: number; contractLive: boolean; totalSupply: string; walletBalance: string; holders: number; transfers: Array<{ hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number }>; verified: boolean; distribution: Array<{ label: string; percent: number; amount: string }>; readiness: { contract: boolean; metadata: boolean; treasuryMultisig: boolean; vesting: boolean; liquidity: boolean }; updatedAt: string };
 
@@ -32,16 +38,22 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [wallet, setWallet] = useState("");
   const [walletChain, setWalletChain] = useState("");
   const [walletBusy, setWalletBusy] = useState(false);
-  const [walletLive, setWalletLive] = useState<WalletLiveState | null>(null);
+  const [walletLiveRecord, setWalletLiveRecord] = useState<{ address: string; live: WalletLiveState } | null>(null);
+  const walletLive = walletLiveRecord?.address === wallet ? walletLiveRecord.live : null;
   const [showWalletQr, setShowWalletQr] = useState(false);
   const [walletQrImage, setWalletQrImage] = useState("");
   const [tokenAddress, setTokenAddress] = useState("");
   const [tokenDeployOpen, setTokenDeployOpen] = useState(false);
   const [tokenDeploying, setTokenDeploying] = useState(false);
   const [tokenStatus, setTokenStatus] = useState("");
-  const [tokenOperations, setTokenOperations] = useState<TokenOperations | null>(null);
+  const [tokenOperationsRecord, setTokenOperationsRecord] = useState<{ key: string; live: TokenOperations } | null>(null);
+  const tokenOperationsKey = `${tokenAddress}:${wallet}`;
+  const tokenOperations = tokenOperationsRecord?.key === tokenOperationsKey ? tokenOperationsRecord.live : null;
   const [activityHistory, setActivityHistory] = useState<ActivitySample[]>([]);
   const [notice, setNotice] = useState("");
+  const [watchInput, setWatchInput] = useState("");
+  const [walletMode, setWalletMode] = useState<WalletProvider>("watch");
+  const [showRobinhood, setShowRobinhood] = useState(false);
   const es = language === "es";
   async function refresh() {
     const started = performance.now();
@@ -65,28 +77,38 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     void refresh();
     const chainTimer = window.setInterval(() => void refresh(), 5_000);
     void fetch("/api/iris-token").then(response => response.ok ? response.json() : null).then(data => setTokenAddress(data?.address || "")).catch(() => undefined);
-    void getMetaMaskClient().then(client => {
-      setWallet(client.getAccount() || "");
-      setWalletChain(client.getChainId() || "");
+    void fetch("/api/wallet-session").then(response => response.ok ? response.json() : null).then((session: { connected?: boolean; address?: string; chainId?: string; mode?: WalletProvider } | null) => {
+      if (session?.connected && session.address) {
+        setWallet(session.address);
+        setWalletChain(session.chainId || BASE_MAINNET_CHAIN_ID);
+        setWatchInput(session.address);
+        setWalletMode(session.mode || "watch");
+        setNotice(es ? "Wallet conectada. IRIS la está monitoreando en Base." : "Wallet connected. IRIS is monitoring it on Base.");
+        return;
+      }
+      return getMetaMaskClient().then(client => {
+        setWallet(client.getAccount() || "");
+        setWalletChain(client.getChainId() || "");
+      });
     }).catch(() => undefined);
     return () => { unsubscribe(); window.clearInterval(chainTimer); };
-  }, []);
+  }, [es]);
   useEffect(() => {
-    if (!wallet) { setWalletLive(null); return; }
+    if (!wallet) return;
     let active = true;
-    const load = () => void fetch(`/api/base-wallet?address=${encodeURIComponent(wallet)}`).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setWalletLive(data as WalletLiveState); }).catch(() => undefined);
+    const load = () => void fetch(`/api/base-wallet?address=${encodeURIComponent(wallet)}`).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setWalletLiveRecord({ address: wallet, live: data as WalletLiveState }); }).catch(() => undefined);
     load();
     const timer = window.setInterval(load, 15_000);
     return () => { active = false; window.clearInterval(timer); };
   }, [wallet]);
   useEffect(() => {
-    if (!tokenAddress) { setTokenOperations(null); return; }
+    if (!tokenAddress) return;
     let active = true;
-    const load = () => void fetch(`/api/iris-token-operations${wallet ? `?wallet=${encodeURIComponent(wallet)}` : ""}`, { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setTokenOperations(data as TokenOperations); }).catch(() => undefined);
+    const load = () => void fetch(`/api/iris-token-operations${wallet ? `?wallet=${encodeURIComponent(wallet)}` : ""}`, { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => { if (active && data) setTokenOperationsRecord({ key: tokenOperationsKey, live: data as TokenOperations }); }).catch(() => undefined);
     load();
     const timer = window.setInterval(load, 15_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [tokenAddress, wallet]);
+  }, [tokenAddress, wallet, tokenOperationsKey]);
   async function submitTransaction() {
     if (!payload.trim()) return;
     setBusy(true); setNotice("");
@@ -103,9 +125,40 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     if (response.ok) await refresh();
     setBusy(false);
   }
+  async function persistWallet(address: string, mode: WalletProvider = "watch") {
+    const response = await fetch("/api/wallet-session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "connect", address, mode }) });
+    const session = await response.json() as { connected?: boolean; address?: string; chainId?: string; error?: string };
+    if (!response.ok || !session.address) throw new Error(session.error || "wallet");
+    setWallet(session.address);
+    setWalletChain(session.chainId || BASE_MAINNET_CHAIN_ID);
+    setWalletMode(mode);
+    setWatchInput(session.address);
+    setShowWalletQr(false); setWalletQrImage("");
+    setNotice(es ? "Wallet conectada. IRIS la está monitoreando en vivo en Base." : "Wallet connected. IRIS is monitoring it live on Base.");
+    return session.address;
+  }
+
+  async function connectWatchWallet() {
+    const address = watchInput.trim();
+    if (!isEvmAddress(address)) {
+      setNotice(es ? "Pega una wallet válida (0x y 40 caracteres)." : "Paste a valid wallet (0x and 40 characters).");
+      return;
+    }
+    setWalletBusy(true); setNotice("");
+    try { await persistWallet(address, "watch"); }
+    catch { setNotice(es ? "No se pudo conectar esa wallet." : "That wallet could not be connected."); }
+    finally { setWalletBusy(false); }
+  }
   async function connectWallet() {
-    setWalletBusy(true); setShowWalletQr(true); setWalletQrImage(""); setNotice("");
+    setWalletBusy(true); setShowWalletQr(false); setWalletQrImage(""); setNotice("");
     try {
+      const injected = await connectInjectedWallet("metamask");
+      if (injected && isEvmAddress(injected.address)) {
+        await persistWallet(injected.address, "metamask");
+        setNotice(es ? "MetaMask conectada en este navegador. IRIS la monitorea en Base." : "MetaMask connected in this browser. IRIS is monitoring it on Base.");
+        return;
+      }
+      setShowWalletQr(true);
       const client = await getMetaMaskClient();
       const { accounts } = await client.connect({ chainIds: [BASE_MAINNET_CHAIN_ID] });
       await client.switchChain({
@@ -118,13 +171,44 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
           blockExplorerUrls: ["https://basescan.org"],
         },
       });
-      setWallet(accounts[0] || client.getAccount() || "");
-      setWalletChain(BASE_MAINNET_CHAIN_ID);
-      setShowWalletQr(false); setWalletQrImage("");
-      setNotice(es ? "MetaMask conectado a Base Mainnet." : "MetaMask connected to Base Mainnet.");
+      const address = accounts[0] || client.getAccount() || "";
+      if (!isEvmAddress(address)) throw new Error("wallet");
+      await persistWallet(address, "metamask");
+      setNotice(es ? "Wallet de MetaMask conectada. IRIS la está monitoreando en Base." : "MetaMask wallet connected. IRIS is monitoring it on Base.");
     } catch (error) {
       const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
       setNotice(code === 4001 ? (es ? "Conexión cancelada en MetaMask." : "Connection cancelled in MetaMask.") : code === -32002 ? (es ? "Ya hay una solicitud abierta en MetaMask." : "A MetaMask request is already open.") : (es ? "No se pudo conectar con MetaMask." : "Could not connect to MetaMask."));
+    } finally { setWalletBusy(false); }
+  }
+  async function connectRobinhood() {
+    setWalletBusy(true); setNotice("");
+    try {
+      const injected = await connectInjectedWallet("robinhood");
+      if (injected && isEvmAddress(injected.address)) {
+        await persistWallet(injected.address, "robinhood");
+        setShowRobinhood(false);
+        setNotice(es ? "Robinhood Wallet conectada. IRIS la monitorea y puede proponer compras para que tú las apruebes." : "Robinhood Wallet connected. IRIS is monitoring it and can propose buys for you to approve.");
+        return;
+      }
+      setShowRobinhood(true);
+    } catch (error) {
+      const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
+      setNotice(code === 4001 ? (es ? "Conexión cancelada en Robinhood." : "Connection cancelled in Robinhood.") : (es ? "Abre Robinhood Wallet o pega su dirección 0x." : "Open Robinhood Wallet or paste its 0x address."));
+    } finally { setWalletBusy(false); }
+  }
+  async function persistRobinhoodAddress() {
+    const address = watchInput.trim();
+    if (!isEvmAddress(address)) {
+      setNotice(es ? "Pega la dirección 0x de tu Robinhood Wallet." : "Paste the 0x address from your Robinhood Wallet.");
+      return;
+    }
+    setWalletBusy(true);
+    try {
+      await persistWallet(address, "robinhood");
+      setShowRobinhood(false);
+      setNotice(es ? "Robinhood Wallet en monitoreo. Las compras siguen pidiendo tu aprobación en Robinhood." : "Robinhood Wallet is monitored. Purchases still require your Robinhood approval.");
+    } catch {
+      setNotice(es ? "No se pudo guardar esa wallet de Robinhood." : "That Robinhood wallet could not be saved.");
     } finally { setWalletBusy(false); }
   }
   async function cancelWalletQr() {
@@ -133,8 +217,11 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   }
   async function disconnectWallet() {
     setWalletBusy(true);
-    try { const client = await getMetaMaskClient(); await client.disconnect(); setWallet(""); setWalletChain(""); setNotice(es ? "Wallet desconectada." : "Wallet disconnected."); }
-    finally { setWalletBusy(false); }
+    try {
+      await fetch("/api/wallet-session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "disconnect" }) }).catch(() => undefined);
+      try { const client = await getMetaMaskClient(); await client.disconnect(); } catch { /* Local sessions have no MetaMask client. */ }
+      setWallet(""); setWalletChain(""); setWalletMode("watch"); setWatchInput(""); setShowRobinhood(false); setNotice(es ? "Wallet desconectada." : "Wallet disconnected.");
+    } finally { setWalletBusy(false); }
   }
   async function addIrisToken(address = tokenAddress) {
     if (!address) return;
@@ -145,37 +232,37 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     setNotice(es ? "IRIS Token fue agregado a MetaMask." : "IRIS Token was added to MetaMask.");
   }
   async function deployIrisToken() {
-    if (!wallet || !isAdmin || tokenAddress) return;
+    if (!isAdmin || tokenAddress) return;
     setTokenDeploying(true); setTokenStatus(es ? "Abre MetaMask y confirma la transacción…" : "Open MetaMask and confirm the transaction…"); setNotice("");
     try {
-      const client = await getMetaMaskClient();
-      await client.switchChain({
-        chainId: BASE_MAINNET_CHAIN_ID,
-        chainConfiguration: {
-          chainId: BASE_MAINNET_CHAIN_ID,
-          chainName: "Base Mainnet",
-          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-          rpcUrls: ["https://mainnet.base.org"],
-          blockExplorerUrls: ["https://basescan.org"],
-        },
-      });
-      const provider = client.getProvider() as unknown as { request(args: { method: string; params?: unknown }): Promise<unknown> };
-      const transactionHash = await provider.request({ method: "eth_sendTransaction", params: [{ from: wallet, data: IRIS_TOKEN_BYTECODE }] }) as string;
+      const connected = await connectInjectedWallet("metamask");
+      const injected = connected?.provider || detectInjectedProvider("metamask");
+      const from = connected?.address || "";
+      if (!injected || !isEvmAddress(from)) throw Object.assign(new Error("NO_METAMASK"), { code: "NO_METAMASK" });
+      await persistWallet(from, "metamask");
+      const tx: { from: string; data: string; gas?: string } = { from, data: IRIS_TOKEN_BYTECODE };
+      try {
+        const gas = await injected.request({ method: "eth_estimateGas", params: [{ from, data: IRIS_TOKEN_BYTECODE }] }) as string;
+        if (typeof gas === "string" && gas.startsWith("0x")) tx.gas = bumpGasLimit(gas);
+      } catch { /* MetaMask will estimate gas. */ }
+      const transactionHash = await injected.request({ method: "eth_sendTransaction", params: [tx] }) as string;
+      if (!/^0x[a-fA-F0-9]{64}$/.test(transactionHash)) throw new Error("DEPLOYMENT_NOT_CONFIRMED");
       setTokenStatus(es ? "Transacción enviada. Esperando confirmación de Base…" : "Transaction sent. Waiting for Base confirmation…");
-      let receipt: TransactionReceipt | null = null;
-      for (let attempt = 0; attempt < 80 && !receipt; attempt += 1) {
+      let address = "";
+      for (let attempt = 0; attempt < 90 && !address; attempt += 1) {
         if (attempt) await new Promise(resolve => window.setTimeout(resolve, 3_000));
-        receipt = await provider.request({ method: "eth_getTransactionReceipt", params: [transactionHash] }) as TransactionReceipt | null;
+        const response = await fetch("/api/iris-token", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ transactionHash }) });
+        const data = await response.json().catch(() => ({})) as { address?: string; pending?: boolean; error?: string };
+        if (data.address) { address = data.address; break; }
+        if (response.status === 202 || data.pending) continue;
+        throw new Error(data.error || "DEPLOYMENT_RECORD_FAILED");
       }
-      if (!receipt?.contractAddress || receipt.status !== "0x1") throw new Error("DEPLOYMENT_NOT_CONFIRMED");
-      const response = await fetch("/api/iris-token", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: receipt.contractAddress, transactionHash }) });
-      if (!response.ok) throw new Error("DEPLOYMENT_RECORD_FAILED");
-      setTokenAddress(receipt.contractAddress); setTokenDeployOpen(false); setTokenStatus("");
-      await addIrisToken(receipt.contractAddress);
+      if (!address) throw new Error("DEPLOYMENT_NOT_CONFIRMED");
+      setTokenAddress(address); setTokenDeployOpen(false); setTokenStatus("");
+      await addIrisToken(address);
       setNotice(es ? "IRIS Token fue creado en Base Mainnet y agregado a MetaMask." : "IRIS Token was created on Base Mainnet and added to MetaMask.");
     } catch (error) {
-      const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
-      setTokenStatus(code === 4001 ? (es ? "Cancelaste la transacción en MetaMask." : "You cancelled the transaction in MetaMask.") : (es ? "No se completó el despliegue. No se guardó ninguna dirección." : "Deployment did not complete. No address was saved."));
+      setTokenStatus(tokenDeployMessage(error, language));
     } finally { setTokenDeploying(false); }
   }
   if (!state) return <section className="module-panel chain-loading"><Pulse /> {es ? "Sincronizando IRIS Chain…" : "Syncing IRIS Chain…"}</section>;
@@ -183,13 +270,13 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   return <section className="module-panel chain-panel">
     {tokenDeployOpen && <div className="approval-backdrop" role="presentation"><section className="approval-dialog token-deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="token-deploy-title">
       <button className="approval-close" aria-label={es ? "Cerrar" : "Close"} disabled={tokenDeploying} onClick={() => setTokenDeployOpen(false)}><X /></button>
-      <span className="approval-icon"><RocketLaunch weight="duotone" /></span>
+      <span className="approval-icon"><IrisTokenMark size={56} /></span>
       <p>{es ? "BASE MAINNET · TRANSACCIÓN REAL" : "BASE MAINNET · REAL TRANSACTION"}</p>
       <h2 id="token-deploy-title">{es ? "Crear IRIS Token" : "Create IRIS Token"}</h2>
       <div className="token-deploy-summary"><span><b>1,000,000,000</b> IRIS</span><span>{es ? "Suministro fijo" : "Fixed supply"}</span><span>{es ? "18 decimales" : "18 decimals"}</span></div>
       <div className="token-gas-warning"><Warning weight="fill" /><span><strong>{es ? "MetaMask cobrará gas real" : "MetaMask will charge real gas"}</strong>{es ? "Revisa el costo que muestra MetaMask antes de confirmar. Los tokens se enviarán a tu wallet conectada." : "Review the cost shown by MetaMask before confirming. The tokens will be sent to your connected wallet."}</span></div>
       {tokenStatus && <div className="token-deploy-status"><Pulse />{tokenStatus}</div>}
-      <div className="approval-actions"><button disabled={tokenDeploying} onClick={() => setTokenDeployOpen(false)}>{es ? "Cancelar" : "Cancel"}</button><button disabled={tokenDeploying} onClick={() => void deployIrisToken()}><RocketLaunch />{tokenDeploying ? (es ? "Procesando…" : "Processing…") : (es ? "Continuar en MetaMask" : "Continue in MetaMask")}</button></div>
+      <div className="approval-actions"><button disabled={tokenDeploying} onClick={() => setTokenDeployOpen(false)}>{es ? "Cancelar" : "Cancel"}</button><button disabled={tokenDeploying} onClick={() => void deployIrisToken()}><IrisTokenMark size={16} />{tokenDeploying ? (es ? "Procesando…" : "Processing…") : (es ? "Continuar en MetaMask" : "Continue in MetaMask")}</button></div>
     </section></div>}
     {showWalletQr && <div className="wallet-qr-backdrop" role="presentation"><div className="wallet-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-qr-title">
       <button className="wallet-qr-close" aria-label={es ? "Cerrar" : "Close"} onClick={() => void cancelWalletQr()}><X /></button>
@@ -197,19 +284,41 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <p>METAMASK CONNECT</p>
       <h2 id="wallet-qr-title">{es ? "Escanea para conectar" : "Scan to connect"}</h2>
       <span className="wallet-qr-help">{es ? "Abre MetaMask en tu teléfono, toca el escáner y apunta a este código." : "Open MetaMask on your phone, tap the scanner, and point it at this code."}</span>
-      <div className="wallet-qr-frame">{walletQrImage ? <img src={walletQrImage} alt={es ? "Código QR para conectar MetaMask" : "QR code to connect MetaMask"} /> : <div className="wallet-qr-loading"><Pulse /><strong>{es ? "Generando QR seguro…" : "Generating secure QR…"}</strong></div>}</div>
+      <div className="wallet-qr-frame">{walletQrImage ? <img src={walletQrImage} alt={es ? "Código QR para conectar MetaMask" : "QR code to connect MetaMask"} /> : <div className="wallet-qr-loading"><Pulse /><strong>{es ? "Generando QR seguro…" : "Generating secure QR…"}</strong></div>}</div> {/* eslint-disable-line @next/next/no-img-element -- QR is an inline data URL from qrcode */}
       <a className="wallet-mobile-deeplink" href={`https://metamask.app.link/dapp/${typeof window === "undefined" ? "iris-secure-access.taylor-667.chatgpt.site/dashboard" : `${window.location.host}/dashboard`}`}>{es ? "Abrir MetaMask en este teléfono" : "Open MetaMask on this phone"}</a>
       <div className="wallet-qr-status"><i />{es ? "Esperando confirmación en MetaMask" : "Waiting for confirmation in MetaMask"}</div>
       <small>{es ? "El código es temporal. IRIS nunca solicita tu frase secreta." : "The code is temporary. IRIS never asks for your secret phrase."}</small>
     </div></div>}
+    {showRobinhood && <div className="wallet-qr-backdrop" role="presentation"><div className="wallet-qr-dialog robinhood-connect-dialog" role="dialog" aria-modal="true" aria-labelledby="robinhood-connect-title">
+      <button className="wallet-qr-close" aria-label={es ? "Cerrar" : "Close"} onClick={() => setShowRobinhood(false)}><X /></button>
+      <div className="wallet-qr-brand"><Wallet weight="duotone" /></div>
+      <p>ROBINHOOD CONNECT</p>
+      <h2 id="robinhood-connect-title">{es ? "Conecta Robinhood" : "Connect Robinhood"}</h2>
+      <span className="wallet-qr-help">{es ? "IRIS abre la Wallet oficial o Connect. Pega la dirección 0x para monitorearla. Las compras se confirman en Robinhood, nunca aquí." : "IRIS opens the official Wallet or Connect. Paste the 0x address to monitor it. Purchases are confirmed in Robinhood, never here."}</span>
+      <div className="robinhood-connect-actions">
+        <a href={ROBINHOOD_WALLET_URL} target="_blank" rel="noreferrer">{es ? "Abrir Robinhood Wallet" : "Open Robinhood Wallet"}<ArrowSquareOut /></a>
+        <a href={ROBINHOOD_CONNECT_URL} target="_blank" rel="noreferrer">Robinhood Connect<ArrowSquareOut /></a>
+      </div>
+      <label className="robinhood-address-field"><span>{es ? "Dirección de Robinhood Wallet" : "Robinhood Wallet address"}</span><input value={watchInput} onChange={event => setWatchInput(event.target.value)} placeholder="0x…" spellCheck={false} autoComplete="off" /></label>
+      <button className="chain-submit" disabled={walletBusy} onClick={() => void persistRobinhoodAddress()}>{es ? "Monitorear esta Robinhood Wallet" : "Monitor this Robinhood Wallet"}</button>
+      <small>{es ? "IRIS no pide tu usuario, contraseña ni frase secreta de Robinhood." : "IRIS never asks for your Robinhood username, password, or secret phrase."}</small>
+    </div></div>}
     <div className="module-toolbar"><div><h2>IRIS Chain</h2><p>{es ? "Registro inmutable de eventos, aprobaciones y evidencia de seguridad." : "Immutable ledger for security events, approvals, and evidence."}</p></div><span className="chain-online"><i />{state.status}</span></div>
+    <form className="wallet-connect-bar wallet-connect-bar-providers" onSubmit={event => { event.preventDefault(); void connectWatchWallet(); }}>
+      <div><span>{es ? "METAMASK · ROBINHOOD · BASE" : "METAMASK · ROBINHOOD · BASE"}</span><strong>{wallet ? (walletMode === "robinhood" ? (es ? "Robinhood Wallet en monitoreo" : "Robinhood Wallet monitored") : walletMode === "metamask" ? (es ? "MetaMask conectada" : "MetaMask connected") : (es ? "IRIS está monitoreando esta wallet" : "IRIS is monitoring this wallet")) : (es ? "Conecta MetaMask o Robinhood" : "Connect MetaMask or Robinhood")}</strong><small>{wallet || (es ? "Conexión directa a MetaMask, Robinhood Wallet, o pega cualquier 0x para vigilarla." : "Direct MetaMask, Robinhood Wallet, or paste any 0x address to watch it.")}</small></div>
+      <label><span>{es ? "Dirección" : "Address"}</span><input value={watchInput} onChange={event => setWatchInput(event.target.value)} placeholder="0x…" spellCheck={false} autoComplete="off" /></label>
+      <button type="submit" disabled={walletBusy}>{walletBusy ? (es ? "Conectando…" : "Connecting…") : (es ? "Monitorear" : "Monitor")}</button>
+      <button type="button" className="wallet-metamask" disabled={walletBusy} onClick={() => void connectWallet()}><Wallet />MetaMask</button>
+      <button type="button" className="wallet-robinhood" disabled={walletBusy} onClick={() => void connectRobinhood()}><Wallet />Robinhood</button>
+    </form>
+    <IrisPurchaseDesk language={language} wallet={wallet} walletMode={walletMode} />
     <div className="chain-metrics">
       <article><span>{es ? "Altura" : "Block height"}</span><strong>{latest?.height ?? 0}</strong><small><Cube /> {state.blocks.length} {es ? "bloques recientes" : "recent blocks"}</small></article>
       <article><span>{es ? "Transacciones" : "Transactions"}</span><strong>{state.transactions.length}</strong><small><CheckCircle /> {state.pending} {es ? "pendientes" : "pending"}</small></article>
       <article><span>{es ? "Consenso" : "Consensus"}</span><strong className="chain-consensus">PoA</strong><small><ShieldCheck />{state.consensus}</small></article>
-      <article><span>Base wallet</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={walletChain === BASE_MAINNET_CHAIN_ID ? "wallet-network-ready" : ""}><i />{wallet ? (walletChain === BASE_MAINNET_CHAIN_ID ? "Base Mainnet · 8453" : (es ? "Red incorrecta" : "Wrong network")) : (es ? "Extensión · QR · móvil" : "Extension · QR · mobile")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : (es ? "Conectar MetaMask" : "Connect MetaMask")}</button></article>
+      <article><span>{walletMode === "robinhood" ? "Robinhood" : walletMode === "metamask" ? "MetaMask" : "Base wallet"}</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={wallet ? "wallet-network-ready" : ""}><i />{wallet ? (walletMode === "robinhood" ? (es ? "Robinhood · compras con tu OK" : "Robinhood · buys need your OK") : walletMode === "metamask" ? "Base Mainnet · 8453" : (es ? "Monitoreo en vivo" : "Live monitoring")) : (es ? "MetaMask o Robinhood" : "MetaMask or Robinhood")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : "MetaMask"}</button></article>
     </div>
-    <section className="iris-token-panel"><div className="iris-token-mark"><Coins weight="duotone" /></div><div className="iris-token-copy"><span>IRIS TOKEN · BASE MAINNET</span><h3>{tokenAddress ? (es ? "Token oficial conectado" : "Official token connected") : (es ? "Preparado para desplegar" : "Ready to deploy")}</h3><p>{tokenAddress ? shortHash(tokenAddress) : (es ? "1,000,000,000 IRIS · suministro fijo · 18 decimales" : "1,000,000,000 IRIS · fixed supply · 18 decimals")}</p></div><div className="iris-token-actions">{tokenAddress ? <><a href={`https://basescan.org/token/${tokenAddress}`} target="_blank" rel="noreferrer">BaseScan <ArrowSquareOut /></a><button disabled={!wallet} onClick={() => void addIrisToken()}><Wallet />{es ? "Agregar a MetaMask" : "Add to MetaMask"}</button></> : isAdmin ? <button disabled={!wallet || walletChain !== BASE_MAINNET_CHAIN_ID} onClick={() => setTokenDeployOpen(true)}><RocketLaunch />{wallet ? (es ? "Desplegar IRIS" : "Deploy IRIS") : (es ? "Conecta MetaMask primero" : "Connect MetaMask first")}</button> : <span>{es ? "Pendiente del administrador" : "Waiting for administrator"}</span>}</div></section>
+    <section className="iris-token-panel"><div className="iris-token-mark"><IrisTokenMark size={50} /></div><div className="iris-token-copy"><span>IRIS TOKEN · BASE MAINNET</span><h3>{tokenAddress ? (es ? "Token oficial conectado" : "Official token connected") : (es ? "Preparado para desplegar" : "Ready to deploy")}</h3><p>{tokenAddress ? shortHash(tokenAddress) : (es ? "1,000,000,000 IRIS · suministro fijo · 18 decimales" : "1,000,000,000 IRIS · fixed supply · 18 decimals")}</p></div><div className="iris-token-actions">{tokenAddress ? <><a href={`https://basescan.org/token/${tokenAddress}`} target="_blank" rel="noreferrer">BaseScan <ArrowSquareOut /></a><button disabled={!wallet} onClick={() => void addIrisToken()}><Wallet />{es ? "Agregar a MetaMask" : "Add to MetaMask"}</button></> : isAdmin ? <button disabled={!wallet || walletChain !== BASE_MAINNET_CHAIN_ID} onClick={() => setTokenDeployOpen(true)}><IrisTokenMark size={16} />{wallet ? (es ? "Desplegar IRIS" : "Deploy IRIS") : (es ? "Conecta MetaMask primero" : "Connect MetaMask first")}</button> : <span>{es ? "Pendiente del administrador" : "Waiting for administrator"}</span>}</div></section>
     {tokenAddress && <section className="token-operations-center">
       <div className="token-ops-head"><div><span><i />{es ? "DATOS REALES · BASE" : "LIVE DATA · BASE"}</span><h3>{es ? "Centro de Operaciones IRIS Token" : "IRIS Token Operations Center"}</h3><p>{es ? "Contrato, balances, distribución y preparación de tesorería." : "Contract, balances, distribution, and treasury readiness."}</p></div><a href="/token" target="_blank">{es ? "Ficha oficial" : "Official profile"}<ArrowSquareOut /></a></div>
       <div className="token-ops-metrics"><article><span>{es ? "Tu balance" : "Your balance"}</span><strong>{wallet ? `${tokenOperations?.walletBalance ?? "—"} IRIS` : "—"}</strong><small>{wallet ? shortHash(wallet) : (es ? "Conecta MetaMask" : "Connect MetaMask")}</small></article><article><span>{es ? "Suministro total" : "Total supply"}</span><strong>{tokenOperations ? Number(tokenOperations.totalSupply).toLocaleString(language) : "—"}</strong><small>IRIS · 18 {es ? "decimales" : "decimals"}</small></article><article><span>{es ? "Titulares indexados" : "Indexed holders"}</span><strong>{tokenOperations?.holders || "—"}</strong><small>{es ? "Datos del explorador" : "Explorer data"}</small></article><article><span>{es ? "Estado del contrato" : "Contract status"}</span><strong className="token-live-state">{tokenOperations?.contractLive ? (es ? "ACTIVO" : "LIVE") : (es ? "CARGANDO" : "LOADING")}</strong><small>{es ? "Bloque" : "Block"} #{tokenOperations?.blockNumber?.toLocaleString() ?? "—"}</small></article></div>
