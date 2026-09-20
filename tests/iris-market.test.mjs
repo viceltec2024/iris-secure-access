@@ -33,10 +33,10 @@ test("IRIS hears market questions and tickers", () => {
 });
 
 test("Ask IRIS does not send every market-section question to the tape", () => {
-  const route = readFileSync(new URL("../app/api/ask-iris/route.ts", import.meta.url), "utf8");
-  assert.match(route, /if \(isMarketQuestion\(question\)\)/);
-  assert.doesNotMatch(route, /isMarketQuestion\(question\) \|\| preferences\.section === ["']market["']/);
-  assert.match(route, /incident/);
+  const ask = readFileSync(new URL("../lib/iris-ask.ts", import.meta.url), "utf8");
+  assert.match(ask, /if \(isMarketQuestion\(question\)\)/);
+  assert.doesNotMatch(ask, /isMarketQuestion\(question\) \|\| preferences\.section === ["']market["']/);
+  assert.match(ask, /incident/);
 });
 
 test("live readings mark a fresh Yahoo tick as live", () => {

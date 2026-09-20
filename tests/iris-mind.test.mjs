@@ -16,9 +16,11 @@ const base = {
 };
 
 test("Ask IRIS uses the local mind when OpenAI is not configured", () => {
-  const route = readFileSync(new URL("../app/api/ask-iris/route.ts", import.meta.url), "utf8");
-  assert.match(route, /irisMindAnswer/);
-  assert.doesNotMatch(route, /localIrisAnswer\(/);
+  const ask = readFileSync(new URL("../lib/iris-ask.ts", import.meta.url), "utf8");
+  const agent = readFileSync(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
+  assert.match(ask, /irisMindAnswer/);
+  assert.doesNotMatch(ask, /localIrisAnswer\(/);
+  assert.match(agent, /resolveIrisAsk/);
 });
 
 test("Ask IRIS names itself instead of dumping SOC status", async () => {

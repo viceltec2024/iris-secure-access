@@ -2,36 +2,11 @@ import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
-import { desc, eq, inArray } from "drizzle-orm";
-import { getDb } from "../../../db";
-import { appSettings, devices, securityAlerts } from "../../../db/schema";
-import { parseWalletSessionValue } from "../../../lib/iris-chain";
-import { parseJsonRecord, reportedDeviceStatus } from "../../../lib/iris-device-view";
-import { liveWorkers } from "../../../lib/iris-live-soc";
-import { irisMindAnswer } from "../../../lib/iris-mind";
-import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "../../../lib/iris-market";
-import { parsePurchaseDesk } from "../../../lib/iris-purchases";
-import type { IrisIncidentContext } from "../../../lib/iris-local-analyst";
+import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
 
 export const dynamic = "force-dynamic";
 
 type IncomingMessage = { role: "user" | "assistant"; content: string };
-
-function parseIncident(value: unknown): IrisIncidentContext | null {
-  if (!value || typeof value !== "object") return null;
-  const item = value as Record<string, unknown>;
-  if (typeof item.id !== "string" || !item.id.trim()) return null;
-  return {
-    id: item.id.slice(0, 80),
-    title: typeof item.title === "string" ? item.title.slice(0, 200) : "",
-    subject: typeof item.subject === "string" ? item.subject.slice(0, 200) : "",
-    severity: typeof item.severity === "string" ? item.severity.slice(0, 40) : "",
-    status: typeof item.status === "string" ? item.status.slice(0, 40) : "",
-    source: typeof item.source === "string" ? item.source.slice(0, 80) : "",
-    evidence: Array.isArray(item.evidence) ? item.evidence.filter((entry): entry is string => typeof entry === "string").slice(0, 8).map(entry => entry.slice(0, 240)) : [],
-    recommendation: typeof item.recommendation === "string" ? item.recommendation.slice(0, 400) : "",
-  };
-}
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
@@ -51,74 +26,25 @@ export async function POST(request: Request) {
 
   const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
   const language = preferences.language === "en" ? "en" : "es";
-  const incident = parseIncident(preferences.incident);
-  const db = getDb();
-  const deviceRows = user.role === "ADMIN" ? await db.select().from(devices).orderBy(desc(devices.createdAt)).limit(25) : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt)).limit(25);
-  const alertRows = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(50) : [];
-  const [walletRow] = await db.select().from(appSettings).where(eq(appSettings.key, `iris_local_wallet_session:${user.email}`)).limit(1);
-  const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, `iris_purchase_desk:${user.email}`)).limit(1);
-  const wallet = parseWalletSessionValue(walletRow?.value || "");
-  const pendingPurchases = parsePurchaseDesk(deskRow?.value || "").proposals.filter(item => item.status === "awaiting_approval").length;
-  const mappedDevices = deviceRows.map(device => ({ id: device.id, name: device.name, platform: device.platform, status: reportedDeviceStatus(device), risk: device.risk, lastSeenAt: device.lastSeenAt, telemetry: parseJsonRecord(device.telemetry) }));
-  const agents = liveWorkers({
-    devices: mappedDevices,
-    walletConnected: Boolean(wallet),
-    walletAddress: wallet?.address,
-    marketLive: true,
-    auditCount: 1,
-    pendingPurchases,
+  const resolved = await resolveIrisAsk({
+    user: { email: user.email, role: user.role, displayName: user.displayName || user.email },
+    messages,
     language,
-  });
-  const question = [...messages].reverse().find(message => message.role === "user")?.content || "";
-  const analystInput = {
-    language,
-    question,
-    userName: user.displayName || user.email,
-    origin: new URL(request.url).origin,
     section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
-    devices: mappedDevices,
-    alerts: alertRows.map(alert => ({ deviceId: alert.deviceId, code: alert.code, severity: alert.severity, status: alert.status, evidence: parseJsonRecord(alert.evidence), lastSeenAt: alert.lastSeenAt })),
-    agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),
-    wallet: { connected: Boolean(wallet), address: wallet?.address || "" },
-    incident,
-  };
+    incident: parseAskIncident(preferences.incident),
+    origin: new URL(request.url).origin,
+  });
 
-  if (isMarketQuestion(question)) {
-    try {
-      const ticker = extractTicker(question);
-      const [tape, chart] = await Promise.all([
-        fetchLiveTape(),
-        ticker ? fetchMarketChart(ticker, "1d").catch(() => null) : Promise.resolve(null),
-      ]);
-      const board = {
-        updatedAt: tape.updatedAt,
-        live: tape.live,
-        quotes: tape.quotes,
-        ideas: [],
-        briefing: briefingFromBoard(tape.quotes, []),
-      };
-      const answer = marketAnswer(question, language, board, chart);
-      await logAudit(user.email, "ASK_IRIS_ANALYSIS", "live_market", "SUCCESS", { model: "iris-jar-live", ticker: ticker || "" });
-      return Response.json({ answer, source: "live-market" });
-    } catch {
-      const tape = await fetchLiveTape().catch(() => null);
-      if (tape?.quotes.length) {
-        const lead = tape.quotes.slice(0, 4).map(item => `${item.symbol} ${item.price} (${item.changePercent >= 0 ? "+" : ""}${item.changePercent.toFixed(2)}%)`).join(" · ");
-        return Response.json({
-          answer: language === "es"
-            ? `IRIS en vivo. Cinta ahora: ${lead}. Si quieres una lectura de un ticker, dímelo.`
-            : `IRIS is live. Tape now: ${lead}. Ask for a ticker if you want a reading.`,
-          source: "live-market",
-        });
-      }
-    }
+  const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
+  if (!apiKey || resolved.source === "live-market") {
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", resolved.source === "live-market" ? "live_market" : "security_context", "SUCCESS", { model: resolved.model, ticker: resolved.ticker || "" });
+    return Response.json({ answer: resolved.answer, source: resolved.source });
   }
 
-  const mind = await irisMindAnswer(analystInput);
-  const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
-  if (!apiKey) {
-    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: mind.source === "world" ? "iris-world" : "iris-local-analyst" });
-    return Response.json({ answer: mind.answer, source: mind.source });
+  const analystInput = resolved.context;
+  if (!analystInput) {
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: resolved.model });
+    return Response.json({ answer: resolved.answer, source: resolved.source });
   }
 
   const safeContext = JSON.stringify({ ...analystInput, question: undefined }).slice(0, 24000);
@@ -140,7 +66,7 @@ When the user asks by voice for the system status, answer aloud naturally and co
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "gpt-5.6-sol" });
     return Response.json({ answer, source: "openai" });
   } catch {
-    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: mind.source === "world" ? "iris-world" : "iris-local-analyst", fallback: true });
-    return Response.json({ answer: mind.answer, source: mind.source });
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: resolved.model, fallback: true });
+    return Response.json({ answer: resolved.answer, source: resolved.source });
   }
 }

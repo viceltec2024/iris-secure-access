@@ -42,9 +42,12 @@ test("Ask IRIS keeps the written conversation visible while listening", () => {
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(panel, /className="iris-chat-messages"/);
   assert.match(panel, /sendQueueRef/);
-  assert.match(panel, /controller\.abort\(\), 15000\)/);
+  assert.match(panel, /\/api\/agent\/run/);
+  assert.match(panel, /controller\.abort\(\), 20000\)/);
+  assert.match(panel, /iris-chat-steps/);
   assert.doesNotMatch(panel, /disabled=\{\!input\.trim\(\) \|\| loading\}/);
   assert.match(css, /\.iris-chat\.voice-open\{grid-template-rows:auto auto 1fr auto auto\}/);
+  assert.match(css, /\.iris-chat-steps\{/);
 });
 
 test("Ask IRIS voice orb is large enough to read, not a 120px icon", () => {

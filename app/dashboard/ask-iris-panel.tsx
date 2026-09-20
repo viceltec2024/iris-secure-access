@@ -7,7 +7,13 @@ import { holdSpeechSession, irisListenPhrase, isAmbiguousStopPrefix, isBargeInSt
 import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+const AGENT_STEP_LABELS: Record<string, { es: string; en: string }> = {
+  get_security_overview: { es: "Revisé el estado de seguridad", en: "Reviewed security overview" },
+  list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
+  get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
+};
+
+type ChatMessage = { role: "user" | "assistant"; content: string; steps?: Array<{ tool: string; ok: boolean }> };
 type IncidentContext = { id: string; title: string; subject: string; severity: string; status: string; source: string; evidence: string[]; recommendation: string };
 type DeviceContext = { id: string; name: string; platform: string; status: string; risk: string; lastSeenAt: string | null; telemetry?: string };
 type SpeechResultEvent = { resultIndex?: number; results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }> };
@@ -369,13 +375,14 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     const controller = new AbortController();
     askAbortRef.current = controller;
     ignoreAskRef.current = false;
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
     try {
-      const response = await fetch("/api/ask-iris", {
+      const response = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: nextMessages.slice(-12),
+          language,
           context: {
             language,
             section,
@@ -393,11 +400,11 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
         }),
         signal: controller.signal,
       });
-      const data = await response.json() as { answer?: string; error?: string };
+      const data = await response.json() as { answer?: string; error?: string; steps?: Array<{ tool: string; ok: boolean }> };
       if (!response.ok || !data.answer) throw new Error(data.error || (language === "es" ? "IRIS no pudo completar el análisis." : "IRIS could not complete the analysis."));
       const answer = data.answer;
       setSpokenAnswer(answer);
-      const withReply = [...messagesRef.current, { role: "assistant" as const, content: answer }];
+      const withReply = [...messagesRef.current, { role: "assistant" as const, content: answer, steps: Array.isArray(data.steps) ? data.steps.filter(step => step.tool) : [] }];
       messagesRef.current = withReply;
       setMessages(withReply);
       if (autoSpeakRef.current) void speak(answer);
@@ -641,7 +648,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
       <button onClick={() => { setFullScreen(false); closeVoiceStage(); stopVoice(); setOpen(false); }} aria-label="Close Ask IRIS"><X /></button>
     </header>
     {voiceStage ? <IrisVoiceStage language={language} mode={voiceMode} transcript={liveTranscript} answer={spokenAnswer} hearing={hearing} level={voiceEnergy} expanded={fullScreen} /> : null}
-    <div className="iris-chat-messages" ref={listRef} aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p></article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>
+    <div className="iris-chat-messages" ref={listRef} aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p>{message.role === "assistant" && message.steps?.length ? <ul className="iris-chat-steps">{message.steps.map((step, stepIndex) => <li className={step.ok ? "ok" : "fail"} key={`${step.tool}-${stepIndex}`}>{AGENT_STEP_LABELS[step.tool]?.[language === "en" ? "en" : "es"] || step.tool}</li>)}</ul> : null}</article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>
     <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong>{selectedIncident.id ? ` · ${selectedIncident.title || selectedIncident.id}` : ""}{voiceHint ? ` · ${voiceHint}` : ""}</div>
     <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Habla o escribe tu pregunta para IRIS…" : "Speak or type your question for IRIS…"} rows={2} /><button type="button" className={`iris-voice-command ${listening || voiceStage ? "listening" : ""}`} onClick={() => void startListening()} aria-label={language === "es" ? "Comando de voz" : "Voice command"} title={language === "es" ? "Comando de voz" : "Voice command"}><Microphone weight="fill" /></button><button type="submit" disabled={!input.trim()} aria-label="Send question"><ArrowUp weight="bold" /></button></form>
   </aside>;
