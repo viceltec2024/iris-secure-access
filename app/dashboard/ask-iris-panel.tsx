@@ -11,6 +11,11 @@ const AGENT_STEP_LABELS: Record<string, { es: string; en: string }> = {
   get_security_overview: { es: "Revisé el estado de seguridad", en: "Reviewed security overview" },
   list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
   get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
+  explain_alert: { es: "Expliqué la alerta", en: "Explained the alert" },
+  trust_application: { es: "Marqué la app como confiable", en: "Trusted the application" },
+  update_alert_status: { es: "Actualicé el estado de la alerta", en: "Updated the alert status" },
+  approve_remediation: { es: "Aprobé la corrección en el Mac", en: "Approved Mac remediation" },
+  request_device_recheck: { es: "Pedí un nuevo reporte al Mac", en: "Requested a fresh Mac report" },
 };
 
 type ChatMessage = { role: "user" | "assistant"; content: string; steps?: Array<{ tool: string; ok: boolean }> };

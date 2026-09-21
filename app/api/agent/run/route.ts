@@ -11,7 +11,7 @@ type IncomingMessage = { role: "user" | "assistant"; content: string };
 type ToolCall = { type?: string; name?: string; arguments?: string; call_id?: string };
 type ModelOutput = { type?: string; content?: Array<{ type?: string; text?: string }>; name?: string; arguments?: string; call_id?: string };
 
-const MAX_STEPS = 5;
+const MAX_STEPS = 7;
 
 function responseText(payload: { output?: ModelOutput[] }) {
   return (payload.output || [])
@@ -71,16 +71,23 @@ export async function POST(request: Request) {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "gpt-5.6-sol",
-          instructions: `You are IRIS Agentic AI, a cybersecurity copilot with read-only tools.
-Use tools only when needed. Never claim an action happened unless a tool result proves it.
-Never perform destructive actions. Never invent device or alert data.
-ONLINE means the Mac agent reported in the last 5 minutes. PENDING/OFFLINE telemetry is not a live scan.
-Prefer read-only investigation and explain uncertainty.
-Answer in ${language === "en" ? "English" : "Spanish"}.
-When enough evidence is available, give the direct answer and a short next-action recommendation.`,
+          instructions: `You are IRIS Agentic AI, a cybersecurity copilot for a live SOC.
+You can investigate with tools and, when the user clearly confirms in chat, take safe actions.
+
+Investigation tools: get_security_overview, list_active_alerts, get_device_details, explain_alert.
+Action tools (require userConfirmed=true ONLY after an explicit user yes/confirm in the latest messages): trust_application, update_alert_status, approve_remediation, request_device_recheck.
+
+Rules:
+- Never claim an action happened unless a tool result proves it.
+- Never set userConfirmed=true unless the user clearly authorized that specific action.
+- If the user asks to fix/trust/resolve something, first show what you will do and ask for confirmation unless they already said yes.
+- Never invent device or alert data. Never run destructive actions (delete files, disable SIP/FileVault, kill processes, spend crypto).
+- ONLINE means the Mac agent reported in the last 5 minutes. PENDING/OFFLINE telemetry is not a live scan.
+- Prefer concrete next steps. After an action tool succeeds, summarize the result briefly.
+Answer in ${language === "en" ? "English" : "Spanish"}.`,
           input,
           tools: IRIS_AGENT_TOOLS,
-          max_output_tokens: 1200,
+          max_output_tokens: 1400,
         }),
       });
       const payload = await ai.json() as { error?: { message?: string }; output?: ModelOutput[] };
