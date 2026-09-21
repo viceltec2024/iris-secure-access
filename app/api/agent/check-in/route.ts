@@ -126,10 +126,16 @@ function enrichTelemetry(current: Telemetry, previous?: Telemetry): Telemetry {
   return { ...current, securityFindings, changes, changeDetectedAt };
 }
 
-function calculateRisk(telemetry: Telemetry): "LOW" | "MEDIUM" | "HIGH" {
+function calculateRisk(telemetry: Telemetry, trustedNames: string[] = []): "LOW" | "MEDIUM" | "HIGH" {
+  const untrustedApps = (telemetry.riskyApplications || []).filter(name => !trustedNames.includes(name));
   if ((telemetry.diskUsedPercent || 0) >= 95 || (telemetry.memoryUsedPercent || 0) >= 98 || telemetry.sipEnabled === false || telemetry.fileVaultEnabled === false || telemetry.xProtectPresent === false || telemetry.unsignedPersistenceItems?.length) return "HIGH";
-  if (telemetry.firewallEnabled === false || telemetry.gatekeeperEnabled === false || telemetry.automaticUpdatesEnabled === false || telemetry.malwareRemovalToolPresent === false || telemetry.riskyApplications?.length || (telemetry.diskUsedPercent || 0) >= 85) return "MEDIUM";
+  if (telemetry.firewallEnabled === false || telemetry.gatekeeperEnabled === false || telemetry.automaticUpdatesEnabled === false || telemetry.malwareRemovalToolPresent === false || untrustedApps.length || (telemetry.diskUsedPercent || 0) >= 85) return "MEDIUM";
   return "LOW";
+}
+
+async function trustedAppNames(deviceId: string) {
+  const trusted = await getDb().select().from(trustedApplications).where(eq(trustedApplications.deviceId, deviceId));
+  return trusted.map(row => row.appName);
 }
 
 function alertSeverity(code: string): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
@@ -203,7 +209,8 @@ export async function POST(request: Request) {
     telemetry = enrichTelemetry({ ...cleanTelemetry(body.telemetry || {}), transportEncryption: "TLS+HMAC" });
     const token = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
     const issuedAt = new Date();
-    await db.update(devices).set({ agentTokenHash: await sha256(token), agentTokenIssuedAt: issuedAt.toISOString(), agentTokenExpiresAt: new Date(issuedAt.getTime() + TOKEN_LIFETIME_MS).toISOString(), status: "ONLINE", risk: calculateRisk(telemetry), telemetry: JSON.stringify(telemetry), lastSeenAt: issuedAt.toISOString() }).where(eq(devices.id, device.id));
+    const trustedNames = await trustedAppNames(device.id);
+    await db.update(devices).set({ agentTokenHash: await sha256(token), agentTokenIssuedAt: issuedAt.toISOString(), agentTokenExpiresAt: new Date(issuedAt.getTime() + TOKEN_LIFETIME_MS).toISOString(), status: "ONLINE", risk: calculateRisk(telemetry, trustedNames), telemetry: JSON.stringify(telemetry), lastSeenAt: issuedAt.toISOString() }).where(eq(devices.id, device.id));
     await syncAlerts(device, telemetry);
     const commands = await takePendingAgentCommands(device.id);
     return Response.json({ agentToken: token, deviceId: device.id, status: "ONLINE", intervalSeconds: 120, reportEncryption: "AES-256-CBC+HMAC-SHA256", commands });
@@ -237,7 +244,8 @@ export async function POST(request: Request) {
   let previous: Telemetry | undefined;
   try { previous = JSON.parse(device.telemetry || "{}"); } catch { previous = undefined; }
   telemetry = enrichTelemetry(telemetry, previous);
-  const risk = calculateRisk(telemetry);
+  const trustedNames = await trustedAppNames(device.id);
+  const risk = calculateRisk(telemetry, trustedNames);
   await db.update(devices).set({ status: "ONLINE", risk, telemetry: JSON.stringify(telemetry), lastSeenAt: new Date().toISOString() }).where(eq(devices.id, device.id));
   await syncAlerts(device, telemetry);
   const commands = await takePendingAgentCommands(device.id);
