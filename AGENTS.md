@@ -34,3 +34,10 @@ Skip `tests/rendered-html.test.mjs` unless you already ran `npm run build`. `npm
 ## Done
 
 A change is done when the tests above pass, the dashboard still signs in locally, and Ask IRIS returns a written reply for a typed question.
+
+## Production checklist (ChatGPT Sites)
+
+1. Set Site access to **Anyone on the internet** (or otherwise allow unauthenticated visitors). The Mac agent must reach `/iris-agent-macos.sh` and `/api/agent/check-in` without ChatGPT login. Dashboard auth stays via Sign in with ChatGPT inside the app.
+2. Add secret `OPENAI_API_KEY` in the Sites / hosting secrets UI (never commit it).
+3. Register the Mac from the production dashboard and install with the production origin (not a temporary Cloudflare tunnel).
+4. Rotate any API key that was pasted into chat.
