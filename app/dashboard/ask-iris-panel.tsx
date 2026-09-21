@@ -380,7 +380,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     const controller = new AbortController();
     askAbortRef.current = controller;
     ignoreAskRef.current = false;
-    const timeout = window.setTimeout(() => controller.abort(), 20000);
+    const timeout = window.setTimeout(() => controller.abort(), 45000);
     try {
       const response = await fetch("/api/agent/run", {
         method: "POST",
@@ -466,7 +466,15 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
 
   function commitSpokenQuestion(text: string) {
     const question = spokenQuestionFromTranscript(text);
-    if (!question) return;
+    if (!question) {
+      setVoiceHint(language === "es" ? "No te escuché claro. Repite la pregunta cerca del micrófono." : "I didn't catch that clearly. Repeat the question near the microphone.");
+      setLiveTranscript("");
+      if (listenActiveRef.current && !speakingRef.current && !loadingRef.current) {
+        if (recognitionApi() && !recorderOnlyRef.current) beginRecognition();
+        else void startRecorderListening();
+      }
+      return;
+    }
     transcriptBufferRef.current = "";
     clearVoiceTimers();
     setVoiceHint("");

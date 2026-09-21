@@ -56,8 +56,18 @@ test("sends the spoken question without a wake phrase", () => {
   assert.equal(spokenQuestionFromTranscript("cuál es el estado"), "cuál es el estado");
   assert.equal(spokenQuestionFromTranscript("  hola  "), "hola");
   assert.equal(spokenQuestionFromTranscript("para IRIS"), "");
+  assert.equal(spokenQuestionFromTranscript("S8"), "");
+  assert.equal(spokenQuestionFromTranscript("mm"), "");
+  assert.equal(spokenQuestionFromTranscript("sí"), "sí");
   assert.equal(isHearingVoice(0.08), true);
   assert.equal(isHearingVoice(0.01), false);
+});
+
+test("agent voice instructions never deny microphone access", () => {
+  const route = readFileSync(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
+  assert.match(route, /Voice is already handled by the IRIS app/);
+  assert.match(route, /Never say you lack a microphone/);
+  assert.match(route, /Speak naturally/);
 });
 
 test("IRIS system orb grows louder when it hears or speaks", () => {

@@ -59,6 +59,17 @@ export function isRetryableVoiceError(code: VoiceErrorCode) {
 export function spokenQuestionFromTranscript(transcript: string) {
   const text = transcript.trim();
   if (!text || isStopCommand(text)) return "";
+  const normalized = normalizeVoiceTranscript(text);
+  const words = normalized.split(" ").filter(Boolean);
+  if (!words.length) return "";
+  // Drop STT noise like "S8", "mm", "eh" that is not a real request.
+  const shortOk = /^(sí|si|ok|okay|hola|iris|para|stop|no|yes|dale|listo)$/i;
+  if (words.length === 1) {
+    const token = words[0];
+    if (token.length <= 2 && !shortOk.test(token)) return "";
+    if (/^[a-z]*\d+[a-z0-9]*$/i.test(token) && !shortOk.test(token)) return "";
+    if (/^(mm+|eh+|um+|uh+|aa+|hmm+)$/i.test(token)) return "";
+  }
   return text;
 }
 
