@@ -44,6 +44,7 @@ export type IrisAnalystInput = {
   userName: string;
   section: string;
   origin?: string;
+  timeZone?: string;
   devices: DeviceContext[];
   alerts: AlertContext[];
   agents: AgentContext[];

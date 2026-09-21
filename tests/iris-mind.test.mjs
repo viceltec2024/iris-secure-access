@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { irisMindAnswer } from "../lib/iris-mind.ts";
 import { composeWorldAnswer, irisWorldAnswer } from "../lib/iris-world-knowledge.ts";
-import { extractSearchTopic, isConversationStart, isIdentityQuestion, isSocQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
+import { extractSearchTopic, isConversationStart, isDateQuestion, isIdentityQuestion, isSocQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
+import { answerCurrentDate, clockContext } from "../lib/iris-time.ts";
 
 const base = {
   language: "es",
@@ -29,6 +30,27 @@ test("Ask IRIS names itself instead of dumping SOC status", async () => {
   assert.equal(result.source, "local");
   assert.match(result.answer, /Soy IRIS/);
   assert.doesNotMatch(result.answer, /0 dispositivo/);
+});
+
+test("Ask IRIS knows today's date without OpenAI", async () => {
+  assert.equal(isDateQuestion("qué día es hoy"), true);
+  assert.equal(isDateQuestion("what day is it today"), true);
+  const fixed = new Date("2026-09-21T06:00:00.000Z");
+  assert.match(answerCurrentDate("es", fixed, "America/New_York"), /lunes/i);
+  assert.match(answerCurrentDate("es", fixed, "America/New_York"), /New_York|America\/New_York/i);
+  assert.doesNotMatch(answerCurrentDate("es", fixed, "America/New_York"), /Honduras/i);
+  assert.match(clockContext("es", fixed, "America/Los_Angeles"), /America\/Los_Angeles/);
+  assert.doesNotMatch(clockContext("es", fixed, "America/Los_Angeles"), /Honduras/i);
+  const result = await irisMindAnswer({ ...base, question: "qué día es hoy", timeZone: "America/New_York" });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /Hoy es/i);
+  assert.doesNotMatch(result.answer, /Honduras/i);
+  const agent = readFileSync(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
+  const ask = readFileSync(new URL("../app/api/ask-iris/route.ts", import.meta.url), "utf8");
+  const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
+  assert.match(agent, /clockContext\(language, new Date\(\), timeZone\)/);
+  assert.match(ask, /clockContext\(language, new Date\(\), timeZone\)/);
+  assert.match(panel, /timeZone: Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
 });
 
 test("Ask IRIS talks when the user wants a conversation", async () => {

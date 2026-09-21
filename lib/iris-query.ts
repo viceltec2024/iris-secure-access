@@ -10,6 +10,7 @@ const NOT_SOC_SYSTEM = /\bsistema (?:solar|nervioso|digestivo|inmun|m[eé]trico|
 const EXPLAINER = /\b(para qu[eé] sirve|qu[eé] es(?: un| una| el| la)?|qu[eé] significa|c[oó]mo funciona|what is|what does|how does)\b/i;
 const LIVE_STATUS_OVERRIDE = /\b(mi mac|mi dispositivo|mi equipo|c[oó]mo est[aá]|est[aá] (?:el |la )?(?:firewall|filevault)|estado (?:de|del) (?:mi |el )?(?:mac|sistema|iris))\b/i;
 const FOLLOW_UP = /^(?:(?:y|ok|okay|vale|bueno|bien)\s+)?(?:ahora\s+)?(?:qu[eé] hago(?: ahora)?|qu[eé] sigue|siguiente(?: paso)?|y ahora|contin[uú]a|sigue|y eso|qu[eé] recomiendas)[?.!\s]*$/i;
+const DATE_QUESTION = /\b(?:qu[eé]\s+d[ií]a\s+(?:es\s+)?hoy|qu[eé]\s+fecha\s+(?:es\s+)?hoy|a\s+qu[eé]\s+fecha\s+(?:estamos|vamos)|what\s+day\s+is\s+(?:it\s+)?today|what(?:'s|\s+is)\s+(?:the\s+)?(?:date|day)\s+today|today'?s\s+date|fecha\s+de\s+hoy|d[ií]a\s+de\s+hoy)\b/i;
 
 export function isStopRequest(question: string) {
   const normalized = question.toLocaleLowerCase().replace(/[.,!?¿¡;:]/g, " ").replace(/\s+/g, " ").trim();
@@ -64,6 +65,10 @@ export function isConversationStart(question: string) {
   if (CONVERSATION.test(trimmed)) return true;
   if (!/^(?:hola|hello|hi|buenas|hey)\b/i.test(trimmed)) return false;
   return !/\b(qu[eé]|c[oó]mo|who|what|where|why|cu[aá]nto|expl[ií]ca)\b/i.test(trimmed);
+}
+
+export function isDateQuestion(question: string) {
+  return DATE_QUESTION.test(question.trim());
 }
 
 export function extractSearchTopic(question: string) {

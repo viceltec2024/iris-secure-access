@@ -391,6 +391,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
           context: {
             language,
             section,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             incident: selectedIncident.id ? {
               id: selectedIncident.id,
               title: selectedIncident.title,

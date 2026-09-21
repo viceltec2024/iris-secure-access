@@ -68,6 +68,7 @@ test("agent voice instructions never deny microphone access", () => {
   assert.match(route, /Voice is already handled by the IRIS app/);
   assert.match(route, /Never say you lack a microphone/);
   assert.match(route, /Speak naturally/);
+  assert.match(route, /Current time context: \$\{clockContext\(language, new Date\(\), timeZone\)\}/);
 });
 
 test("IRIS system orb grows louder when it hears or speaks", () => {

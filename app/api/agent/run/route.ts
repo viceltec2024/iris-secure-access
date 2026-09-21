@@ -4,6 +4,7 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
+import { clockContext, resolveIrisTimeZone } from "../../../../lib/iris-time";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +41,9 @@ export async function POST(request: Request) {
   let body: { messages?: IncomingMessage[]; language?: unknown; context?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid request." }, { status: 400 }); }
 
-  const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
+  const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown; timeZone?: unknown } : {};
   const language = body.language === "en" || preferences.language === "en" ? "en" : "es";
+  const timeZone = resolveIrisTimeZone(preferences.timeZone);
   const messages = Array.isArray(body.messages)
     ? body.messages.slice(-12).filter(message => (message.role === "user" || message.role === "assistant") && typeof message.content === "string").map(message => ({ role: message.role, content: message.content.slice(0, 3000) }))
     : [];
@@ -56,6 +58,7 @@ export async function POST(request: Request) {
       section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
       incident: parseAskIncident(preferences.incident),
       origin: new URL(request.url).origin,
+      timeZone,
     });
     await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: local.model, fallback: "local" });
     return Response.json({ answer: local.answer, source: local.source, steps: [] as IrisAgentStep[] });
@@ -73,6 +76,8 @@ export async function POST(request: Request) {
           model: "gpt-5.6-sol",
           instructions: `You are IRIS, a warm and capable cybersecurity colleague in a live SOC chat.
 Speak naturally in ${language === "en" ? "English" : "Spanish"}: short paragraphs, varied rhythm, no stiff corporate filler, no repeated intros.
+
+Current time context: ${clockContext(language, new Date(), timeZone)}
 
 Voice is already handled by the IRIS app. Every user message is text from typing OR from speech-to-text. You ARE listening through that pipeline. Never say you lack a microphone, cannot hear audio, only read chat, or cannot listen. Never apologize for missing audio access.
 
@@ -134,6 +139,7 @@ Rules:
       section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
       incident: parseAskIncident(preferences.incident),
       origin: new URL(request.url).origin,
+      timeZone,
     }).catch(() => null);
     if (local?.answer) {
       await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: local.model, fallback: true });
