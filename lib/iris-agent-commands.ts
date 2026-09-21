@@ -82,3 +82,13 @@ export async function takePendingAgentCommands(deviceId: string) {
   });
   return pending.map(({ id, code, title, message }) => ({ id, code, title, message }));
 }
+
+/** Read-only view of commands still waiting for the Mac check-in. */
+export async function listPendingAgentCommands(deviceId: string) {
+  const key = commandsKey(deviceId);
+  const db = getDb();
+  const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+  return parseCommands(row?.value)
+    .filter(item => item.status === "PENDING")
+    .map(({ id, code, title, message, alertId, createdAt, approvedBy }) => ({ id, code, title, message, alertId, createdAt, approvedBy }));
+}

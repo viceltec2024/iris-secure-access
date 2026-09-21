@@ -4,7 +4,7 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
-import { isThanksMessage, stripChatDecorations, thanksAnswer } from "../../../../lib/iris-query";
+import { isCapabilitiesQuestion, isThanksMessage, stripChatDecorations, capabilitiesAnswer, thanksAnswer } from "../../../../lib/iris-query";
 import { clockContext, resolveIrisTimeZone } from "../../../../lib/iris-time";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,18 @@ type ToolCall = { type?: string; name?: string; arguments?: string; call_id?: st
 type ModelOutput = { type?: string; content?: Array<{ type?: string; text?: string }>; name?: string; arguments?: string; call_id?: string };
 
 const MAX_STEPS = 7;
+
+function compactBoardSnapshot(overview: Record<string, unknown>, extras: { section: string; incident: ReturnType<typeof parseAskIncident> }) {
+  const devices = Array.isArray(overview.devices) ? overview.devices.slice(0, 8) : [];
+  const alerts = Array.isArray(overview.activeAlerts) ? overview.activeAlerts.slice(0, 10) : [];
+  return JSON.stringify({
+    section: extras.section,
+    selectedIncident: extras.incident,
+    devices,
+    activeAlerts: alerts,
+    capabilities: overview.capabilities || null,
+  }).slice(0, 7000);
+}
 
 function responseText(payload: { output?: ModelOutput[] }) {
   return (payload.output || [])
@@ -55,15 +67,21 @@ export async function POST(request: Request) {
     await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { courtesy: "thanks" });
     return Response.json({ answer: thanksAnswer(language), source: "local", steps: [] as IrisAgentStep[] });
   }
+  if (isCapabilitiesQuestion(lastUser)) {
+    await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { courtesy: "capabilities" });
+    return Response.json({ answer: capabilitiesAnswer(language), source: "local", steps: [] as IrisAgentStep[] });
+  }
 
+  const section = typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations";
+  const incident = parseAskIncident(preferences.incident);
   const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
   if (!apiKey) {
     const local = await resolveIrisAsk({
       user: { email: user.email, role: user.role, displayName: user.displayName || user.email },
       messages,
       language,
-      section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
-      incident: parseAskIncident(preferences.incident),
+      section,
+      incident,
       origin: new URL(request.url).origin,
       timeZone,
     });
@@ -73,6 +91,14 @@ export async function POST(request: Request) {
 
   const input: Array<Record<string, unknown>> = messages.map(message => ({ role: message.role, content: message.content }));
   const steps: IrisAgentStep[] = [];
+  const agentUser = { email: user.email, role: user.role as "ADMIN" | "USER" };
+  let boardSnapshot = "";
+  try {
+    const overview = await runIrisTool(agentUser, "get_security_overview", "{}") as Record<string, unknown>;
+    boardSnapshot = compactBoardSnapshot(overview, { section, incident });
+  } catch {
+    boardSnapshot = JSON.stringify({ section, selectedIncident: incident, note: "live board unavailable" }).slice(0, 1200);
+  }
 
   try {
     for (let step = 0; step < MAX_STEPS; step += 1) {
@@ -87,16 +113,21 @@ Never use emojis, emoticons, or decorative symbols. Never reply with empty court
 
 Current time context: ${clockContext(language, new Date(), timeZone)}
 
+Live board snapshot (ground truth for this turn; refresh with tools if you need deeper detail):
+${boardSnapshot}
+
 Voice is already handled by the IRIS app. Every user message is text from typing OR from speech-to-text. You ARE listening through that pipeline. Never say you lack a microphone, cannot hear audio, only read chat, or cannot listen. Never apologize for missing audio access.
 
 If a user message looks like speech noise or is unclear, ask them to repeat the question briefly. Do not invent topics (for example do not invent an item named S8 unless tools return it).
 
 You can investigate with tools and, when the user clearly confirms in chat, take safe actions.
-Investigation tools: get_security_overview, list_active_alerts, get_device_details, explain_alert.
+Investigation tools: get_security_overview, list_active_alerts, get_device_details, explain_alert, get_response_status.
 Action tools (require userConfirmed=true ONLY after an explicit user yes/confirm): trust_application, update_alert_status, approve_remediation, request_device_recheck.
 
 Rules:
 - Lead with the direct answer, then a brief why, then one concrete next step when useful.
+- Prefer the live board snapshot for quick status; use tools for evidence, posture details, remediations, or before any action.
+- After approve_remediation or when asked if a fix landed, call get_response_status.
 - Never claim an action happened unless a tool result proves it.
 - Never set userConfirmed=true unless the user clearly authorized that specific action.
 - Never invent device or alert data. Never run destructive actions (delete files, disable SIP/FileVault, kill processes, spend crypto).
@@ -121,7 +152,7 @@ Rules:
       for (const call of calls) {
         if (!call.name || !call.call_id) continue;
         try {
-          const result = await runIrisTool({ email: user.email, role: user.role as "ADMIN" | "USER" }, call.name, call.arguments || "{}");
+          const result = await runIrisTool(agentUser, call.name, call.arguments || "{}");
           let parsed: Record<string, unknown> = {};
           try { parsed = JSON.parse(call.arguments || "{}") as Record<string, unknown>; } catch { parsed = {}; }
           steps.push({ tool: call.name, arguments: parsed, ok: true });
@@ -144,8 +175,8 @@ Rules:
       user: { email: user.email, role: user.role, displayName: user.displayName || user.email },
       messages,
       language,
-      section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
-      incident: parseAskIncident(preferences.incident),
+      section,
+      incident,
       origin: new URL(request.url).origin,
       timeZone,
     }).catch(() => null);

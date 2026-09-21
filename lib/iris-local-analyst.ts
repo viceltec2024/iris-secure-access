@@ -76,7 +76,23 @@ function controlLine(device: DeviceContext, es: boolean) {
   if (typeof device.telemetry.fileVaultEnabled === "boolean") {
     parts.push(device.telemetry.fileVaultEnabled ? (es ? "FileVault encendido" : "FileVault on") : (es ? "FileVault apagado" : "FileVault off"));
   }
+  if (typeof device.telemetry.gatekeeperEnabled === "boolean") {
+    parts.push(device.telemetry.gatekeeperEnabled ? (es ? "Gatekeeper activo" : "Gatekeeper on") : (es ? "Gatekeeper apagado" : "Gatekeeper off"));
+  }
+  if (typeof device.telemetry.sipEnabled === "boolean") {
+    parts.push(device.telemetry.sipEnabled ? (es ? "SIP activo" : "SIP on") : (es ? "SIP apagado" : "SIP off"));
+  }
+  if (typeof device.telemetry.xProtectPresent === "boolean") {
+    parts.push(device.telemetry.xProtectPresent ? (es ? "XProtect presente" : "XProtect present") : (es ? "XProtect ausente" : "XProtect missing"));
+  }
+  if (typeof device.telemetry.diskUsedPercent === "number") {
+    parts.push(es ? `disco al ${device.telemetry.diskUsedPercent}%` : `disk at ${device.telemetry.diskUsedPercent}%`);
+  }
   return parts.join(es ? ", " : ", ");
+}
+
+function stringList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
 
 export function explainIrisControl(question: string, language: "es" | "en", userName: string) {
@@ -97,6 +113,21 @@ export function explainIrisControl(question: string, language: "es" | "en", user
     return es
       ? `${name}, Gatekeeper es el control de macOS que comprueba si una app está firmada antes de abrirla. IRIS no inventa malware: solo habla de lo que el agente verificó.`
       : `${name}, Gatekeeper is the macOS control that checks whether an app is signed before it opens. IRIS does not invent malware: it only talks about what the agent verified.`;
+  }
+  if (/\bsip\b|integridad del sistema|system integrity/.test(text)) {
+    return es
+      ? `${name}, SIP (System Integrity Protection) impide cambios profundos en archivos protegidos de macOS. Si el agente reporta SIP DISABLED, hay que restaurarlo desde Recuperación con csrutil enable; IRIS no lo enciende sola.`
+      : `${name}, SIP (System Integrity Protection) blocks deep changes to protected macOS files. If the agent reports SIP DISABLED, restore it from Recovery with csrutil enable; IRIS cannot turn it on alone.`;
+  }
+  if (/\bxprotect\b/.test(text)) {
+    return es
+      ? `${name}, XProtect es la protección antimalware integrada de Apple. Si falta en el reporte, instala las respuestas de seguridad de macOS y pide a IRIS un nuevo reporte.`
+      : `${name}, XProtect is Apple's built-in antimalware protection. If the report says it is missing, install macOS security responses and ask IRIS for a fresh report.`;
+  }
+  if (/(persistencia|launchagent|launchdaemon|startup)/.test(text)) {
+    return es
+      ? `${name}, la persistencia son LaunchAgents/Daemons que arrancan con el Mac. IRIS solo marca como hallazgo los ítems sin firma válida que el agente listó; no inventa rutas.`
+      : `${name}, persistence means LaunchAgents/Daemons that start with the Mac. IRIS only flags unsigned items the agent listed; it does not invent paths.`;
   }
   return "";
 }
@@ -222,7 +253,49 @@ export function localIrisAnswer(input: IrisAnalystInput) {
       : `${name}, the open incident is ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severity ${input.incident.severity}, status ${input.incident.status}. ${evidence ? `Evidence: ${evidence}. ` : ""}${input.incident.recommendation || "Review the plan on the board before you approve."}`;
   }
 
-  if (/(alerta|alert|hallazgo)/.test(question) && !/(firewall|filevault|gatekeeper)/.test(question)) {
+  if (/(apps? sin firma|aplicaciones? (?:riesgos|sin verificar|no verificad)|unverified|risky apps?|apps? riesgos|qu[eé] apps?|confiar (?:en |la )?app)/.test(question)) {
+    if (!mac || !recent(mac.lastSeenAt)) {
+      return es
+        ? `${name}, no tengo un reporte fresco del Mac para listar apps. Cuando esté ONLINE, pregúntame otra vez.`
+        : `${name}, I do not have a fresh Mac report to list apps. Ask again when it is ONLINE.`;
+    }
+    const risky = stringList(mac.telemetry?.riskyApplications);
+    const trusted = stringList(mac.telemetry?.trustedApplications);
+    if (!risky.length) {
+      return es
+        ? `${name}, en el último reporte no hay apps sin verificar pendientes. ${trusted.length ? `Confiables ya marcadas: ${trusted.slice(0, 6).join(", ")}.` : "Todavía no marcaste apps como confiables."}`
+        : `${name}, the last report has no pending unverified apps. ${trusted.length ? `Already trusted: ${trusted.slice(0, 6).join(", ")}.` : "No apps are marked trusted yet."}`;
+    }
+    return es
+      ? `${name}, apps pendientes de confianza: ${risky.slice(0, 8).join(", ")}. Si reconoces alguna, dime “confía en NOMBRE” y lo confirmo en el chat.`
+      : `${name}, apps awaiting trust: ${risky.slice(0, 8).join(", ")}. If you recognize one, say “trust NAME” and confirm it in chat.`;
+  }
+
+  if (/(persistencia|launchagent|launchdaemon|startup|elementos? de inicio)/.test(question)) {
+    if (!mac || !recent(mac.lastSeenAt)) {
+      return es
+        ? `${name}, sin reporte fresco no puedo listar persistencia. Reconecta el Mac y pregúntame otra vez.`
+        : `${name}, without a fresh report I cannot list persistence. Reconnect the Mac and ask again.`;
+    }
+    const items = stringList(mac.telemetry?.unsignedPersistenceItems);
+    if (!items.length) {
+      return es
+        ? `${name}, el agente no listó elementos de inicio sin firma en el último reporte.`
+        : `${name}, the agent did not list unsigned startup items in the last report.`;
+    }
+    return es
+      ? `${name}, persistencia sin firma: ${items.slice(0, 6).join(", ")}. Elimina en el Mac lo que no reconozcas y pide un nuevo reporte.`
+      : `${name}, unsigned persistence: ${items.slice(0, 6).join(", ")}. Remove anything you do not recognize on the Mac and request a fresh report.`;
+  }
+
+  if (/(salud|health|puntaje|score)/.test(question) && mac) {
+    const controls = controlLine(mac, es);
+    return es
+      ? `${name}, ${describeDevice(mac, es)} Riesgo ${mac.risk}.${controls ? ` Controles: ${controls}.` : ""} ${activeAlerts.length ? `Alertas abiertas: ${activeAlerts.map(alert => alert.code.replaceAll("_", " ")).join(", ")}.` : "Sin alertas abiertas."}`
+      : `${name}, ${describeDevice(mac, es)} Risk ${mac.risk}.${controls ? ` Controls: ${controls}.` : ""} ${activeAlerts.length ? `Open alerts: ${activeAlerts.map(alert => alert.code.replaceAll("_", " ")).join(", ")}.` : "No open alerts."}`;
+  }
+
+  if (/(alerta|alert|hallazgo)/.test(question) && !/(firewall|filevault|gatekeeper|sip|xprotect)/.test(question)) {
     if (!activeAlerts.length) {
       return es
         ? `${name}, no hay alertas abiertas. ${mac ? describeDevice(mac, es) : statusBlock}`
@@ -277,11 +350,11 @@ export function localIrisAnswer(input: IrisAnalystInput) {
       : `${walletBlock} IRIS can schedule ETH, USDC, BTC, or SOL buys, but it never pays alone: every purchase waits for your approval and finishes in MetaMask or Robinhood.`;
   }
 
-  if (/(amenaza|threat|malware|ubicaci[oó]n|d[oó]nde|where|firewall|filevault|gatekeeper)/.test(question)) {
-    if (mac && /(firewall|filevault|gatekeeper)/.test(question) && recent(mac.lastSeenAt)) {
+  if (/(amenaza|threat|malware|ubicaci[oó]n|d[oó]nde|where|firewall|filevault|gatekeeper|\bsip\b|xprotect)/.test(question)) {
+    if (mac && /(firewall|filevault|gatekeeper|\bsip\b|xprotect)/.test(question) && recent(mac.lastSeenAt)) {
       const controls = controlLine(mac, es);
       return es
-        ? `${name}, ${describeDevice(mac, es)} ${activeAlerts.length ? `Alertas abiertas: ${activeAlerts.map(alert => alert.code.replaceAll("_", " ")).join(", ")}.` : "No hay alertas abiertas."}`
+        ? `${name}, ${describeDevice(mac, es)} ${activeAlerts.length ? `Alertas abiertas: ${activeAlerts.map(alert => alert.code.replaceAll("_", " ")).join(", ")}.` : "No hay alertas abiertas."}${controls ? "" : ""}`
         : `${name}, ${describeDevice(mac, es)} ${activeAlerts.length ? `Open alerts: ${activeAlerts.map(alert => alert.code.replaceAll("_", " ")).join(", ")}.` : "There are no open alerts."}${controls ? "" : ""}`;
     }
     if (!activeAlerts.length) {

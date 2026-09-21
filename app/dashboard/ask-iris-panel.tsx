@@ -12,6 +12,7 @@ const AGENT_STEP_LABELS: Record<string, { es: string; en: string }> = {
   list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
   get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
   explain_alert: { es: "Expliqué la alerta", en: "Explained the alert" },
+  get_response_status: { es: "Revisé remediaciones y comandos pendientes", en: "Checked remediations and pending commands" },
   trust_application: { es: "Marqué la app como confiable", en: "Trusted the application" },
   update_alert_status: { es: "Actualicé el estado de la alerta", en: "Updated the alert status" },
   approve_remediation: { es: "Aprobé la corrección en el Mac", en: "Approved Mac remediation" },

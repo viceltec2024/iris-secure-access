@@ -1,6 +1,7 @@
 const WORKSPACE = /\b(dispositivos?|devices?|alertas?|alerts?|incidentes?|incidents?|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|hallazgos?|operaciones de seguridad|security operations|estado del sistema|system status|estado de seguridad|security overview|get_security_overview|overview de seguridad|macos|macbook|\bmac\b|firewall|filevault|gatekeeper|xprotect|online|offline)\b/i;
 const GREETING = /^(?:hola|hello|hi|buenas|hey|qué tal|que tal|buenos d[ií]as|buenas tardes)(?:\s+iris)?[!.?]*$/i;
-const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|qu[eé] puedes|what can you|c[oó]mo te llamas)\b/i;
+const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|c[oó]mo te llamas)\b/i;
+const CAPABILITIES = /\b(qu[eé] puedes(?:\s+hacer)?|what can you(?:\s+do)?|qu[eé] sabes hacer|en qu[eé] me ayudas|c[oó]mo me ayudas)\b/i;
 const CONVERSATION = /\b(quiero hablar|hablemos|conversemos|h[áa]blame|platiquemos|podemos hablar|talk with you|let'?s talk)\b/i;
 const STOP_LINE = /^(?:(?:oye|hey|ok|okay|hola|escucha)\s+)?(?:iris\s+)?(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|callate|quiet|cancel)(?:\s+(?:iris|ya|ahora|por favor|please|de hablar|talking|speaking))?$/i;
 const STOP_PHRASE = /^(?:deja de hablar|stop talking|stop speaking|no hables|shut up|iris para|iris stop|para ya|stop para|para stop)$/i;
@@ -61,6 +62,16 @@ export function isIdentityQuestion(question: string) {
   return IDENTITY.test(question);
 }
 
+export function isCapabilitiesQuestion(question: string) {
+  return CAPABILITIES.test(question.trim());
+}
+
+export function capabilitiesAnswer(language: "es" | "en") {
+  return language === "es"
+    ? "Puedo revisar el estado del Mac (online, riesgo, controles), listar y explicar alertas con evidencia, ver remediaciones o comandos pendientes, y —solo si lo confirmas— confiar una app, aprobar una corrección, marcar una alerta o pedir un nuevo reporte. No borro archivos ni ejecuto acciones destructivas."
+    : "I can review Mac status (online, risk, controls), list and explain alerts with evidence, check remediations or pending commands, and —only if you confirm— trust an app, approve a fix, update an alert, or request a fresh report. I do not delete files or run destructive actions.";
+}
+
 export function isConversationStart(question: string) {
   const trimmed = question.trim();
   if (CONVERSATION.test(trimmed)) return true;
@@ -87,6 +98,7 @@ export function thanksAnswer(language: "es" | "en") {
 export function stripChatDecorations(text: string) {
   return text
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

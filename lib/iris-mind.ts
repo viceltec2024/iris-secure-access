@@ -1,5 +1,5 @@
 import { localIrisAnswer, explainIrisControl, type IrisAnalystInput } from "./iris-local-analyst.ts";
-import { isConceptExplainer, isConversationStart, isDateQuestion, isGreetingQuestion, isIdentityQuestion, isSocFollowUp, isSocQuestion, isStopRequest, isThanksMessage, thanksAnswer, tryEvaluateMath } from "./iris-query.ts";
+import { isCapabilitiesQuestion, isConceptExplainer, isConversationStart, isDateQuestion, isGreetingQuestion, isIdentityQuestion, isSocFollowUp, isSocQuestion, isStopRequest, isThanksMessage, capabilitiesAnswer, thanksAnswer, tryEvaluateMath } from "./iris-query.ts";
 import { answerCurrentDate } from "./iris-time.ts";
 import { irisWorldAnswer } from "./iris-world-knowledge.ts";
 
@@ -44,6 +44,9 @@ export async function irisMindAnswer(input: IrisAnalystInput) {
   }
   if (isThanksMessage(input.question)) {
     return { answer: thanksAnswer(input.language), source: "local" as const };
+  }
+  if (isCapabilitiesQuestion(input.question)) {
+    return { answer: capabilitiesAnswer(input.language), source: "local" as const };
   }
   if (isIdentityQuestion(input.question)) return { answer: identityAnswer(input), source: "local" };
   if (isGreetingQuestion(input.question) || isConversationStart(input.question)) {

@@ -69,6 +69,16 @@ test("Ask IRIS answers thanks without chatbot fluff or emoji", async () => {
   assert.match(agent, /stripChatDecorations/);
 });
 
+test("Ask IRIS states capabilities without fluff", async () => {
+  const { isCapabilitiesQuestion, capabilitiesAnswer } = await import("../lib/iris-query.ts");
+  assert.equal(isCapabilitiesQuestion("qué puedes hacer"), true);
+  assert.match(capabilitiesAnswer("es"), /confirmar|reporte|alertas/i);
+  assert.doesNotMatch(capabilitiesAnswer("es"), /😊|De nada/);
+  const result = await irisMindAnswer({ ...base, question: "qué puedes hacer" });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /Mac|alertas|confirmar/i);
+});
+
 test("Ask IRIS talks when the user wants a conversation", async () => {
   assert.equal(isConversationStart("hola, quiero hablar contigo"), true);
   const result = await irisMindAnswer({ ...base, question: "hola, quiero hablar contigo" });
