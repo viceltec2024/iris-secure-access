@@ -4,6 +4,7 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
+import { isThanksMessage, stripChatDecorations, thanksAnswer } from "../../../../lib/iris-query";
 import { clockContext, resolveIrisTimeZone } from "../../../../lib/iris-time";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,12 @@ export async function POST(request: Request) {
     : [];
   if (!messages.some(message => message.role === "user")) return Response.json({ error: language === "es" ? "Escribe una pregunta para IRIS." : "Write a request for IRIS." }, { status: 400 });
 
+  const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  if (isThanksMessage(lastUser)) {
+    await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { courtesy: "thanks" });
+    return Response.json({ answer: thanksAnswer(language), source: "local", steps: [] as IrisAgentStep[] });
+  }
+
   const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
   if (!apiKey) {
     const local = await resolveIrisAsk({
@@ -74,8 +81,9 @@ export async function POST(request: Request) {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "gpt-5.6-sol",
-          instructions: `You are IRIS, a warm and capable cybersecurity colleague in a live SOC chat.
+          instructions: `You are IRIS, a capable cybersecurity colleague in a live SOC chat.
 Speak naturally in ${language === "en" ? "English" : "Spanish"}: short paragraphs, varied rhythm, no stiff corporate filler, no repeated intros.
+Never use emojis, emoticons, or decorative symbols. Never reply with empty courtesy like "¡De nada!", "You're welcome!", or a smile alone—after thanks, keep one short adult line and move on.
 
 Current time context: ${clockContext(language, new Date(), timeZone)}
 
@@ -106,7 +114,7 @@ Rules:
       const answer = responseText(payload);
       if (!calls.length) {
         await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { steps: steps.length });
-        return Response.json({ answer: answer || (language === "es" ? "IRIS terminó el análisis." : "IRIS completed the analysis."), source: "agent", steps });
+        return Response.json({ answer: stripChatDecorations(answer) || (language === "es" ? "IRIS terminó el análisis." : "IRIS completed the analysis."), source: "agent", steps });
       }
 
       input.push(...(payload.output || []));

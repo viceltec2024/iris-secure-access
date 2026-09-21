@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
+import { stripChatDecorations } from "../../../lib/iris-query";
 import { clockContext, resolveIrisTimeZone } from "../../../lib/iris-time";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
   const input = `CURRENT IRIS CONTEXT\n${safeContext}\n\nCONVERSATION\n${transcript}`;
 
   try {
-    const openaiResponse = await fetch("https://api.openai.com/v1/responses", { method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6-sol", instructions: `You are IRIS, a warm, composed and highly capable enterprise cybersecurity copilot. Speak like a thoughtful human colleague, not a status bot. Answer in the user's language (normally Spanish) with natural phrasing, varied sentence length and smooth conversational transitions.
+    const openaiResponse = await fetch("https://api.openai.com/v1/responses", { method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6-sol", instructions: `You are IRIS, a capable enterprise cybersecurity copilot. Speak like a thoughtful human colleague, not a status bot. Answer in the user's language (normally Spanish) with natural phrasing, varied sentence length and smooth conversational transitions. Never use emojis, emoticons, or decorative symbols. Never reply with empty courtesy like "¡De nada!" or "You're welcome!" alone.
 
 Current time context: ${clockContext(language, new Date(), timeZone)}
 
@@ -66,7 +67,7 @@ Analyze only the supplied IRIS context. Device telemetry marked ONLINE with a re
 When the user asks by voice for the system status, answer aloud naturally and concisely in this order: device connection and report time, health/risk, protection controls, active verified findings, and recommended next action. For threat location, say the exact file or application path only when a locations or threatLocations field supplies it. Otherwise explain that IRIS knows the affected device or application but does not yet have a verified filesystem path. Never call a user-approved application malware merely because its signature could not be verified.`, input, max_output_tokens: 1100 }) });
     const payload = await openaiResponse.json() as { error?: { message?: string }; output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }> };
     if (!openaiResponse.ok) throw new Error(payload.error?.message || "OpenAI request failed.");
-    const answer = payload.output?.flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text || "").join("\n").trim();
+    const answer = stripChatDecorations(payload.output?.flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text || "").join("\n").trim() || "");
     if (!answer) throw new Error("IRIS returned an empty analysis.");
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "gpt-5.6-sol" });
     return Response.json({ answer, source: "openai" });

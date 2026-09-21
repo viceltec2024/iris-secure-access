@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { irisMindAnswer } from "../lib/iris-mind.ts";
 import { composeWorldAnswer, irisWorldAnswer } from "../lib/iris-world-knowledge.ts";
-import { extractSearchTopic, isConversationStart, isDateQuestion, isIdentityQuestion, isSocQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
+import { extractSearchTopic, isConversationStart, isDateQuestion, isIdentityQuestion, isSocQuestion, isThanksMessage, stripChatDecorations, thanksAnswer, tryEvaluateMath } from "../lib/iris-query.ts";
 import { answerCurrentDate, clockContext } from "../lib/iris-time.ts";
 
 const base = {
@@ -51,6 +51,22 @@ test("Ask IRIS knows today's date without OpenAI", async () => {
   assert.match(agent, /clockContext\(language, new Date\(\), timeZone\)/);
   assert.match(ask, /clockContext\(language, new Date\(\), timeZone\)/);
   assert.match(panel, /timeZone: Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
+});
+
+test("Ask IRIS answers thanks without chatbot fluff or emoji", async () => {
+  assert.equal(isThanksMessage("gracias"), true);
+  assert.equal(isThanksMessage("muchas gracias iris"), true);
+  assert.equal(isThanksMessage("thank you"), true);
+  assert.equal(isThanksMessage("qué día es hoy"), false);
+  assert.doesNotMatch(thanksAnswer("es"), /De nada|😊|emoji/i);
+  assert.equal(stripChatDecorations("¡De nada! 😊"), "¡De nada!");
+  const result = await irisMindAnswer({ ...base, question: "gracias" });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /Listo/i);
+  assert.doesNotMatch(result.answer, /De nada|😊/);
+  const agent = readFileSync(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
+  assert.match(agent, /isThanksMessage/);
+  assert.match(agent, /stripChatDecorations/);
 });
 
 test("Ask IRIS talks when the user wants a conversation", async () => {
