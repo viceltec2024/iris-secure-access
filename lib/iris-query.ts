@@ -1,6 +1,7 @@
 const WORKSPACE = /\b(dispositivos?|devices?|alertas?|alerts?|incidentes?|incidents?|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|hallazgos?|operaciones de seguridad|security operations|estado del sistema|system status|estado de seguridad|security overview|get_security_overview|overview de seguridad|macos|macbook|\bmac\b|firewall|filevault|gatekeeper|xprotect|online|offline)\b/i;
 const GREETING = /^(?:hola|hello|hi|buenas|hey|qué tal|que tal|buenos d[ií]as|buenas tardes)(?:\s+iris)?[!.?]*$/i;
-const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|qu[eé] puedes|what can you|c[oó]mo te llamas)\b/i;
+const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|c[oó]mo te llamas)\b/i;
+const CAPABILITIES = /\b(qu[eé] puedes(?:\s+hacer)?|what can you(?:\s+do)?|qu[eé] sabes hacer|en qu[eé] me ayudas|c[oó]mo me ayudas)\b/i;
 const CONVERSATION = /\b(quiero hablar|hablemos|conversemos|h[áa]blame|platiquemos|podemos hablar|talk with you|let'?s talk)\b/i;
 const STOP_LINE = /^(?:(?:oye|hey|ok|okay|hola|escucha)\s+)?(?:iris\s+)?(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|callate|quiet|cancel)(?:\s+(?:iris|ya|ahora|por favor|please|de hablar|talking|speaking))?$/i;
 const STOP_PHRASE = /^(?:deja de hablar|stop talking|stop speaking|no hables|shut up|iris para|iris stop|para ya|stop para|para stop)$/i;
@@ -10,6 +11,8 @@ const NOT_SOC_SYSTEM = /\bsistema (?:solar|nervioso|digestivo|inmun|m[eé]trico|
 const EXPLAINER = /\b(para qu[eé] sirve|qu[eé] es(?: un| una| el| la)?|qu[eé] significa|c[oó]mo funciona|what is|what does|how does)\b/i;
 const LIVE_STATUS_OVERRIDE = /\b(mi mac|mi dispositivo|mi equipo|c[oó]mo est[aá]|est[aá] (?:el |la )?(?:firewall|filevault)|estado (?:de|del) (?:mi |el )?(?:mac|sistema|iris))\b/i;
 const FOLLOW_UP = /^(?:(?:y|ok|okay|vale|bueno|bien)\s+)?(?:ahora\s+)?(?:qu[eé] hago(?: ahora)?|qu[eé] sigue|siguiente(?: paso)?|y ahora|contin[uú]a|sigue|y eso|qu[eé] recomiendas)[?.!\s]*$/i;
+const DATE_QUESTION = /\b(?:qu[eé]\s+d[ií]a\s+(?:es\s+)?hoy|qu[eé]\s+fecha\s+(?:es\s+)?hoy|a\s+qu[eé]\s+fecha\s+(?:estamos|vamos)|what\s+day\s+is\s+(?:it\s+)?today|what(?:'s|\s+is)\s+(?:the\s+)?(?:date|day)\s+today|today'?s\s+date|fecha\s+de\s+hoy|d[ií]a\s+de\s+hoy)\b/i;
+const THANKS = /^(?:(?:ok|okay|vale|bueno|bien|muchas?|mil)\s+)*(?:gracias|thanks|thank\s+you|ty|thx)(?:\s+(?:iris|mucho|muchas|a\s+ti|a\s+usted))?[!.?]*$/i;
 
 export function isStopRequest(question: string) {
   const normalized = question.toLocaleLowerCase().replace(/[.,!?¿¡;:]/g, " ").replace(/\s+/g, " ").trim();
@@ -59,11 +62,46 @@ export function isIdentityQuestion(question: string) {
   return IDENTITY.test(question);
 }
 
+export function isCapabilitiesQuestion(question: string) {
+  return CAPABILITIES.test(question.trim());
+}
+
+export function capabilitiesAnswer(language: "es" | "en") {
+  return language === "es"
+    ? "Puedo revisar el estado del Mac (online, riesgo, controles), listar y explicar alertas con evidencia, ver remediaciones o comandos pendientes, y —solo si lo confirmas— confiar una app, aprobar una corrección, marcar una alerta o pedir un nuevo reporte. No borro archivos ni ejecuto acciones destructivas."
+    : "I can review Mac status (online, risk, controls), list and explain alerts with evidence, check remediations or pending commands, and —only if you confirm— trust an app, approve a fix, update an alert, or request a fresh report. I do not delete files or run destructive actions.";
+}
+
 export function isConversationStart(question: string) {
   const trimmed = question.trim();
   if (CONVERSATION.test(trimmed)) return true;
   if (!/^(?:hola|hello|hi|buenas|hey)\b/i.test(trimmed)) return false;
   return !/\b(qu[eé]|c[oó]mo|who|what|where|why|cu[aá]nto|expl[ií]ca)\b/i.test(trimmed);
+}
+
+export function isDateQuestion(question: string) {
+  return DATE_QUESTION.test(question.trim());
+}
+
+export function isThanksMessage(question: string) {
+  const normalized = question.toLocaleLowerCase().replace(/[¿?¡!.,;:]/g, " ").replace(/\s+/g, " ").trim();
+  return THANKS.test(normalized);
+}
+
+export function thanksAnswer(language: "es" | "en") {
+  return language === "es"
+    ? "Listo. Si necesitas el Mac, una alerta u otra cosa, dilo."
+    : "Done. If you need the Mac, an alert, or something else, say it.";
+}
+
+/** Strip emoji / dingbats so spoken and chat replies stay adult SOC tone. */
+export function stripChatDecorations(text: string) {
+  return text
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export function extractSearchTopic(question: string) {

@@ -8,6 +8,10 @@ test("IRIS agent tools include investigation and confirmed actions", () => {
   assert.match(source, /list_active_alerts/);
   assert.match(source, /get_device_details/);
   assert.match(source, /explain_alert/);
+  assert.match(source, /get_response_status/);
+  assert.match(source, /healthScore/);
+  assert.match(source, /posture/);
+  assert.match(source, /SIP_DISABLED/);
   assert.match(source, /trust_application/);
   assert.match(source, /update_alert_status/);
   assert.match(source, /approve_remediation/);
@@ -25,6 +29,8 @@ test("IRIS agent run requires confirmation for actions and stays inside seven st
   assert.match(route, /resolveIrisAsk/);
   assert.match(route, /IRIS_AGENT_TOOLS/);
   assert.match(route, /userConfirmed=true/);
+  assert.match(route, /Live board snapshot/);
+  assert.match(route, /get_response_status/);
   assert.doesNotMatch(route, /arbitrary shell/);
 });
 
@@ -32,6 +38,7 @@ test("Ask IRIS shows investigation steps without chain of thought", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   assert.match(panel, /Revisé el estado de seguridad/);
   assert.match(panel, /Marqué la app como confiable/);
+  assert.match(panel, /Revisé remediaciones y comandos pendientes/);
   assert.match(panel, /iris-chat-steps/);
   assert.doesNotMatch(panel, /chain-of-thought|thinking out loud/i);
 });

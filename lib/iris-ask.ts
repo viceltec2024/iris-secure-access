@@ -35,6 +35,7 @@ export async function resolveIrisAsk(input: {
   section: string;
   incident: IrisIncidentContext | null;
   origin: string;
+  timeZone?: string;
 }) {
   const db = getDb();
   const deviceRows = input.user.role === "ADMIN"
@@ -72,6 +73,7 @@ export async function resolveIrisAsk(input: {
     userName: input.user.displayName || input.user.email,
     origin: input.origin,
     section: input.section,
+    timeZone: input.timeZone,
     devices: mappedDevices,
     alerts: alertRows.map(alert => ({ deviceId: alert.deviceId, code: alert.code, severity: alert.severity, status: alert.status, evidence: parseJsonRecord(alert.evidence), lastSeenAt: alert.lastSeenAt })),
     agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),

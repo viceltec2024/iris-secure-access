@@ -140,3 +140,45 @@ test("Ask IRIS answers the selected incident", () => {
   assert.match(answer, /IR-2001/);
   assert.match(answer, /Aprueba ENABLE FIREWALL/);
 });
+
+test("Ask IRIS lists risky apps and unsigned persistence from telemetry", () => {
+  const now = new Date().toISOString();
+  const device = {
+    id: "dev-1",
+    name: "My Mac",
+    platform: "macOS",
+    status: "ONLINE",
+    risk: "MEDIUM",
+    lastSeenAt: now,
+    telemetry: {
+      firewallEnabled: true,
+      sipEnabled: true,
+      riskyApplications: ["Sketchy.app"],
+      trustedApplications: ["Cursor"],
+      unsignedPersistenceItems: ["/Library/LaunchAgents/com.example.bad.plist"],
+    },
+  };
+  const apps = localIrisAnswer({
+    language: "es",
+    question: "qué apps riesgosas hay",
+    userName: "Ezephian",
+    section: "operations",
+    devices: [device],
+    alerts: [],
+    agents: [],
+    wallet: { connected: false, address: "" },
+  });
+  assert.match(apps, /Sketchy\.app/);
+  assert.doesNotMatch(apps, /Wikipedia|fotosíntesis/i);
+  const persistence = localIrisAnswer({
+    language: "es",
+    question: "hay persistencia sin firma",
+    userName: "Ezephian",
+    section: "operations",
+    devices: [device],
+    alerts: [],
+    agents: [],
+    wallet: { connected: false, address: "" },
+  });
+  assert.match(persistence, /com\.example\.bad/);
+});

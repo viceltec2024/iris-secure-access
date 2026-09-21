@@ -2,8 +2,8 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db";
 import { devices, remediationPlans, responseActions, securityAlerts, trustedApplications } from "../db/schema";
 import { logAudit } from "./authz";
-import { queueAgentCommands } from "./iris-agent-commands";
-import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
+import { listPendingAgentCommands, queueAgentCommands } from "./iris-agent-commands";
+import { deviceView, parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
 import { commandsForAlert } from "./iris-live-soc";
 
 export type IrisAgentUser = {
@@ -22,6 +22,7 @@ export const IRIS_AGENT_TOOL_LABELS: Record<string, { es: string; en: string }> 
   list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
   get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
   explain_alert: { es: "Expliqué la alerta", en: "Explained the alert" },
+  get_response_status: { es: "Revisé remediaciones y comandos pendientes", en: "Checked remediations and pending commands" },
   trust_application: { es: "Marqué la app como confiable", en: "Trusted the application" },
   update_alert_status: { es: "Actualicé el estado de la alerta", en: "Updated the alert status" },
   approve_remediation: { es: "Aprobé la corrección en el Mac", en: "Approved Mac remediation" },
@@ -32,6 +33,34 @@ const ALERT_GUIDE: Record<string, { es: { why: string; steps: string[] }; en: { 
   FIREWALL_DISABLED: {
     es: { why: "Sin firewall el Mac acepta conexiones de red con menos control.", steps: ["Confirma que quieres activarlo.", "IRIS puede encolar ENABLE_FIREWALL (macOS pedirá tu contraseña).", "Espera el siguiente reporte para verificar."] },
     en: { why: "Without the firewall the Mac accepts network connections with less control.", steps: ["Confirm you want it enabled.", "IRIS can queue ENABLE_FIREWALL (macOS may ask for your password).", "Wait for the next report to verify."] },
+  },
+  GATEKEEPER_DISABLED: {
+    es: { why: "Gatekeeper desactivado facilita ejecutar software no verificado.", steps: ["Abre Privacidad y seguridad.", "Permite solo App Store y desarrolladores identificados.", "Pide un nuevo reporte a IRIS."] },
+    en: { why: "Disabled Gatekeeper makes unverified software easier to run.", steps: ["Open Privacy & Security.", "Allow only App Store and identified developers.", "Ask IRIS for a fresh report."] },
+  },
+  FILEVAULT_DISABLED: {
+    es: { why: "Sin FileVault el disco no está cifrado si el Mac se pierde.", steps: ["Conecta el Mac a la corriente.", "Activa FileVault en Privacidad y seguridad.", "Guarda la clave de recuperación."] },
+    en: { why: "Without FileVault the disk is not encrypted if the Mac is lost.", steps: ["Connect the Mac to power.", "Enable FileVault in Privacy & Security.", "Store the recovery key safely."] },
+  },
+  SIP_DISABLED: {
+    es: { why: "SIP desactivado permite cambios profundos en archivos protegidos de macOS.", steps: ["Reinicia en Recuperación de macOS.", "Ejecuta csrutil enable en Terminal.", "Reinicia y pide un nuevo reporte."] },
+    en: { why: "Disabled SIP allows deep changes to protected macOS files.", steps: ["Reboot into macOS Recovery.", "Run csrutil enable in Terminal.", "Restart and request a fresh report."] },
+  },
+  AUTOMATIC_UPDATES_DISABLED: {
+    es: { why: "Sin actualizaciones automáticas el Mac puede quedar expuesto a fallas ya corregidas.", steps: ["Abre Actualización de software.", "Activa actualizaciones de macOS y respuestas de seguridad.", "Pide un nuevo reporte."] },
+    en: { why: "Without automatic updates the Mac may stay exposed to already-fixed flaws.", steps: ["Open Software Update.", "Enable macOS updates and security responses.", "Request a fresh report."] },
+  },
+  DISK_CRITICALLY_FULL: {
+    es: { why: "Un disco casi lleno puede impedir actualizaciones y afectar la estabilidad.", steps: ["Abre Almacenamiento.", "Borra solo archivos que reconozcas.", "Vacía la Papelera y pide un nuevo reporte."] },
+    en: { why: "A nearly full disk can block updates and hurt stability.", steps: ["Open Storage.", "Delete only files you recognize.", "Empty Trash and request a fresh report."] },
+  },
+  XPROTECT_MISSING: {
+    es: { why: "XProtect no fue detectado; falta la protección antimalware integrada de Apple.", steps: ["Instala todas las respuestas de seguridad.", "Reinicia el Mac.", "Pide un nuevo reporte a IRIS."] },
+    en: { why: "XProtect was not detected; Apple's built-in antimalware protection is missing.", steps: ["Install every security response.", "Restart the Mac.", "Ask IRIS for a fresh report."] },
+  },
+  MALWARE_REMOVAL_TOOL_MISSING: {
+    es: { why: "Falta el componente de macOS para retirar malware conocido.", steps: ["Instala actualizaciones de macOS.", "Activa respuestas de seguridad.", "Reinicia y verifica con IRIS."] },
+    en: { why: "macOS may be missing its component for removing known malware.", steps: ["Install macOS updates.", "Enable security responses.", "Restart and verify with IRIS."] },
   },
   UNVERIFIED_APPLICATIONS_FOUND: {
     es: { why: "Hay apps cuya firma no se pudo verificar; pueden ser legítimas o dudosas.", steps: ["Revisa la lista de aplicaciones.", "Si las reconoces, confírmalas como confiables.", "Si no, elimínalas desde el Mac."] },
@@ -86,6 +115,18 @@ export const IRIS_AGENT_TOOLS = [
         language: { type: "string", enum: ["es", "en"] },
       },
       required: ["alertId", "language"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "get_response_status",
+    description: "Get open remediations and pending Mac agent commands for a device. Use after approve_remediation or when the user asks whether a fix was applied yet.",
+    parameters: {
+      type: "object",
+      properties: { deviceId: { type: "string", minLength: 1, maxLength: 120 } },
+      required: ["deviceId"],
       additionalProperties: false,
     },
     strict: true,
@@ -249,22 +290,35 @@ export async function runIrisTool(user: IrisAgentUser, name: string, rawArgument
     const device = deviceRows.find(row => row.id === deviceId);
     if (!device) throw new Error("Device not found or not authorized");
     const status = reportedDeviceStatus(device);
-    const telemetry = parseJsonRecord(device.telemetry);
     const trusted = await db.select().from(trustedApplications).where(eq(trustedApplications.deviceId, device.id));
     const trustedNames = trusted.map(row => row.appName);
-    const risky = Array.isArray(telemetry.riskyApplications)
-      ? (telemetry.riskyApplications as string[]).filter(app => !trustedNames.includes(app))
-      : [];
+    const view = deviceView(device, trustedNames);
+    const telemetry = view.telemetry || {};
+    const risky = Array.isArray(telemetry.riskyApplications) ? telemetry.riskyApplications : [];
+    const posture = {
+      firewallEnabled: telemetry.firewallEnabled ?? null,
+      gatekeeperEnabled: telemetry.gatekeeperEnabled ?? null,
+      fileVaultEnabled: telemetry.fileVaultEnabled ?? null,
+      sipEnabled: telemetry.sipEnabled ?? null,
+      automaticUpdatesEnabled: telemetry.automaticUpdatesEnabled ?? null,
+      xProtectPresent: telemetry.xProtectPresent ?? null,
+      malwareRemovalToolPresent: telemetry.malwareRemovalToolPresent ?? null,
+      diskUsedPercent: telemetry.diskUsedPercent ?? null,
+      memoryUsedPercent: telemetry.memoryUsedPercent ?? null,
+      unsignedPersistenceItems: telemetry.unsignedPersistenceItems || [],
+    };
     return {
       id: device.id,
       name: device.name,
       platform: device.platform,
       status,
       risk: device.risk,
+      healthScore: view.healthScore,
       lastSeenAt: device.lastSeenAt,
       reportFresh: status === "ONLINE",
       trustedApplications: trustedNames,
       untrustedApplications: risky,
+      posture,
       telemetry: status === "ONLINE" ? { ...telemetry, riskyApplications: risky } : { stale: true, lastReport: telemetry },
     };
   }
@@ -293,6 +347,35 @@ export async function runIrisTool(user: IrisAgentUser, name: string, rawArgument
       whyItMatters: guide.why,
       recommendedSteps: guide.steps,
       availableActions: ["update_alert_status", "approve_remediation", alert.code === "UNVERIFIED_APPLICATIONS_FOUND" ? "trust_application" : null].filter(Boolean),
+    };
+  }
+
+  if (name === "get_response_status") {
+    const deviceId = String(args.deviceId || "").slice(0, 120);
+    const device = deviceRows.find(row => row.id === deviceId);
+    if (!device) throw new Error("Device not found or not authorized");
+    const status = reportedDeviceStatus(device);
+    const plans = await db.select().from(remediationPlans).where(eq(remediationPlans.deviceId, device.id)).orderBy(desc(remediationPlans.approvedAt)).limit(20);
+    const pendingCommands = await listPendingAgentCommands(device.id);
+    return {
+      deviceId: device.id,
+      deviceName: device.name,
+      deviceStatus: status,
+      lastSeenAt: device.lastSeenAt,
+      remediations: plans.map(plan => ({
+        id: plan.id,
+        alertId: plan.alertId,
+        actionCode: plan.actionCode,
+        status: plan.status,
+        approvedBy: plan.approvedBy,
+        approvedAt: plan.approvedAt,
+        lastCheckedAt: plan.lastCheckedAt,
+        verifiedAt: plan.verifiedAt,
+      })),
+      pendingCommands,
+      note: status === "ONLINE"
+        ? "Pending commands apply on the next Mac agent check-in (~2 min)."
+        : "Device is not ONLINE; pending commands wait until the agent reports again.",
     };
   }
 
