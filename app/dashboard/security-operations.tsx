@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, DeviceMobile, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
+import { Bell, ArrowClockwise, ChartLineUp, ChatCircleDots, CheckCircle, CopySimple, Cube, Desktop, DeviceMobile, DotsThree, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import IrisBrandMark from "../iris-brand-mark";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
@@ -70,6 +70,7 @@ export default function SecurityOperations({
   const [filter, setFilter] = useState("All");
   const [lastUpdate, setLastUpdate] = useState("ahora mismo");
   const [section, setSection] = useState<Section>("operations");
+  const [phoneMore, setPhoneMore] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [executionNote, setExecutionNote] = useState("");
   const [devices, setDevices] = useState<Device[]>(initialDevices);
@@ -310,7 +311,15 @@ export default function SecurityOperations({
     </aside>
 
     <section className="soc-main">
-      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", market: language === "es" ? "Bolsa en vivo" : "Live market", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => { loadSecurityStateRef.current(); setLastUpdate(t("now")); }}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
+      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", debit: language === "es" ? "Débito del teléfono" : "Phone debit", market: language === "es" ? "Bolsa en vivo" : "Live market", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => { loadSecurityStateRef.current(); setLastUpdate(t("now")); }}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
+
+      <section className="iris-phone-howto">
+        <DeviceMobile weight="duotone" />
+        <div>
+          <strong>{language === "es" ? "IRIS en tu teléfono" : "IRIS on your phone"}</strong>
+          <p>{language === "es" ? "Safari → Compartir → Añadir a pantalla de inicio. Abajo: Operaciones, Débito, Ask IRIS y Dispositivos. Di cancela o para para detener." : "Safari → Share → Add to Home Screen. Bottom: Operations, Debit, Ask IRIS, and Devices. Say cancel or stop to halt."}</p>
+        </div>
+      </section>
 
       {waitingDevice && reconnectCommand && <section className="ops-reconnect">
         <div>
@@ -447,6 +456,22 @@ export default function SecurityOperations({
       {section === "debit" && <IrisPhoneDebit language={language} />}
       {section === "market" && <IrisMarketPanel language={language} onOpenPurchases={() => setSection("debit")} />}
       <AskIrisPanel section={section} selectedIncident={selectedView} incidents={incidents.map(localized)} devices={devices} userRole={user.role} userName={user.displayName.split(" ")[0]} language={language} />
+      {phoneMore && <div className="iris-phone-more" role="dialog" aria-label={language === "es" ? "Más módulos" : "More modules"}>
+        <button type="button" className={section === "alerts" ? "active" : ""} onClick={() => { setSection("alerts"); setPhoneMore(false); }}>{language === "es" ? "Alertas" : "Alerts"}</button>
+        <button type="button" className={section === "incidents" ? "active" : ""} onClick={() => { setSection("incidents"); setPhoneMore(false); }}>{language === "es" ? "Incidentes" : "Incidents"}</button>
+        <button type="button" className={section === "intelligence" ? "active" : ""} onClick={() => { setSection("intelligence"); setPhoneMore(false); }}>{language === "es" ? "Inteligencia" : "Intelligence"}</button>
+        <button type="button" className={section === "chain" ? "active" : ""} onClick={() => { setSection("chain"); setPhoneMore(false); }}>IRIS Chain</button>
+        <button type="button" className={section === "market" ? "active" : ""} onClick={() => { setSection("market"); setPhoneMore(false); }}>{language === "es" ? "Bolsa" : "Market"}</button>
+        <button type="button" className={section === "approvals" ? "active" : ""} onClick={() => { setSection("approvals"); setPhoneMore(false); }}>{language === "es" ? "Aprobaciones" : "Approvals"}</button>
+        <button type="button" className={section === "audit" ? "active" : ""} onClick={() => { setSection("audit"); setPhoneMore(false); }}>{language === "es" ? "Auditoría" : "Audit"}</button>
+      </div>}
+      <nav className="iris-phone-dock" aria-label={language === "es" ? "IRIS en el teléfono" : "IRIS on the phone"}>
+        <button type="button" className={section === "operations" ? "active" : ""} onClick={() => { setSection("operations"); setPhoneMore(false); }}><Pulse />{language === "es" ? "Ops" : "Ops"}</button>
+        <button type="button" className={section === "debit" ? "active" : ""} onClick={() => { setSection("debit"); setPhoneMore(false); }}><DeviceMobile />{language === "es" ? "Débito" : "Debit"}</button>
+        <button type="button" onClick={() => { setPhoneMore(false); window.dispatchEvent(new Event("iris-open-ask")); }}><ChatCircleDots weight="fill" />Ask</button>
+        <button type="button" className={section === "devices" ? "active" : ""} onClick={() => { setSection("devices"); setPhoneMore(false); }}><Desktop />{language === "es" ? "Mac" : "Mac"}</button>
+        <button type="button" className={phoneMore ? "active" : ""} onClick={() => setPhoneMore(openMore => !openMore)}><DotsThree weight="bold" />{language === "es" ? "Más" : "More"}</button>
+      </nav>
     </section>
   </main>;
 }

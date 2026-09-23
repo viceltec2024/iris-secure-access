@@ -539,11 +539,28 @@ body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bot
 .phone-debit-waiting article{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:12px;border:1px solid #24543d;border-radius:10px;background:#06181a}
 .phone-debit-waiting article button{min-height:44px;padding:0 12px;border:1px solid #29465b;border-radius:8px;background:#0c2030;color:#d7ebf5;font-size:13px;font-weight:700}
 .phone-debit-waiting article button:last-child{border-color:#1ad18a;background:#0d2a1e;color:#6eefb8}
+.iris-phone-howto,.iris-phone-dock,.iris-phone-more{display:none}
+.iris-phone-howto{align-items:flex-start;gap:12px;margin:0 0 16px;padding:14px;border:1px solid #24543d;border-radius:12px;background:#07180f}
+.iris-phone-howto svg{width:28px;height:28px;flex:0 0 28px;color:#5ee0a6}
+.iris-phone-howto strong{display:block;margin-bottom:4px;color:#d5f0c6;font-size:14px}
+.iris-phone-howto p{margin:0;color:#b7d7a6;font-size:13px;line-height:1.45}
+.iris-phone-dock{position:fixed;z-index:45;left:0;right:0;bottom:0;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));border-top:1px solid #1b2d40;background:rgba(7,17,31,.96);backdrop-filter:blur(16px)}
+.iris-phone-dock button{min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;border-radius:10px;background:transparent;color:#8aa0b3;font-size:11px;font-weight:700}
+.iris-phone-dock button svg{width:20px;height:20px}
+.iris-phone-dock button.active{background:#0d2436;color:#5ee0a6}
+.iris-phone-more{position:fixed;z-index:44;left:8px;right:8px;bottom:calc(72px + env(safe-area-inset-bottom));display:none;grid-template-columns:1fr 1fr;gap:8px;padding:12px;border:1px solid #1b2d40;border-radius:12px;background:#07111f}
+.iris-phone-more button{min-height:44px;border:1px solid #29465b;border-radius:8px;background:#0c2030;color:#d7ebf5;font-size:13px;font-weight:700}
+.iris-phone-more button.active{border-color:#1ad18a;color:#6eefb8}
 @media(max-width:760px){
+  .soc-sidebar nav{display:none}
+  .soc-main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+  .iris-phone-howto{display:flex}
+  .iris-phone-dock{display:grid}
+  .iris-phone-more{display:grid}
   .soc-sidebar nav button,.soc-sidebar nav a{min-height:48px;font-size:13px}
-  .iris-chat{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:calc(100vw - 16px);height:min(70dvh,640px);border-radius:14px}
+  .iris-chat{right:8px;bottom:calc(72px + env(safe-area-inset-bottom));width:calc(100vw - 16px);height:min(62dvh,560px);border-radius:14px}
   .iris-chat.full-screen{right:0;bottom:0;width:100vw;height:100dvh;border-radius:0}
-  .iris-chat-launcher{right:16px;bottom:calc(16px + env(safe-area-inset-bottom))}
+  .iris-chat-launcher{display:none}
   .iris-phone-debit{margin:0}
   .phone-debit-presets{grid-template-columns:repeat(2,1fr)}
   .phone-debit-waiting article{grid-template-columns:1fr; }

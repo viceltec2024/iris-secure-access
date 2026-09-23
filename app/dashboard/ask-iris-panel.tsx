@@ -30,6 +30,11 @@ const welcomeMessage = (language: Language, userName: string, section = "operati
 
 export default function AskIrisPanel({ section, selectedIncident, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const openAsk = () => setOpen(true);
+    window.addEventListener("iris-open-ask", openAsk);
+    return () => window.removeEventListener("iris-open-ask", openAsk);
+  }, []);
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(language, userName, section)]);
   const [welcomeKey, setWelcomeKey] = useState(`${language}:${userName}:${section}`);
   const nextWelcomeKey = `${language}:${userName}:${section}`;

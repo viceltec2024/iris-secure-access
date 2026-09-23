@@ -12,8 +12,13 @@ test("IRIS phone debit uses official checkout and never invents carrier billing"
   assert.doesNotMatch(panel, /telcel|claro|movistar|stripe|oauth/i);
   assert.match(operations, /IrisPhoneDebit/);
   assert.match(operations, /Débito/);
+  assert.match(operations, /iris-phone-dock/);
+  assert.match(operations, /iris-open-ask/);
+  assert.match(operations, /Añadir a pantalla de inicio|Add to Home Screen/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(layout, /appleWebApp/);
+  assert.match(layout, /manifest.webmanifest/);
   const chat = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   assert.match(chat, /useState\(false\)/);
+  assert.match(chat, /iris-open-ask/);
 });

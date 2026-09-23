@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { irisMindAnswer } from "../lib/iris-mind.ts";
 import { composeWorldAnswer, irisWorldAnswer } from "../lib/iris-world-knowledge.ts";
-import { extractSearchTopic, isConversationStart, isIdentityQuestion, isSocQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
+import { extractSearchTopic, isConversationStart, isIdentityQuestion, isPhoneUseQuestion, isSocQuestion, isStopRequest, tryEvaluateMath } from "../lib/iris-query.ts";
 
 const base = {
   language: "es",
@@ -29,6 +29,16 @@ test("Ask IRIS names itself instead of dumping SOC status", async () => {
   assert.equal(result.source, "local");
   assert.match(result.answer, /Soy IRIS/);
   assert.doesNotMatch(result.answer, /0 dispositivo/);
+});
+
+test("Ask IRIS explains how to use it from a phone", async () => {
+  assert.equal(isPhoneUseQuestion("Iris para el teléfono"), true);
+  assert.equal(isPhoneUseQuestion("Cómo hace ser iris desde el teléfono. Móvil"), true);
+  assert.equal(isStopRequest("cancela"), true);
+  const result = await irisMindAnswer({ ...base, question: "cómo uso IRIS desde el teléfono" });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /pantalla de inicio|Safari/i);
+  assert.doesNotMatch(result.answer, /Windows XP|wikipedia/i);
 });
 
 test("Ask IRIS talks when the user wants a conversation", async () => {
