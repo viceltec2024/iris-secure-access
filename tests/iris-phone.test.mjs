@@ -21,4 +21,7 @@ test("IRIS phone debit uses official checkout and never invents carrier billing"
   const chat = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   assert.match(chat, /useState\(false\)/);
   assert.match(chat, /iris-open-ask/);
+  const connect = readFileSync(new URL("../app/local-connect.tsx", import.meta.url), "utf8");
+  assert.match(connect, /Conectando con IRIS/);
+  assert.match(connect, /Entrar desde el teléfono/);
 });

@@ -31,7 +31,7 @@ export async function GET(request: Request): Promise<Response> {
   ].join("; ");
 
   const safeHref = returnTo.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeHref}"><title>IRIS</title></head><body>Connecting to IRIS… <a href="${safeHref}">Continue</a></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeHref}"><title>IRIS</title></head><body>Conectando con IRIS… <a href="${safeHref}">Entrar</a></body></html>`;
   return new Response(html, {
     status: 200,
     headers: {
