@@ -1,0 +1,19 @@
+{
+  "name": "IRIS",
+  "short_name": "IRIS",
+  "description": "Consola IRIS en el teléfono.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050d18",
+  "theme_color": "#050d18",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

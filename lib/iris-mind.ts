@@ -1,5 +1,5 @@
 import { localIrisAnswer, explainIrisControl, type IrisAnalystInput } from "./iris-local-analyst.ts";
-import { isConceptExplainer, isConversationStart, isGreetingQuestion, isIdentityQuestion, isSocFollowUp, isSocQuestion, isStopRequest, tryEvaluateMath } from "./iris-query.ts";
+import { isConceptExplainer, isConversationStart, isGreetingQuestion, isIdentityQuestion, isPhoneUseQuestion, isSocFollowUp, isSocQuestion, isStopRequest, tryEvaluateMath } from "./iris-query.ts";
 import { irisWorldAnswer } from "./iris-world-knowledge.ts";
 
 function firstName(value: string) {
@@ -36,6 +36,15 @@ export async function irisMindAnswer(input: IrisAnalystInput) {
     return {
       answer: input.language === "es" ? "Paré. Dime cuando quieras seguir." : "Stopped. Tell me when you want to continue.",
       source: "local" as const,
+    };
+  }
+  if (isPhoneUseQuestion(input.question)) {
+    const name = firstName(input.userName);
+    return {
+      answer: input.language === "es"
+        ? `${name}, IRIS ya corre en el teléfono. En Safari abre el dashboard, toca Compartir y elige Añadir a pantalla de inicio. Luego entra como una app: abajo tienes Operaciones, Débito, Ask IRIS y Dispositivos. Habla o escribe. Si dices cancela o para, me detengo. Débito nunca cobra sola: tú apruebas y MetaMask o Robinhood terminan el pago.`
+        : `${name}, IRIS already runs on your phone. In Safari open the dashboard, tap Share, then Add to Home Screen. After that it opens like an app: Operations, Debit, Ask IRIS, and Devices are at the bottom. Speak or type. Say cancel or stop and I halt. Debit never charges alone: you approve, and MetaMask or Robinhood finish the payment.`,
+      source: "local",
     };
   }
   if (isIdentityQuestion(input.question)) return { answer: identityAnswer(input), source: "local" };

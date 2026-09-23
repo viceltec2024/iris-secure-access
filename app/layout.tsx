@@ -1,15 +1,29 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#050d18",
+};
 
 export const metadata: Metadata = {
   title: "IRIS Enterprise — Secure Access",
   description: "Identity-aware secure access for IRIS Enterprise AI.",
+  appleWebApp: {
+    capable: true,
+    title: "IRIS",
+    statusBarStyle: "black-translucent",
+  },
   other: {
     "codex-preview": "development",
   },
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
   },
 };
 

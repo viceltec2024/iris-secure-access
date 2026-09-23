@@ -1,9 +1,10 @@
-const WORKSPACE = /\b(dispositivos?|devices?|alertas?|alerts?|incidentes?|incidents?|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|hallazgos?|operaciones de seguridad|security operations|estado del sistema|system status|estado de seguridad|security overview|get_security_overview|overview de seguridad|macos|macbook|\bmac\b|firewall|filevault|gatekeeper|xprotect|online|offline)\b/i;
+const WORKSPACE = /\b(dispositivos?|devices?|alertas?|alerts?|incidentes?|incidents?|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|hallazgos?|operaciones de seguridad|security operations|estado del sistema|system status|estado de seguridad|security overview|get_security_overview|overview de seguridad|d[eé]bitos?|recarga|tel[eé]fono|macos|macbook|\bmac\b|firewall|filevault|gatekeeper|xprotect|online|offline)\b/i;
 const GREETING = /^(?:hola|hello|hi|buenas|hey|qué tal|que tal|buenos d[ií]as|buenas tardes)(?:\s+iris)?[!.?]*$/i;
 const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|qu[eé] puedes|what can you|c[oó]mo te llamas)\b/i;
 const CONVERSATION = /\b(quiero hablar|hablemos|conversemos|h[áa]blame|platiquemos|podemos hablar|talk with you|let'?s talk)\b/i;
-const STOP_LINE = /^(?:(?:oye|hey|ok|okay|hola|escucha)\s+)?(?:iris\s+)?(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|callate|quiet|cancel)(?:\s+(?:iris|ya|ahora|por favor|please|de hablar|talking|speaking))?$/i;
-const STOP_PHRASE = /^(?:deja de hablar|stop talking|stop speaking|no hables|shut up|iris para|iris stop|para ya|stop para|para stop)$/i;
+const STOP_LINE = /^(?:(?:oye|hey|ok|okay|hola|escucha)\s+)?(?:iris\s+)?(?:stop|para|p[aá]rate|detente|silencio|c[aá]llate|callate|quiet|cancel(?:a|ar)?)(?:\s+(?:iris|ya|ahora|por favor|please|de hablar|talking|speaking))?$/i;
+const STOP_PHRASE = /^(?:deja de hablar|stop talking|stop speaking|no hables|shut up|iris para|iris stop|iris cancela|para ya|stop para|para stop|cancela ya)$/i;
+const PHONE_USE = /\b(desde (?:el )?tel[eé]fono|en (?:el )?tel[eé]fono|m[oó]vil|iphone|android|safari|pantalla de inicio|c[oó]mo (?:uso|usar|hago|hacer|abro) (?:iris|ir[ií]s)|iris para (?:el )?tel[eé]fono)\b/i;
 const SOC = /\b(c[oó]mo est[aá](?:n)?(?:\s+(?:mi|el|la|los|las))?\s+(?:mac|iris|sistema|dispositivo|equipo|agente)|cu[aá]l es el estado|dime (?:el )?estado|estado de iris|estado del mac|estado de seguridad|security overview|get_security_overview|overview de seguridad|revisa(?:r)?(?:\s+(?:el|este|mi))?\s+(?:sistema|overview)|qu[eé] ves|qu[eé] hay en (?:el |este )?sistema|qu[eé] alertas|salud del|en l[ií]nea|fuera de l[ií]nea|mi equipo|mi computadora|este incidente|esta alerta|el incidente(?: seleccionado)?)\b/i;
 const GENERIC_SYSTEM = /\b(?:el |este |mi )sistema\b/i;
 const NOT_SOC_SYSTEM = /\bsistema (?:solar|nervioso|digestivo|inmun|m[eé]trico|electoral|pol[ií]tico|binario|decimal|circulatorio|respiratorio|endocrino|filos[oó]fico)\b/i;
@@ -40,6 +41,10 @@ export function isConceptExplainer(question: string) {
 
 export function isSocFollowUp(question: string) {
   return FOLLOW_UP.test(question.trim());
+}
+
+export function isPhoneUseQuestion(question: string) {
+  return PHONE_USE.test(question.trim());
 }
 
 export function isSocQuestion(question: string) {
