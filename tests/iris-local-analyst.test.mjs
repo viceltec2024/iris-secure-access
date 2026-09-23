@@ -49,6 +49,18 @@ test("Ask IRIS explains MetaMask and Robinhood purchases", () => {
   assert.match(answer, /Robinhood/i);
   assert.match(answer, /MetaMask/i);
   assert.match(answer, /aprobaci[oó]n/i);
+  const phone = localIrisAnswer({
+    language: "es",
+    question: "quiero hacer débitos para el teléfono",
+    userName: "Ezephian",
+    section: "debit",
+    devices: [],
+    alerts: [],
+    agents: [],
+    wallet: { connected: false, address: "" },
+  });
+  assert.match(phone, /D[eé]bito/);
+  assert.match(phone, /aprobaci[oó]n/i);
 });
 
 test("Ask IRIS reports connected agents", () => {

@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
+import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, DeviceMobile, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import IrisBrandMark from "../iris-brand-mark";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
 import IrisMarketPanel from "./iris-market-panel";
+import IrisPhoneDebit from "./iris-phone-debit";
 import { Language, text } from "./dashboard-i18n";
 import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase } from "../../lib/iris-live-soc";
 import { IRIS_AGENT_SCRIPT_VERSION, irisAgentShellCommand } from "../../lib/iris-device-view";
@@ -13,7 +14,7 @@ import { irisReconnectOrigin } from "../../lib/iris-origin";
 import { formatUtcClock } from "../../lib/iris-time";
 
 type Incident = LiveIncident;
-type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "market" | "approvals" | "audit";
+type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "debit" | "market" | "approvals" | "audit";
 type AuditEvent = { id: number; actorEmail: string; action: string; resource: string; outcome: string; createdAt: string };
 type WalletState = { connected: boolean; address: string; mode?: string };
 type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; unsignedPersistenceItems?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string; transportEncryption?: "TLS+HMAC" | "AES-256-CBC+HMAC-SHA256" };
@@ -299,6 +300,7 @@ export default function SecurityOperations({
         <button className={section === "intelligence" ? "active" : ""} onClick={() => setSection("intelligence")}><ChartLineUp /> {t("intelligence")}</button>
         <button className={section === "devices" ? "active" : ""} onClick={() => setSection("devices")}><Desktop /> {language === "es" ? "Dispositivos" : "Devices"} <b>{devices.length}</b></button>
         <button className={section === "chain" ? "active" : ""} onClick={() => setSection("chain")}><Cube /> IRIS Chain</button>
+        <button className={section === "debit" ? "active" : ""} onClick={() => setSection("debit")}><DeviceMobile /> {language === "es" ? "Débito" : "Debit"}</button>
         <button className={section === "market" ? "active" : ""} onClick={() => setSection("market")}><TrendUp /> {language === "es" ? "Bolsa en vivo" : "Live market"}</button>
         <button className={section === "approvals" ? "active" : ""} onClick={() => setSection("approvals")}><ShieldCheck /> {t("approvals")} <b>{open}</b></button>
         <button className={section === "audit" ? "active" : ""} onClick={() => setSection("audit")}><LockKey /> {t("audit")} <b>{liveAuditCount}</b></button>
@@ -442,7 +444,8 @@ export default function SecurityOperations({
         <div className="audit-table" role="table" aria-label={t("audit")}><div className="audit-table-head" role="row"><span>{t("time")}</span><span>{t("actor")}</span><span>{t("action")}</span><span>{t("resource")}</span><span>{t("outcome")}</span></div>{auditEvents.map(row => <div className="audit-table-row" role="row" key={row.id}><span>{relativeTime(row.createdAt, language)}</span><span>{row.actorEmail}</span><span>{row.action.replaceAll("_"," ")}</span><span>{row.resource}</span><span className="audit-success"><CheckCircle weight="fill" />{row.outcome}</span></div>)}{responseHistory.filter(row => !auditEvents.some(event => event.resource === row.incidentId && event.action.includes(row.action.split("_")[0] || "NONE"))).slice(0,8).map(row=><div className="audit-table-row" role="row" key={`response-${row.id}`}><span>{relativeTime(row.createdAt, language)}</span><span>{row.actorEmail}</span><span>{row.action.replaceAll("_"," ")}</span><span>{row.incidentId}</span><span className="audit-success"><CheckCircle weight="fill" />{row.outcome} · {row.mode}</span></div>)}{auditEvents.length === 0 && responseHistory.length === 0 && <div className="empty-alerts"><LockKey weight="fill" /><h3>{language === "es" ? "Aún no hay eventos reales" : "No live events yet"}</h3></div>}</div>
       </section>}
       {section === "chain" && <IrisChainPanel language={language} isAdmin={user.role === "ADMIN"} />}
-      {section === "market" && <IrisMarketPanel language={language} onOpenPurchases={() => setSection("chain")} />}
+      {section === "debit" && <IrisPhoneDebit language={language} />}
+      {section === "market" && <IrisMarketPanel language={language} onOpenPurchases={() => setSection("debit")} />}
       <AskIrisPanel section={section} selectedIncident={selectedView} incidents={incidents.map(localized)} devices={devices} userRole={user.role} userName={user.displayName.split(" ")[0]} language={language} />
     </section>
   </main>;

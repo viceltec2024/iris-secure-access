@@ -159,6 +159,7 @@ test("Ask IRIS routes alerts, system review, and follow-ups to the live stack", 
     assert.equal(isSocQuestion("el sistema solar"), false);
     assert.equal(isSocQuestion("para qué sirve el firewall"), false);
     assert.equal(isSocQuestion("está el firewall"), true);
+    assert.equal(isSocQuestion("quiero hacer débitos para el teléfono"), true);
     const alerts = await irisMindAnswer({ ...live, question: "qué alertas hay" });
     assert.equal(alerts.source, "local");
     assert.match(alerts.answer, /FIREWALL DISABLED|firewall/i);

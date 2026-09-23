@@ -517,3 +517,34 @@ a { color: inherit; }
   .market-stage,.market-search,.market-readouts{grid-template-columns:1fr}
   .market-live-clock{align-items:flex-end}
 }
+
+html,body{min-height:100%;padding:0;margin:0}
+body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+.iris-phone-debit{margin:0;padding:22px 18px 28px;border:1px solid #24543d;border-radius:12px;background:linear-gradient(160deg,rgba(46,201,126,.1),#071522 52%)}
+.phone-debit-head{display:flex;gap:14px;align-items:flex-start;margin-bottom:18px}
+.phone-debit-head>svg{width:36px;height:36px;flex:0 0 36px;color:#5ee0a6}
+.phone-debit-head span{color:#5ee0a6;font-size:10px;font-weight:800;letter-spacing:.12em}
+.phone-debit-head h2{margin:6px 0 6px;font-size:22px}
+.phone-debit-head p{margin:0;color:#8ea4b6;font-size:13px;line-height:1.5}
+.phone-debit-assets,.phone-debit-presets{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
+.phone-debit-presets{grid-template-columns:repeat(4,1fr)}
+.phone-debit-assets button,.phone-debit-presets button{min-height:48px;border:1px solid #29465b;border-radius:10px;background:#06101a;color:#d7ebf5;font-size:16px;font-weight:800}
+.phone-debit-assets button.active,.phone-debit-presets button.active{border-color:#1ad18a;background:#0d2a1e;color:#6eefb8}
+.phone-debit-custom{display:flex;flex-direction:column;gap:6px;margin:8px 0 14px;color:#7f96a8;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.phone-debit-custom input{min-height:48px;padding:0 14px;border:1px solid #29465b;border-radius:10px;background:#06101a;color:#ecf8ff;font-size:16px}
+.phone-debit-source{margin:0 0 14px;color:#8ea4b6;font-size:13px}
+.phone-debit-submit{width:100%;min-height:52px;border:0;border-radius:12px;background:#1ad18a;color:#032015;font-size:16px;font-weight:800}
+.phone-debit-submit:disabled{opacity:.5}
+.phone-debit-waiting{margin-top:18px;display:grid;gap:10px}
+.phone-debit-waiting article{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:12px;border:1px solid #24543d;border-radius:10px;background:#06181a}
+.phone-debit-waiting article button{min-height:44px;padding:0 12px;border:1px solid #29465b;border-radius:8px;background:#0c2030;color:#d7ebf5;font-size:13px;font-weight:700}
+.phone-debit-waiting article button:last-child{border-color:#1ad18a;background:#0d2a1e;color:#6eefb8}
+@media(max-width:760px){
+  .soc-sidebar nav button,.soc-sidebar nav a{min-height:48px;font-size:13px}
+  .iris-chat{right:0;bottom:0;width:100vw;height:100dvh;border-radius:0}
+  .iris-chat-launcher{right:16px;bottom:calc(16px + env(safe-area-inset-bottom))}
+  .iris-phone-debit{margin:0}
+  .phone-debit-presets{grid-template-columns:repeat(2,1fr)}
+  .phone-debit-waiting article{grid-template-columns:1fr; }
+  .phone-debit-waiting article button{width:100%}
+}
