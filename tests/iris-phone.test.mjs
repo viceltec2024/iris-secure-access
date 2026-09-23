@@ -14,4 +14,6 @@ test("IRIS phone debit uses official checkout and never invents carrier billing"
   assert.match(operations, /Débito/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(layout, /appleWebApp/);
+  const chat = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
+  assert.match(chat, /useState\(false\)/);
 });

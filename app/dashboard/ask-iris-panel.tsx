@@ -29,7 +29,7 @@ const welcomeMessage = (language: Language, userName: string, section = "operati
     : `Hi, ${userName}. I'm IRIS. I'm ready to review what's happening in the system with you. Ask me anything in your own words.` });
 
 export default function AskIrisPanel({ section, selectedIncident, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(language, userName, section)]);
   const [welcomeKey, setWelcomeKey] = useState(`${language}:${userName}:${section}`);
   const nextWelcomeKey = `${language}:${userName}:${section}`;
