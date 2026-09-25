@@ -51,6 +51,23 @@ test("Ask IRIS explains MetaMask and Robinhood purchases", () => {
   assert.match(answer, /aprobaci[oó]n/i);
 });
 
+test("Ask IRIS explains how to add IRIS token liquidity", () => {
+  const answer = localIrisAnswer({
+    language: "es",
+    question: "puedes darle liquidez a este token",
+    userName: "Ezephian",
+    section: "chain",
+    devices: [],
+    alerts: [],
+    agents: [],
+    wallet: { connected: true, address: "0x49BeAEc30C7431235c3262a2B1C0C5d8b5a0d3E1" },
+  });
+  assert.match(answer, /Uniswap/i);
+  assert.match(answer, /liquidez/i);
+  assert.match(answer, /MetaMask/i);
+  assert.match(answer, /no mueve fondos/i);
+});
+
 test("Ask IRIS reports connected agents", () => {
   const answer = localIrisAnswer({
     language: "es",
