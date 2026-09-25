@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { appSettings } from "../../../db/schema";
 import { provisionIrisUser } from "../../../lib/authz";
+import { buildIrisLiquidityUrl, buildIrisSwapUrl, probeUniswapV3Liquidity } from "../../../lib/iris-liquidity";
 
 const CONTRACT_KEY = "iris_token_base_mainnet_contract";
 const BASE_RPC = "https://mainnet.base.org";
@@ -54,8 +55,16 @@ export async function GET(request: Request) {
     }
     verified = contractResponse.ok;
   } catch { /* Explorer metadata is best-effort; Base RPC remains authoritative. */ }
+  let liquidity = { ready: false, poolAddress: "", fee: null as number | null, liquidity: "0" };
+  try {
+    liquidity = await probeUniswapV3Liquidity({ tokenAddress: contract, rpc });
+  } catch { /* Pool discovery is best-effort; readiness stays false until confirmed. */ }
+  const liquidityUrl = buildIrisLiquidityUrl(contract);
+  const swapUrl = buildIrisSwapUrl(contract);
   return Response.json({ contract, network: "Base Mainnet", chainId: 8453, blockNumber: Number(BigInt(blockHex)), contractLive: code !== "0x", totalSupply: formatToken(totalSupplyHex), walletBalance: formatToken(balanceHex), holders, transfers, verified,
     distribution: [{ label: "Growth & rewards", percent: 40, amount: "400,000,000" }, { label: "Liquidity", percent: 20, amount: "200,000,000" }, { label: "Treasury", percent: 20, amount: "200,000,000" }, { label: "Team vesting", percent: 15, amount: "150,000,000" }, { label: "Partnerships", percent: 5, amount: "50,000,000" }],
-    readiness: { contract: code !== "0x", metadata: true, treasuryMultisig: false, vesting: false, liquidity: false }, updatedAt: new Date().toISOString(),
+    readiness: { contract: code !== "0x", metadata: true, treasuryMultisig: false, vesting: false, liquidity: liquidity.ready },
+    liquidity: { ready: liquidity.ready, poolAddress: liquidity.poolAddress, fee: liquidity.fee, amount: liquidity.liquidity, uniswapAddUrl: liquidityUrl, uniswapSwapUrl: swapUrl },
+    updatedAt: new Date().toISOString(),
   }, { headers: { "cache-control": "private, max-age=8" } });
 }
