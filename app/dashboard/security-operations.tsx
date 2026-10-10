@@ -15,6 +15,11 @@ import { formatUtcClock } from "../../lib/iris-time";
 
 type Incident = LiveIncident;
 type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "market" | "creator" | "approvals" | "audit";
+const SECTIONS: Section[] = ["operations", "alerts", "incidents", "intelligence", "devices", "chain", "market", "creator", "approvals", "audit"];
+function sectionFromHash(hash = "") {
+  const value = hash.replace(/^#/, "") as Section;
+  return SECTIONS.includes(value) ? value : null;
+}
 type AuditEvent = { id: number; actorEmail: string; action: string; resource: string; outcome: string; createdAt: string };
 type WalletState = { connected: boolean; address: string; mode?: string };
 type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; unsignedPersistenceItems?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string; transportEncryption?: "TLS+HMAC" | "AES-256-CBC+HMAC-SHA256" };
@@ -69,7 +74,7 @@ export default function SecurityOperations({
   const [selected, setSelected] = useState<Incident>(() => buildLiveIncidents({ alerts: [], devices: initialDevices, language: "es" })[0] || emptyLiveIncident("es"));
   const [filter, setFilter] = useState("All");
   const [lastUpdate, setLastUpdate] = useState("ahora mismo");
-  const [section, setSection] = useState<Section>("operations");
+  const [section, setSection] = useState<Section>(() => (typeof window !== "undefined" && sectionFromHash(window.location.hash)) || "operations");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [executionNote, setExecutionNote] = useState("");
   const [devices, setDevices] = useState<Device[]>(initialDevices);
@@ -151,6 +156,22 @@ export default function SecurityOperations({
     const marketTimer = window.setInterval(loadMarket, 30_000);
     return () => window.clearInterval(marketTimer);
   }, []);
+
+  useEffect(() => {
+    const applyHash = () => {
+      const next = sectionFromHash(window.location.hash);
+      if (next) setSection(next);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const next = `#${section}`;
+    if (window.location.hash !== next) window.history.replaceState(null, "", next);
+  }, [section]);
 
   const agentRuntime = useMemo(() => liveWorkers({
     devices,
