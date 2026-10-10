@@ -137,11 +137,11 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
           </span>
         </div>
         <div className="approval-actions">
-          <button disabled={busy} onClick={() => void post({ action: "reject", agentId: pending.id }).then(result => { if (result) setPending(null); })}>
-            {es ? "Rechazar" : "Reject"}
-          </button>
-          <button disabled={busy} onClick={() => void confirmApproval()}>
+          <button type="button" className="creator-approve-primary" disabled={busy} autoFocus onClick={() => void confirmApproval()}>
             <CheckCircle />{busy ? (es ? "Activando…" : "Activating…") : (es ? "Aprobar e implementar" : "Approve and deploy")}
+          </button>
+          <button type="button" disabled={busy} onClick={() => void post({ action: "reject", agentId: pending.id }).then(result => { if (result) setPending(null); })}>
+            {es ? "Rechazar" : "Reject"}
           </button>
         </div>
       </section>
@@ -206,8 +206,8 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
             <b>{item.name}</b>
             <small>{item.blueprint.specialty} · {scheduleLabel(item.schedule, es)}</small>
           </div>
-          <button disabled={busy} onClick={() => void post({ action: "reject", agentId: item.id })}>{es ? "Rechazar" : "Reject"}</button>
           <button disabled={busy} onClick={() => setPending(item)}>{es ? "Revisar" : "Review"}</button>
+          <button disabled={busy} onClick={() => void post({ action: "reject", agentId: item.id })}>{es ? "Rechazar" : "Reject"}</button>
         </article>)}
       </div>}
 
