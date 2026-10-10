@@ -1,3 +1,4 @@
+import { creatorAskReply, extractSpecialty, isCreatorRequest } from "./iris-creator.ts";
 import { localIrisAnswer, explainIrisControl, type IrisAnalystInput } from "./iris-local-analyst.ts";
 import { isConceptExplainer, isConversationStart, isGreetingQuestion, isIdentityQuestion, isSocFollowUp, isSocQuestion, isStopRequest, tryEvaluateMath } from "./iris-query.ts";
 import { irisWorldAnswer } from "./iris-world-knowledge.ts";
@@ -41,6 +42,12 @@ export async function irisMindAnswer(input: IrisAnalystInput) {
   if (isIdentityQuestion(input.question)) return { answer: identityAnswer(input), source: "local" };
   if (isGreetingQuestion(input.question) || isConversationStart(input.question)) {
     return { answer: conversationAnswer(input), source: "local" };
+  }
+  if (isCreatorRequest(input.question)) {
+    return {
+      answer: creatorAskReply(input.language, input.userName, extractSpecialty(input.question, input.language)),
+      source: "local" as const,
+    };
   }
   if (isSocQuestion(input.question) || isSocFollowUp(input.question)) return { answer: localIrisAnswer(input), source: "local" };
   const math = tryEvaluateMath(input.question, input.language);

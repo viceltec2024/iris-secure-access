@@ -1,0 +1,588 @@
+export const CREATED_AGENT_STATUSES = [
+  "draft",
+  "sandbox_passed",
+  "sandbox_failed",
+  "awaiting_approval",
+  "approved",
+  "rejected",
+  "paused",
+  "stopped",
+] as const;
+
+export const ALLOWED_CREATOR_TOOLS = [
+  "business_context",
+  "draft_composer",
+  "owner_notifier",
+  "proposal_queue",
+  "marketing_calendar_sim",
+  "social_draft_sim",
+  "task_checklist_sim",
+] as const;
+
+export type CreatorTool = (typeof ALLOWED_CREATOR_TOOLS)[number];
+
+export type CreatedAgentStatus = (typeof CREATED_AGENT_STATUSES)[number];
+
+export const AGENT_PERMISSIONS = [
+  "read_business_context",
+  "draft_replies",
+  "propose_actions",
+  "notify_owner",
+  "run_on_schedule",
+] as const;
+
+export type AgentPermission = (typeof AGENT_PERMISSIONS)[number];
+
+export const AGENT_SCHEDULES = ["always_on", "business_hours", "on_demand"] as const;
+export type AgentSchedule = (typeof AGENT_SCHEDULES)[number];
+
+export type GuardianFinding = {
+  severity: "info" | "warn" | "block";
+  code: string;
+  message: string;
+};
+
+export type SandboxCheck = {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+};
+
+export type AgentBlueprint = {
+  role: string;
+  specialty: string;
+  goals: string[];
+  tools: string[];
+  constraints: string[];
+};
+
+export type CreatedAgent = {
+  id: string;
+  name: string;
+  prompt: string;
+  status: CreatedAgentStatus;
+  permissions: AgentPermission[];
+  schedule: AgentSchedule;
+  autonomy: "supervised";
+  blueprint: AgentBlueprint;
+  sourcePreview: string;
+  testPreview: string;
+  sandbox: {
+    ranAt: string | null;
+    passed: boolean;
+    checks: SandboxCheck[];
+  };
+  guardian: {
+    requiresHumanApproval: true;
+    blockedCapabilities: string[];
+    findings: GuardianFinding[];
+  };
+  createdAt: string;
+  updatedAt: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectedAt?: string;
+  lastTickAt?: string;
+  emergencyStopped?: boolean;
+};
+
+export type CreatorDeskState = {
+  agents: CreatedAgent[];
+};
+
+export const BLOCKED_CAPABILITIES = [
+  "exec_shell",
+  "spend_money",
+  "self_modify_core",
+  "deploy_without_approval",
+  "exfiltrate_secrets",
+  "network_unrestricted",
+] as const;
+
+const MAX_AGENTS = 24;
+const MAX_PROMPT = 500;
+
+export function emptyCreatorDesk(): CreatorDeskState {
+  return { agents: [] };
+}
+
+export function parseCreatorDesk(value: string): CreatorDeskState {
+  try {
+    const parsed = JSON.parse(value) as Partial<CreatorDeskState>;
+    return {
+      agents: Array.isArray(parsed.agents) ? parsed.agents.filter(isStoredAgent) : [],
+    };
+  } catch {
+    return emptyCreatorDesk();
+  }
+}
+
+function isStoredAgent(value: unknown): value is CreatedAgent {
+  if (!value || typeof value !== "object") return false;
+  const agent = value as CreatedAgent;
+  const ok = Boolean(
+    agent.id
+    && typeof agent.name === "string"
+    && typeof agent.prompt === "string"
+    && CREATED_AGENT_STATUSES.includes(agent.status)
+    && agent.autonomy === "supervised"
+    && agent.guardian?.requiresHumanApproval === true
+  );
+  if (ok && typeof agent.testPreview !== "string") agent.testPreview = "";
+  return ok;
+}
+
+export function isCreatorTool(value: string): value is CreatorTool {
+  return (ALLOWED_CREATOR_TOOLS as readonly string[]).includes(value);
+}
+
+export function normalizeCreatorPrompt(value: unknown) {
+  const prompt = String(value || "").trim().replace(/\s+/g, " ");
+  if (prompt.length < 8 || prompt.length > MAX_PROMPT) return null;
+  return prompt;
+}
+
+export function extractSpecialty(prompt: string, language: "es" | "en" = "es") {
+  const cleaned = prompt
+    .replace(/^(?:oye|hey|ok|okay|hola|escucha)\s+iris[,:]?\s+/i, "")
+    .replace(/^iris[,:]?\s+/i, "")
+    .trim();
+
+  const storeMatch = cleaned.match(/(?:tienda|store|negocio|business|shop)\s+([^.!?,]{3,80})/i);
+  if (storeMatch?.[1]) return titleCase(storeMatch[1].trim());
+
+  const specialized = cleaned.match(/(?:especializada? en|specialized in|para)\s+([^.!?,]{3,80})/i);
+  if (specialized?.[1]) return titleCase(specialized[1].trim());
+
+  const createMatch = cleaned.match(/(?:crea(?:r)?|create|genera(?:r)?|build)\s+(?:una?\s+)?(?:inteligencia artificial|ia|ai|agente)(?:\s+especializada?)?\s*(?:en|para|for)?\s*([^.!?,]{0,80})/i);
+  if (createMatch?.[1]?.trim()) return titleCase(createMatch[1].trim());
+
+  return language === "es" ? "Agente personalizado" : "Custom agent";
+}
+
+function titleCase(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+    .slice(0, 72);
+}
+
+export function slugifyAgentId(specialty: string, id: string) {
+  const slug = specialty
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40) || "agent";
+  return `${slug}-${id.slice(0, 8)}`;
+}
+
+export function designAgentFromPrompt(input: {
+  id: string;
+  prompt: string;
+  language?: "es" | "en";
+  schedule?: AgentSchedule;
+  now?: string;
+}): CreatedAgent {
+  const language = input.language || "es";
+  const prompt = normalizeCreatorPrompt(input.prompt);
+  if (!prompt) throw new Error(language === "es" ? "Describe el agente en al menos 8 caracteres." : "Describe the agent in at least 8 characters.");
+
+  const specialty = extractSpecialty(prompt, language);
+  const now = input.now || new Date().toISOString();
+  const schedule = input.schedule && AGENT_SCHEDULES.includes(input.schedule) ? input.schedule : "always_on";
+  const name = language === "es" ? `IRIS · ${specialty}` : `IRIS · ${specialty}`;
+
+  const tools: string[] = ["business_context", "draft_composer", "owner_notifier", "proposal_queue", "task_checklist_sim"];
+  if (/marketing|grooming|tienda|store/i.test(specialty)) {
+    tools.push("marketing_calendar_sim", "social_draft_sim");
+  }
+
+  const blueprint: AgentBlueprint = {
+    role: language === "es" ? `Agente especializado · ${specialty}` : `Specialized agent · ${specialty}`,
+    specialty,
+    goals: language === "es"
+      ? [
+        `Administrar tareas rutinarias de ${specialty}`,
+        "Proponer acciones claras al operador humano",
+        "Mantener un registro auditable de cada propuesta",
+      ]
+      : [
+        `Handle routine work for ${specialty}`,
+        "Propose clear actions to the human operator",
+        "Keep an auditable record of every proposal",
+      ],
+    tools,
+    constraints: language === "es"
+      ? [
+        "No gasta dinero ni firma pagos",
+        "No ejecuta shell ni cambia el núcleo de IRIS",
+        "No despliega cambios sin aprobación humana",
+        "Solo actúa dentro de permisos preaprobados",
+      ]
+      : [
+        "Does not spend money or sign payments",
+        "Does not run shell or change IRIS core",
+        "Does not deploy changes without human approval",
+        "Only acts within pre-approved permissions",
+      ],
+  };
+
+  const permissions: AgentPermission[] = [
+    "read_business_context",
+    "draft_replies",
+    "propose_actions",
+    "notify_owner",
+    schedule === "on_demand" ? "notify_owner" : "run_on_schedule",
+  ].filter((value, index, all): value is AgentPermission => AGENT_PERMISSIONS.includes(value as AgentPermission) && all.indexOf(value) === index);
+
+  const agent: CreatedAgent = {
+    id: input.id,
+    name,
+    prompt,
+    status: "draft",
+    permissions,
+    schedule,
+    autonomy: "supervised",
+    blueprint,
+    sourcePreview: "",
+    testPreview: "",
+    sandbox: { ranAt: null, passed: false, checks: [] },
+    guardian: {
+      requiresHumanApproval: true,
+      blockedCapabilities: [...BLOCKED_CAPABILITIES],
+      findings: [],
+    },
+    createdAt: now,
+    updatedAt: now,
+    emergencyStopped: false,
+  };
+
+  return runCreatorPipeline(agent, language, now);
+}
+
+export function generateAgentTests(agent: CreatedAgent) {
+  return `/** Isolated Creator tests — simulated tools only */
+import { agentSpec, proposeAction, tick } from "./agent.js";
+
+export function testAgentIsSupervised() {
+  if (agentSpec.autonomy !== "supervised") throw new Error("autonomy");
+}
+
+export function testProposeRequiresApproval() {
+  const result = proposeAction({ summary: "draft checklist for ${agent.blueprint.specialty.replace(/"/g, "")}" });
+  if (!result.requiresHumanApproval) throw new Error("approval_gate");
+}
+
+export function testTickHeartbeat() {
+  const result = tick();
+  if (!result.ok) throw new Error("tick");
+}
+`;
+}
+
+export function generateAgentSource(agent: CreatedAgent) {
+  const specialty = JSON.stringify(agent.blueprint.specialty);
+  const goals = JSON.stringify(agent.blueprint.goals, null, 2);
+  const permissions = JSON.stringify(agent.permissions, null, 2);
+  const tools = JSON.stringify(agent.blueprint.tools, null, 2);
+  return `/** IRIS Creator sandbox agent — supervised only */
+export const agentSpec = {
+  id: ${JSON.stringify(agent.id)},
+  name: ${JSON.stringify(agent.name)},
+  specialty: ${specialty},
+  schedule: ${JSON.stringify(agent.schedule)},
+  autonomy: "supervised",
+  permissions: ${permissions},
+  tools: ${tools},
+  goals: ${goals},
+  blocked: ${JSON.stringify([...BLOCKED_CAPABILITIES])},
+};
+
+export function proposeAction(input) {
+  if (!agentSpec.permissions.includes("propose_actions")) {
+    throw new Error("permission_denied");
+  }
+  return {
+    type: "proposal",
+    requiresHumanApproval: true,
+    summary: String(input?.summary || "").slice(0, 280),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function tick() {
+  if (!agentSpec.permissions.includes("run_on_schedule") && agentSpec.schedule === "always_on") {
+    return { ok: false, reason: "schedule_not_allowed" };
+  }
+  return { ok: true, status: "heartbeat", autonomy: "supervised" };
+}
+`;
+}
+
+export function runGuardianChecks(agent: CreatedAgent, language: "es" | "en" = "es"): GuardianFinding[] {
+  const findings: GuardianFinding[] = [];
+  const source = agent.sourcePreview || generateAgentSource(agent);
+
+  findings.push({
+    severity: "info",
+    code: "HUMAN_GATE",
+    message: language === "es"
+      ? "Guardian exige aprobación humana antes de activar el agente."
+      : "Guardian requires human approval before activating the agent.",
+  });
+
+  for (const capability of BLOCKED_CAPABILITIES) {
+    if (new RegExp(capability.replaceAll("_", "[_\\s-]*"), "i").test(agent.prompt) && /permit|allow|habilita|permite|sin aprob/i.test(agent.prompt)) {
+      findings.push({
+        severity: "block",
+        code: `BLOCK_${capability.toUpperCase()}`,
+        message: language === "es"
+          ? `El prompt pide la capacidad bloqueada: ${capability}.`
+          : `The prompt requests a blocked capability: ${capability}.`,
+      });
+    }
+  }
+
+  if (/\b(rm\s+-rf|eval\(|Function\(|child_process|process\.env|API_KEY|secret|password)\b/i.test(source) || /\b(rm\s+-rf|eval\(|child_process)\b/i.test(agent.prompt)) {
+    findings.push({
+      severity: "block",
+      code: "UNSAFE_CODE_PATTERN",
+      message: language === "es"
+        ? "Guardian bloqueó patrones inseguros en el código o el prompt."
+        : "Guardian blocked unsafe patterns in the code or prompt.",
+    });
+  }
+
+  if (agent.autonomy !== "supervised") {
+    findings.push({
+      severity: "block",
+      code: "AUTONOMY_LIMIT",
+      message: language === "es"
+        ? "Solo se permiten agentes supervisados en este MVP."
+        : "Only supervised agents are allowed in this MVP.",
+    });
+  }
+
+  if (!agent.guardian.requiresHumanApproval) {
+    findings.push({
+      severity: "block",
+      code: "MISSING_APPROVAL_GATE",
+      message: language === "es"
+        ? "Falta la puerta de aprobación humana."
+        : "The human approval gate is missing.",
+    });
+  }
+
+  if (!findings.some(item => item.severity === "block")) {
+    findings.push({
+      severity: "info",
+      code: "SANDBOX_ONLY",
+      message: language === "es"
+        ? "El agente solo puede proponer; no despliega ni gasta sin tu OK."
+        : "The agent may only propose; it cannot deploy or spend without your OK.",
+    });
+  }
+
+  return findings;
+}
+
+export function runSandbox(agent: CreatedAgent, language: "es" | "en" = "es", now = new Date().toISOString()) {
+  const sourcePreview = generateAgentSource(agent);
+  const testPreview = generateAgentTests(agent);
+  const withSource = { ...agent, sourcePreview, testPreview };
+  const findings = runGuardianChecks(withSource, language);
+  const blocked = findings.some(item => item.severity === "block");
+  const toolsOk = agent.blueprint.tools.length > 0 && agent.blueprint.tools.every(tool => isCreatorTool(tool));
+
+  const checks: SandboxCheck[] = [
+    {
+      id: "spec_valid",
+      label: language === "es" ? "Especificación válida" : "Valid specification",
+      ok: Boolean(agent.blueprint.specialty && agent.blueprint.goals.length >= 2),
+      detail: language === "es" ? "Rol, metas y herramientas definidos." : "Role, goals, and tools defined.",
+    },
+    {
+      id: "tools_allowlisted",
+      label: language === "es" ? "Herramientas allowlisted" : "Allowlisted tools",
+      ok: toolsOk,
+      detail: language === "es" ? "Solo herramientas simuladas autorizadas." : "Only authorized simulated tools.",
+    },
+    {
+      id: "permissions_least",
+      label: language === "es" ? "Permisos mínimos" : "Least privilege",
+      ok: agent.permissions.every(permission => AGENT_PERMISSIONS.includes(permission)),
+      detail: language === "es" ? "Sin capacidades peligrosas concedidas." : "No dangerous capabilities granted.",
+    },
+    {
+      id: "guardian_gate",
+      label: language === "es" ? "Puerta Guardian" : "Guardian gate",
+      ok: !blocked && agent.guardian.requiresHumanApproval,
+      detail: blocked
+        ? (language === "es" ? "Guardian encontró bloqueos." : "Guardian found blocking issues.")
+        : (language === "es" ? "Aprobación humana obligatoria." : "Human approval required."),
+    },
+    {
+      id: "tick_supervised",
+      label: language === "es" ? "Latido supervisado" : "Supervised heartbeat",
+      ok: !blocked,
+      detail: language === "es"
+        ? "tick() solo reporta estado; no aplica cambios."
+        : "tick() only reports status; it does not apply changes.",
+    },
+  ];
+
+  const passed = checks.every(check => check.ok) && !blocked;
+  return {
+    ...withSource,
+    status: (passed ? "sandbox_passed" : "sandbox_failed") as CreatedAgentStatus,
+    sandbox: { ranAt: now, passed, checks },
+    guardian: {
+      ...withSource.guardian,
+      findings,
+    },
+    updatedAt: now,
+  };
+}
+
+export function runCreatorPipeline(agent: CreatedAgent, language: "es" | "en" = "es", now = new Date().toISOString()) {
+  const sandboxed = runSandbox(agent, language, now);
+  if (!sandboxed.sandbox.passed) return sandboxed;
+  return {
+    ...sandboxed,
+    status: "awaiting_approval" as const,
+    updatedAt: now,
+  };
+}
+
+export function addCreatedAgent(state: CreatorDeskState, agent: CreatedAgent): CreatorDeskState {
+  const agents = [agent, ...state.agents].slice(0, MAX_AGENTS);
+  return { agents };
+}
+
+export function approveCreatedAgent(state: CreatorDeskState, agentId: string, actorEmail: string, now = new Date().toISOString()) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  if (agent.status !== "awaiting_approval" && agent.status !== "paused") {
+    throw new Error("Agent is not awaiting approval");
+  }
+  if (!agent.sandbox.passed) throw new Error("Sandbox did not pass");
+  if (agent.guardian.findings.some(item => item.severity === "block")) throw new Error("Guardian blocked deployment");
+
+  const next: CreatedAgent = {
+    ...agent,
+    status: "approved",
+    approvedAt: now,
+    approvedBy: actorEmail,
+    updatedAt: now,
+    lastTickAt: now,
+  };
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    agent: next,
+  };
+}
+
+export function rejectCreatedAgent(state: CreatorDeskState, agentId: string, now = new Date().toISOString()) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  if (agent.status !== "awaiting_approval") throw new Error("Agent is not awaiting approval");
+  const next: CreatedAgent = {
+    ...agent,
+    status: "rejected",
+    rejectedAt: now,
+    updatedAt: now,
+  };
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    agent: next,
+  };
+}
+
+export function pauseCreatedAgent(state: CreatorDeskState, agentId: string, now = new Date().toISOString()) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  if (agent.status !== "approved") throw new Error("Only approved agents can be paused");
+  const next: CreatedAgent = {
+    ...agent,
+    status: "paused",
+    updatedAt: now,
+  };
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    agent: next,
+  };
+}
+
+export function updateCreatedAgentTools(state: CreatorDeskState, agentId: string, tools: string[], language: "es" | "en" = "es", now = new Date().toISOString()) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  if (agent.status === "approved") throw new Error("Pause the agent before editing tools");
+  const nextTools = tools.filter(isCreatorTool);
+  if (!nextTools.length) throw new Error(language === "es" ? "Elige al menos una herramienta autorizada." : "Choose at least one authorized tool.");
+  const nextBase: CreatedAgent = {
+    ...agent,
+    blueprint: { ...agent.blueprint, tools: nextTools },
+    status: "draft",
+    approvedAt: undefined,
+    approvedBy: undefined,
+    updatedAt: now,
+  };
+  const pipelined = runCreatorPipeline(nextBase, language, now);
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? pipelined : item) },
+    agent: pipelined,
+  };
+}
+
+export function emergencyStopCreatedAgent(state: CreatorDeskState, agentId: string, now = new Date().toISOString()) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  const next: CreatedAgent = {
+    ...agent,
+    status: "stopped",
+    emergencyStopped: true,
+    updatedAt: now,
+  };
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    agent: next,
+  };
+}
+
+export function deleteCreatedAgent(state: CreatorDeskState, agentId: string) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  return {
+    state: { agents: state.agents.filter(item => item.id !== agentId) },
+    agent,
+  };
+}
+
+export function tickApprovedAgents(state: CreatorDeskState, now = new Date().toISOString()): CreatorDeskState {
+  return {
+    agents: state.agents.map(agent => {
+      if (agent.status !== "approved") return agent;
+      if (agent.schedule === "on_demand") return agent;
+      return { ...agent, lastTickAt: now, updatedAt: now };
+    }),
+  };
+}
+
+export function isCreatorRequest(question: string) {
+  const text = question.toLocaleLowerCase();
+  return /\b(crea(?:r)?|create|genera(?:r)?|build)\b/.test(text)
+    && /\b(agente|agent|inteligencia artificial|\bia\b|\bai\b)\b/.test(text);
+}
+
+export function creatorAskReply(language: "es" | "en", userName: string, specialtyHint = "") {
+  const name = userName.split(/[\s@]/)[0] || "operador";
+  const specialty = specialtyHint || (language === "es" ? "tu negocio" : "your business");
+  return language === "es"
+    ? `${name}, abre IRIS Creator en el menú. Describe el agente (por ejemplo “administrar ${specialty}”), Guardian lo prueba en sandbox y yo te pido aprobación antes de dejarlo activo 24/7 con acciones preaprobadas.`
+    : `${name}, open IRIS Creator in the menu. Describe the agent (for example “manage ${specialty}”), Guardian tests it in a sandbox, and I ask for your approval before it stays active 24/7 with pre-approved actions.`;
+}
