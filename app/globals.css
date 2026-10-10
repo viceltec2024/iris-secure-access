@@ -468,6 +468,12 @@ a { color: inherit; }
 .creator-approve-dialog .approval-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end}
 .creator-approve-primary{order:-1;border:0;background:#1ad18a;color:#032015}
 .creator-approve-dialog .approval-actions button:not(.creator-approve-primary){border:1px solid #6d5340;background:#24180f;color:#e8c8a0}
+.creator-tools{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 10px}
+.creator-tools label{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid #1d3b50;border-radius:7px;background:#081522;color:#c5d3dd;font-size:10px;text-transform:none;letter-spacing:0}
+.creator-tools-save{min-height:32px;margin:0 0 12px;padding:0 10px;border:1px solid #2a6d82;border-radius:6px;background:#103445;color:#7fe0ff;font-size:9px;font-weight:800}
+.creator-card-actions{display:flex;flex-wrap:wrap;gap:6px}
+.creator-card-actions button,.creator-history button{min-height:28px;padding:0 8px;border:1px solid #35516a;border-radius:6px;background:#102b3d;color:#d5e6ef;font-size:8px;font-weight:800}
+.creator-history.stopped svg{color:#f08a98}
 .creator-approve-body{margin:12px 0;max-height:320px;overflow:auto}
 .creator-approve-body strong{display:block;margin:10px 0 6px;color:#7fe0ff;font-size:9px;letter-spacing:.08em;text-transform:uppercase}
 .creator-approve-body ul{margin:0;padding-left:16px;color:#c5d3dd;font-size:11px;line-height:1.5}

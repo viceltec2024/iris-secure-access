@@ -6,13 +6,16 @@ import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import {
   addCreatedAgent,
   approveCreatedAgent,
+  deleteCreatedAgent,
   designAgentFromPrompt,
+  emergencyStopCreatedAgent,
   emptyCreatorDesk,
   normalizeCreatorPrompt,
   parseCreatorDesk,
   pauseCreatedAgent,
   rejectCreatedAgent,
   tickApprovedAgents,
+  updateCreatedAgentTools,
   type AgentSchedule,
   type CreatorDeskState,
 } from "../../../lib/iris-creator";
@@ -59,6 +62,7 @@ export async function POST(request: Request) {
     language?: string;
     schedule?: string;
     agentId?: string;
+    tools?: string[];
   };
 
   const { key, state } = await loadDesk(user.email);
@@ -114,6 +118,34 @@ export async function POST(request: Request) {
         specialty: result.agent.blueprint.specialty,
       });
       return Response.json({ ...result.state, paused: result.agent });
+    }
+
+    if (body.action === "update_tools") {
+      const result = updateCreatedAgentTools(state, String(body.agentId || ""), Array.isArray(body.tools) ? body.tools.map(String) : [], language);
+      await saveDesk(user.email, key, result.state);
+      await logAudit(user.email, "IRIS_CREATOR_TOOLS_UPDATED", result.agent.id, "SUCCESS", {
+        tools: result.agent.blueprint.tools,
+        status: result.agent.status,
+      });
+      return Response.json({ ...result.state, updated: result.agent });
+    }
+
+    if (body.action === "emergency_stop") {
+      const result = emergencyStopCreatedAgent(state, String(body.agentId || ""));
+      await saveDesk(user.email, key, result.state);
+      await logAudit(user.email, "IRIS_CREATOR_EMERGENCY_STOP", result.agent.id, "SUCCESS", {
+        specialty: result.agent.blueprint.specialty,
+      });
+      return Response.json({ ...result.state, stopped: result.agent });
+    }
+
+    if (body.action === "delete") {
+      const result = deleteCreatedAgent(state, String(body.agentId || ""));
+      await saveDesk(user.email, key, result.state);
+      await logAudit(user.email, "IRIS_CREATOR_DELETED", result.agent.id, "SUCCESS", {
+        specialty: result.agent.blueprint.specialty,
+      });
+      return Response.json({ ...result.state, deleted: result.agent });
     }
 
     return Response.json({ error: "Unknown action" }, { status: 400 });

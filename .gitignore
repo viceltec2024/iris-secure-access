@@ -41,3 +41,11 @@ next-env.d.ts
 /.sites-runtime/
 /outputs/
 /work/
+
+# IRIS Creator platform (Python)
+platform/iris-api/.venv/
+platform/iris-api/data/
+platform/iris-api/tests/test_iris.db
+platform/iris-api/**/__pycache__/
+platform/iris-api/.pytest_cache/
+*.pyc

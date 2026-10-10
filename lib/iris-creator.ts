@@ -6,7 +6,20 @@ export const CREATED_AGENT_STATUSES = [
   "approved",
   "rejected",
   "paused",
+  "stopped",
 ] as const;
+
+export const ALLOWED_CREATOR_TOOLS = [
+  "business_context",
+  "draft_composer",
+  "owner_notifier",
+  "proposal_queue",
+  "marketing_calendar_sim",
+  "social_draft_sim",
+  "task_checklist_sim",
+] as const;
+
+export type CreatorTool = (typeof ALLOWED_CREATOR_TOOLS)[number];
 
 export type CreatedAgentStatus = (typeof CREATED_AGENT_STATUSES)[number];
 
@@ -54,6 +67,7 @@ export type CreatedAgent = {
   autonomy: "supervised";
   blueprint: AgentBlueprint;
   sourcePreview: string;
+  testPreview: string;
   sandbox: {
     ranAt: string | null;
     passed: boolean;
@@ -70,6 +84,7 @@ export type CreatedAgent = {
   approvedBy?: string;
   rejectedAt?: string;
   lastTickAt?: string;
+  emergencyStopped?: boolean;
 };
 
 export type CreatorDeskState = {
@@ -106,7 +121,7 @@ export function parseCreatorDesk(value: string): CreatorDeskState {
 function isStoredAgent(value: unknown): value is CreatedAgent {
   if (!value || typeof value !== "object") return false;
   const agent = value as CreatedAgent;
-  return Boolean(
+  const ok = Boolean(
     agent.id
     && typeof agent.name === "string"
     && typeof agent.prompt === "string"
@@ -114,6 +129,12 @@ function isStoredAgent(value: unknown): value is CreatedAgent {
     && agent.autonomy === "supervised"
     && agent.guardian?.requiresHumanApproval === true
   );
+  if (ok && typeof agent.testPreview !== "string") agent.testPreview = "";
+  return ok;
+}
+
+export function isCreatorTool(value: string): value is CreatorTool {
+  return (ALLOWED_CREATOR_TOOLS as readonly string[]).includes(value);
 }
 
 export function normalizeCreatorPrompt(value: unknown) {
@@ -176,6 +197,11 @@ export function designAgentFromPrompt(input: {
   const schedule = input.schedule && AGENT_SCHEDULES.includes(input.schedule) ? input.schedule : "always_on";
   const name = language === "es" ? `IRIS · ${specialty}` : `IRIS · ${specialty}`;
 
+  const tools: string[] = ["business_context", "draft_composer", "owner_notifier", "proposal_queue", "task_checklist_sim"];
+  if (/marketing|grooming|tienda|store/i.test(specialty)) {
+    tools.push("marketing_calendar_sim", "social_draft_sim");
+  }
+
   const blueprint: AgentBlueprint = {
     role: language === "es" ? `Agente especializado · ${specialty}` : `Specialized agent · ${specialty}`,
     specialty,
@@ -190,7 +216,7 @@ export function designAgentFromPrompt(input: {
         "Propose clear actions to the human operator",
         "Keep an auditable record of every proposal",
       ],
-    tools: ["business_context", "draft_composer", "owner_notifier", "proposal_queue"],
+    tools,
     constraints: language === "es"
       ? [
         "No gasta dinero ni firma pagos",
@@ -224,6 +250,7 @@ export function designAgentFromPrompt(input: {
     autonomy: "supervised",
     blueprint,
     sourcePreview: "",
+    testPreview: "",
     sandbox: { ranAt: null, passed: false, checks: [] },
     guardian: {
       requiresHumanApproval: true,
@@ -232,15 +259,37 @@ export function designAgentFromPrompt(input: {
     },
     createdAt: now,
     updatedAt: now,
+    emergencyStopped: false,
   };
 
   return runCreatorPipeline(agent, language, now);
+}
+
+export function generateAgentTests(agent: CreatedAgent) {
+  return `/** Isolated Creator tests — simulated tools only */
+import { agentSpec, proposeAction, tick } from "./agent.js";
+
+export function testAgentIsSupervised() {
+  if (agentSpec.autonomy !== "supervised") throw new Error("autonomy");
+}
+
+export function testProposeRequiresApproval() {
+  const result = proposeAction({ summary: "draft checklist for ${agent.blueprint.specialty.replace(/"/g, "")}" });
+  if (!result.requiresHumanApproval) throw new Error("approval_gate");
+}
+
+export function testTickHeartbeat() {
+  const result = tick();
+  if (!result.ok) throw new Error("tick");
+}
+`;
 }
 
 export function generateAgentSource(agent: CreatedAgent) {
   const specialty = JSON.stringify(agent.blueprint.specialty);
   const goals = JSON.stringify(agent.blueprint.goals, null, 2);
   const permissions = JSON.stringify(agent.permissions, null, 2);
+  const tools = JSON.stringify(agent.blueprint.tools, null, 2);
   return `/** IRIS Creator sandbox agent — supervised only */
 export const agentSpec = {
   id: ${JSON.stringify(agent.id)},
@@ -249,6 +298,7 @@ export const agentSpec = {
   schedule: ${JSON.stringify(agent.schedule)},
   autonomy: "supervised",
   permissions: ${permissions},
+  tools: ${tools},
   goals: ${goals},
   blocked: ${JSON.stringify([...BLOCKED_CAPABILITIES])},
 };
@@ -343,9 +393,11 @@ export function runGuardianChecks(agent: CreatedAgent, language: "es" | "en" = "
 
 export function runSandbox(agent: CreatedAgent, language: "es" | "en" = "es", now = new Date().toISOString()) {
   const sourcePreview = generateAgentSource(agent);
-  const withSource = { ...agent, sourcePreview };
+  const testPreview = generateAgentTests(agent);
+  const withSource = { ...agent, sourcePreview, testPreview };
   const findings = runGuardianChecks(withSource, language);
   const blocked = findings.some(item => item.severity === "block");
+  const toolsOk = agent.blueprint.tools.length > 0 && agent.blueprint.tools.every(tool => isCreatorTool(tool));
 
   const checks: SandboxCheck[] = [
     {
@@ -353,6 +405,12 @@ export function runSandbox(agent: CreatedAgent, language: "es" | "en" = "es", no
       label: language === "es" ? "Especificación válida" : "Valid specification",
       ok: Boolean(agent.blueprint.specialty && agent.blueprint.goals.length >= 2),
       detail: language === "es" ? "Rol, metas y herramientas definidos." : "Role, goals, and tools defined.",
+    },
+    {
+      id: "tools_allowlisted",
+      label: language === "es" ? "Herramientas allowlisted" : "Allowlisted tools",
+      ok: toolsOk,
+      detail: language === "es" ? "Solo herramientas simuladas autorizadas." : "Only authorized simulated tools.",
     },
     {
       id: "permissions_least",
@@ -457,6 +515,51 @@ export function pauseCreatedAgent(state: CreatorDeskState, agentId: string, now 
   return {
     state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
     agent: next,
+  };
+}
+
+export function updateCreatedAgentTools(state: CreatorDeskState, agentId: string, tools: string[], language: "es" | "en" = "es", now = new Date().toISOString()) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  if (agent.status === "approved") throw new Error("Pause the agent before editing tools");
+  const nextTools = tools.filter(isCreatorTool);
+  if (!nextTools.length) throw new Error(language === "es" ? "Elige al menos una herramienta autorizada." : "Choose at least one authorized tool.");
+  const nextBase: CreatedAgent = {
+    ...agent,
+    blueprint: { ...agent.blueprint, tools: nextTools },
+    status: "draft",
+    approvedAt: undefined,
+    approvedBy: undefined,
+    updatedAt: now,
+  };
+  const pipelined = runCreatorPipeline(nextBase, language, now);
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? pipelined : item) },
+    agent: pipelined,
+  };
+}
+
+export function emergencyStopCreatedAgent(state: CreatorDeskState, agentId: string, now = new Date().toISOString()) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  const next: CreatedAgent = {
+    ...agent,
+    status: "stopped",
+    emergencyStopped: true,
+    updatedAt: now,
+  };
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    agent: next,
+  };
+}
+
+export function deleteCreatedAgent(state: CreatorDeskState, agentId: string) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  return {
+    state: { agents: state.agents.filter(item => item.id !== agentId) },
+    agent,
   };
 }
 

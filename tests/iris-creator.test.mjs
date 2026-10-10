@@ -3,13 +3,16 @@ import test from "node:test";
 import {
   approveCreatedAgent,
   creatorAskReply,
+  deleteCreatedAgent,
   designAgentFromPrompt,
+  emergencyStopCreatedAgent,
   extractSpecialty,
   isCreatorRequest,
   pauseCreatedAgent,
   rejectCreatedAgent,
   runGuardianChecks,
   tickApprovedAgents,
+  updateCreatedAgentTools,
 } from "../lib/iris-creator.ts";
 
 test("extracts specialty from a Pet Grooming Store prompt", () => {
@@ -72,4 +75,22 @@ test("reject keeps the agent offline", () => {
   const rejected = rejectCreatedAgent({ agents: [agent] }, agent.id);
   assert.equal(rejected.agent.status, "rejected");
   assert.match(creatorAskReply("es", "Ana", "Pet Grooming Store"), /IRIS Creator/);
+});
+
+test("Creator can edit tools, emergency-stop, and delete", () => {
+  const agent = designAgentFromPrompt({
+    id: "agent-3",
+    prompt: "IRIS, crea un agente que administre las tareas de marketing de Pet Grooming Store.",
+    language: "es",
+  });
+  assert.match(agent.testPreview, /testTickHeartbeat|test_tick|supervised/i);
+  const edited = updateCreatedAgentTools({ agents: [agent] }, agent.id, ["business_context", "proposal_queue", "task_checklist_sim"], "es");
+  assert.deepEqual(edited.agent.blueprint.tools, ["business_context", "proposal_queue", "task_checklist_sim"]);
+  assert.equal(edited.agent.status, "awaiting_approval");
+  const approved = approveCreatedAgent(edited.state, agent.id, "owner@iris.local");
+  const stopped = emergencyStopCreatedAgent(approved.state, agent.id);
+  assert.equal(stopped.agent.status, "stopped");
+  assert.equal(stopped.agent.emergencyStopped, true);
+  const deleted = deleteCreatedAgent(stopped.state, agent.id);
+  assert.equal(deleted.state.agents.length, 0);
 });

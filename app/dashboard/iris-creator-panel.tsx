@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle, Robot, ShieldCheck, Warning, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import type { AgentSchedule, CreatedAgent, CreatorDeskState } from "../../lib/iris-creator";
+import { ALLOWED_CREATOR_TOOLS, type AgentSchedule, type CreatedAgent, type CreatorDeskState } from "../../lib/iris-creator";
 
 const emptyDesk: CreatorDeskState = { agents: [] };
 
@@ -17,6 +17,7 @@ function statusLabel(status: CreatedAgent["status"], es: boolean) {
     approved: ["Active 24/7", "Activo 24/7"],
     rejected: ["Rejected", "Rechazado"],
     paused: ["Paused", "Pausado"],
+    stopped: ["Emergency stop", "Detenido"],
   };
   return map[status][es ? 1 : 0];
 }
@@ -31,12 +32,13 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
   const es = language === "es";
   const [desk, setDesk] = useState<CreatorDeskState>(emptyDesk);
   const [prompt, setPrompt] = useState(es
-    ? "Crea una inteligencia artificial especializada en administrar mi tienda Pet Grooming Store"
-    : "Create an AI specialized in managing my Pet Grooming Store");
+    ? "IRIS, crea un agente que administre las tareas de marketing de Pet Grooming Store."
+    : "IRIS, create an agent that manages marketing tasks for Pet Grooming Store.");
   const [schedule, setSchedule] = useState<AgentSchedule>("always_on");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<CreatedAgent | null>(null);
+  const [editTools, setEditTools] = useState<string[]>([]);
 
   async function refresh() {
     const response = await fetch("/api/iris-creator", { cache: "no-store" });
@@ -62,6 +64,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
         error?: string;
         created?: CreatedAgent;
         approved?: CreatedAgent;
+        updated?: CreatedAgent;
       };
       if (!response.ok) throw new Error(payload.error || "creator");
       setDesk(payload);
@@ -74,19 +77,33 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
     }
   }
 
+  function openReview(agent: CreatedAgent) {
+    setPending(agent);
+    setEditTools(agent.blueprint.tools.slice());
+  }
+
   async function createAgent() {
     const result = await post({ action: "create", prompt, schedule });
     if (!result?.created) return;
     if (result.created.status === "awaiting_approval") {
-      setPending(result.created);
+      openReview(result.created);
       setNotice(es
-        ? "Guardian pasó el sandbox. Revisa y aprueba para activarlo."
-        : "Guardian passed the sandbox. Review and approve to activate it.");
+        ? "Guardian pasó el sandbox. Revisa herramientas, código y aprueba."
+        : "Guardian passed the sandbox. Review tools, code, and approve.");
       return;
     }
     setNotice(es
       ? "Guardian bloqueó el agente. Revisa los hallazgos y prueba otra descripción."
       : "Guardian blocked the agent. Review the findings and try another description.");
+  }
+
+  async function saveTools() {
+    if (!pending) return;
+    const result = await post({ action: "update_tools", agentId: pending.id, tools: editTools });
+    if (!result?.updated) return;
+    if (result.updated.status === "awaiting_approval") openReview(result.updated);
+    else setPending(result.updated);
+    setNotice(es ? "Herramientas actualizadas y sandbox reejecutado." : "Tools updated and sandbox re-run.");
   }
 
   async function confirmApproval() {
@@ -95,8 +112,8 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
     if (!result?.approved) return;
     setPending(null);
     setNotice(es
-      ? `${result.approved.name} quedó activo 24/7 con supervisión. Solo propone acciones preaprobadas.`
-      : `${result.approved.name} is active 24/7 under supervision. It only proposes pre-approved actions.`);
+      ? `${result.approved.name} quedó activo 24/7 con supervisión.`
+      : `${result.approved.name} is active 24/7 under supervision.`);
   }
 
   const waiting = desk.agents.filter(item => item.status === "awaiting_approval");
@@ -113,19 +130,41 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
         <div className="token-deploy-summary">
           <span><b>{pending.blueprint.specialty}</b></span>
           <span>{scheduleLabel(pending.schedule, es)}</span>
-          <span>{es ? "Sandbox OK" : "Sandbox OK"}</span>
+          <span>{pending.sandbox.passed ? "Sandbox OK" : (es ? "Sandbox falló" : "Sandbox failed")}</span>
         </div>
         <div className="creator-approve-body">
+          <strong>{es ? "Herramientas autorizadas" : "Authorized tools"}</strong>
+          <div className="creator-tools">
+            {ALLOWED_CREATOR_TOOLS.map(tool => <label key={tool}>
+              <input
+                type="checkbox"
+                checked={editTools.includes(tool)}
+                onChange={event => setEditTools(current => event.target.checked ? [...current, tool] : current.filter(item => item !== tool))}
+              />
+              <span>{tool}</span>
+            </label>)}
+          </div>
+          <button type="button" className="creator-tools-save" disabled={busy || editTools.length === 0} onClick={() => void saveTools()}>
+            {es ? "Guardar tools y re-probar" : "Save tools and re-test"}
+          </button>
           <strong>{es ? "Metas" : "Goals"}</strong>
           <ul>{pending.blueprint.goals.map(goal => <li key={goal}>{goal}</li>)}</ul>
+          <strong>{es ? "Resultados sandbox" : "Sandbox results"}</strong>
+          <ul className="creator-findings">
+            {pending.sandbox.checks.map(check => <li key={check.id} className={check.ok ? "info" : "block"}>
+              <Warning weight="fill" />{check.label}: {check.detail}
+            </li>)}
+          </ul>
           <strong>{es ? "Guardian" : "Guardian"}</strong>
           <ul className="creator-findings">
             {pending.guardian.findings.map(finding => <li key={finding.code} className={finding.severity}>
               <Warning weight="fill" />{finding.message}
             </li>)}
           </ul>
-          <strong>{es ? "Código sandbox" : "Sandbox code"}</strong>
-          <pre className="creator-source">{pending.sourcePreview.slice(0, 900)}</pre>
+          <strong>{es ? "Código generado" : "Generated code"}</strong>
+          <pre className="creator-source">{pending.sourcePreview.slice(0, 700)}</pre>
+          <strong>{es ? "Pruebas generadas" : "Generated tests"}</strong>
+          <pre className="creator-source">{(pending.testPreview || "").slice(0, 700)}</pre>
         </div>
         <div className="token-gas-warning">
           <Warning weight="fill" />
@@ -137,7 +176,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
           </span>
         </div>
         <div className="approval-actions">
-          <button type="button" className="creator-approve-primary" disabled={busy} autoFocus onClick={() => void confirmApproval()}>
+          <button type="button" className="creator-approve-primary" disabled={busy || !pending.sandbox.passed} autoFocus onClick={() => void confirmApproval()}>
             <CheckCircle />{busy ? (es ? "Activando…" : "Activating…") : (es ? "Aprobar e implementar" : "Approve and deploy")}
           </button>
           <button type="button" disabled={busy} onClick={() => void post({ action: "reject", agentId: pending.id }).then(result => { if (result) setPending(null); })}>
@@ -151,8 +190,8 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
       <div>
         <h2>IRIS Creator</h2>
         <p>{es
-          ? "Diseña agentes, pruébalos en sandbox con Guardian y actívalos solo con tu aprobación."
-          : "Design agents, test them in a Guardian sandbox, and activate them only with your approval."}</p>
+          ? "Diseña agentes, edita tools, prueba en sandbox con Guardian y activa solo con tu OK."
+          : "Design agents, edit tools, test in a Guardian sandbox, and activate only with your OK."}</p>
       </div>
       <span className="live-pill"><i />CREATOR</span>
     </div>
@@ -160,11 +199,11 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
     <div className="creator-desk">
       <div className="creator-desk-head">
         <div>
-          <span>{es ? "CREATOR + GUARDIAN · MVP" : "CREATOR + GUARDIAN · MVP"}</span>
+          <span>{es ? "CREATOR + GUARDIAN · FASE 1" : "CREATOR + GUARDIAN · PHASE 1"}</span>
           <h3>{es ? "IRIS diseña. Guardian prueba. Tú apruebas." : "IRIS designs. Guardian tests. You approve."}</h3>
           <p>{es
-            ? "Los agentes aprobados pueden operar 24/7 con acciones preaprobadas. Los cambios importantes siguen pidiendo tu OK."
-            : "Approved agents can operate 24/7 with pre-approved actions. Important changes still need your OK."}</p>
+            ? "MVP local: especificación, tools editables, código/pruebas, sandbox, aprobación, pause/stop/delete. Backend FastAPI en platform/iris-api."
+            : "Local MVP: specification, editable tools, code/tests, sandbox, approval, pause/stop/delete. FastAPI backend in platform/iris-api."}</p>
         </div>
         <div className="creator-stats">
           <article><span>{es ? "Activos" : "Active"}</span><strong>{active.length}</strong></article>
@@ -180,7 +219,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
             onChange={event => setPrompt(event.target.value)}
             rows={3}
             maxLength={500}
-            placeholder={es ? "Ejemplo: administra mi tienda Pet Grooming Store" : "Example: manage my Pet Grooming Store"}
+            placeholder={es ? "Ejemplo: marketing de Pet Grooming Store" : "Example: marketing for Pet Grooming Store"}
           />
         </label>
         <label>
@@ -206,7 +245,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
             <b>{item.name}</b>
             <small>{item.blueprint.specialty} · {scheduleLabel(item.schedule, es)}</small>
           </div>
-          <button disabled={busy} onClick={() => setPending(item)}>{es ? "Revisar" : "Review"}</button>
+          <button disabled={busy} onClick={() => openReview(item)}>{es ? "Revisar" : "Review"}</button>
           <button disabled={busy} onClick={() => void post({ action: "reject", agentId: item.id })}>{es ? "Rechazar" : "Reject"}</button>
         </article>)}
       </div>}
@@ -220,7 +259,11 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
               <b>{item.name}</b>
               <small>{scheduleLabel(item.schedule, es)} · {item.lastTickAt ? (es ? `latido ${new Date(item.lastTickAt).toLocaleTimeString(language)}` : `tick ${new Date(item.lastTickAt).toLocaleTimeString(language)}`) : (es ? "sin latido" : "no tick")}</small>
             </div>
-            <button disabled={busy} onClick={() => void post({ action: "pause", agentId: item.id })}>{es ? "Pausar" : "Pause"}</button>
+            <div className="creator-card-actions">
+              <button disabled={busy} onClick={() => void post({ action: "pause", agentId: item.id })}>{es ? "Pausar" : "Pause"}</button>
+              <button disabled={busy} onClick={() => void post({ action: "emergency_stop", agentId: item.id })}>{es ? "Detener" : "Stop"}</button>
+              <button disabled={busy} onClick={() => void post({ action: "delete", agentId: item.id })}>{es ? "Eliminar" : "Delete"}</button>
+            </div>
           </article>)}
         </div>
         <div>
@@ -230,8 +273,9 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
             <CheckCircle weight="fill" />
             <div>
               <b>{item.name}</b>
-              <small>{statusLabel(item.status, es)} · {item.sandbox.passed ? (es ? "sandbox OK" : "sandbox OK") : (es ? "sandbox falló" : "sandbox failed")}</small>
+              <small>{statusLabel(item.status, es)} · {item.sandbox.passed ? "sandbox OK" : (es ? "sandbox falló" : "sandbox failed")} · {(item.blueprint.tools || []).length} tools</small>
             </div>
+            {(item.status === "paused" || item.status === "stopped" || item.status === "rejected") && <button disabled={busy} onClick={() => void post({ action: "delete", agentId: item.id })}>{es ? "Eliminar" : "Delete"}</button>}
           </article>)}
         </div>
       </div>
