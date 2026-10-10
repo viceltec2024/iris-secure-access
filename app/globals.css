@@ -465,6 +465,9 @@ a { color: inherit; }
 .creator-history.rejected svg,.creator-history.sandbox_failed svg{color:#f08a98}
 .creator-history.paused svg,.creator-history.awaiting_approval svg{color:#f1bd5c}
 .creator-approve-dialog{max-width:640px}
+.creator-approve-dialog .approval-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end}
+.creator-approve-primary{order:-1;border:0;background:#1ad18a;color:#032015}
+.creator-approve-dialog .approval-actions button:not(.creator-approve-primary){border:1px solid #6d5340;background:#24180f;color:#e8c8a0}
 .creator-approve-body{margin:12px 0;max-height:320px;overflow:auto}
 .creator-approve-body strong{display:block;margin:10px 0 6px;color:#7fe0ff;font-size:9px;letter-spacing:.08em;text-transform:uppercase}
 .creator-approve-body ul{margin:0;padding-left:16px;color:#c5d3dd;font-size:11px;line-height:1.5}
