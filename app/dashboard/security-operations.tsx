@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
+import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, Eye, LockKey, Plus, Pulse, Robot, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import IrisBrandMark from "../iris-brand-mark";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
+import IrisCreatorPanel from "./iris-creator-panel";
 import IrisMarketPanel from "./iris-market-panel";
 import { Language, text } from "./dashboard-i18n";
 import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase } from "../../lib/iris-live-soc";
@@ -13,7 +14,7 @@ import { irisReconnectOrigin } from "../../lib/iris-origin";
 import { formatUtcClock } from "../../lib/iris-time";
 
 type Incident = LiveIncident;
-type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "market" | "approvals" | "audit";
+type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "market" | "creator" | "approvals" | "audit";
 type AuditEvent = { id: number; actorEmail: string; action: string; resource: string; outcome: string; createdAt: string };
 type WalletState = { connected: boolean; address: string; mode?: string };
 type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; unsignedPersistenceItems?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string; transportEncryption?: "TLS+HMAC" | "AES-256-CBC+HMAC-SHA256" };
@@ -300,6 +301,7 @@ export default function SecurityOperations({
         <button className={section === "devices" ? "active" : ""} onClick={() => setSection("devices")}><Desktop /> {language === "es" ? "Dispositivos" : "Devices"} <b>{devices.length}</b></button>
         <button className={section === "chain" ? "active" : ""} onClick={() => setSection("chain")}><Cube /> IRIS Chain</button>
         <button className={section === "market" ? "active" : ""} onClick={() => setSection("market")}><TrendUp /> {language === "es" ? "Bolsa en vivo" : "Live market"}</button>
+        <button className={section === "creator" ? "active" : ""} onClick={() => setSection("creator")}><Robot /> IRIS Creator</button>
         <button className={section === "approvals" ? "active" : ""} onClick={() => setSection("approvals")}><ShieldCheck /> {t("approvals")} <b>{open}</b></button>
         <button className={section === "audit" ? "active" : ""} onClick={() => setSection("audit")}><LockKey /> {t("audit")} <b>{liveAuditCount}</b></button>
         {user.role === "ADMIN" && <a href="/admin/users"><UsersThree /> {t("access")}</a>}
@@ -308,7 +310,7 @@ export default function SecurityOperations({
     </aside>
 
     <section className="soc-main">
-      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", market: language === "es" ? "Bolsa en vivo" : "Live market", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => { loadSecurityStateRef.current(); setLastUpdate(t("now")); }}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
+      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", market: language === "es" ? "Bolsa en vivo" : "Live market", creator: "IRIS Creator", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => { loadSecurityStateRef.current(); setLastUpdate(t("now")); }}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
 
       {waitingDevice && reconnectCommand && <section className="ops-reconnect">
         <div>
@@ -443,6 +445,7 @@ export default function SecurityOperations({
       </section>}
       {section === "chain" && <IrisChainPanel language={language} isAdmin={user.role === "ADMIN"} />}
       {section === "market" && <IrisMarketPanel language={language} onOpenPurchases={() => setSection("chain")} />}
+      {section === "creator" && <IrisCreatorPanel language={language} />}
       <AskIrisPanel section={section} selectedIncident={selectedView} incidents={incidents.map(localized)} devices={devices} userRole={user.role} userName={user.displayName.split(" ")[0]} language={language} />
     </section>
   </main>;
