@@ -31,6 +31,28 @@ Skip `tests/rendered-html.test.mjs` unless you already ran `npm run build`. `npm
 - Official wallet URLs only. Do not invent OAuth tokens or Robinhood sessions.
 - Do not restore neural TTS (`/api/iris-voice`) or Vinext Geist fonts.
 
+## Cloudflare D1 deploy
+
+Production D1 is `site-creator-d1` (`65d60391-61a8-4977-9e1b-a574447fa195`), declared in `config/d1.json` and `wrangler.jsonc`. Do not deploy with the Sites placeholder id `00000000-0000-4000-8000-000000000000`.
+
+If Cloudflare Workers Builds still runs `npx wrangler deploy`, prefer deploy command:
+
+```bash
+npm run deploy:cf
+```
+
+or:
+
+```bash
+node scripts/patch-generated-wrangler-d1.mjs && npx wrangler deploy -c dist/server/wrangler.json
+```
+
+Empty remote D1 needs one-time schema apply (Wrangler auth required):
+
+```bash
+npm run db:remote
+```
+
 ## Done
 
 A change is done when the tests above pass, the dashboard still signs in locally, and Ask IRIS returns a written reply for a typed question.

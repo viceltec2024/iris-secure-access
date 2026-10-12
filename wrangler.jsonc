@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "iris-secure-access",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "site-creator-d1",
+      "database_id": "65d60391-61a8-4977-9e1b-a574447fa195",
+      "migrations_dir": "drizzle"
+    }
+  ]
+}
