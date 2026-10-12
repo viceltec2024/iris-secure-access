@@ -1,7 +1,5 @@
 import vinext from "vinext";
 import { defineConfig, loadEnv, type Plugin } from "vite";
-import hostingConfig from "./.openai/hosting.json";
-import d1Config from "./config/d1.json";
 import { sites } from "./build/sites-vite-plugin";
 
 function irisHmrBehindProxy(): Plugin {
@@ -27,42 +25,9 @@ function irisHmrBehindProxy(): Plugin {
   };
 }
 
-const { d1, r2 } = hostingConfig;
-
-// Prefer an explicit override, then the committed Cloudflare D1 id. Local
-// Miniflare only needs a stable UUID; production deploy rejects the old Sites
-// placeholder (00000000-0000-4000-8000-000000000000).
-const databaseId =
-  process.env.CLOUDFLARE_D1_DATABASE_ID?.trim() || d1Config.database_id;
-
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSandbox = Boolean(process.env.CODEX_SANDBOX);
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
-
-const localBindingConfig = {
-  name: "iris-secure-access",
-  main: "./worker/index.ts",
-  compatibility_date: "2026-04-01",
-  compatibility_flags: ["nodejs_compat"],
-  d1_databases: d1
-    ? [
-        {
-          binding: d1,
-          database_name: d1Config.database_name,
-          database_id: databaseId,
-          migrations_dir: d1Config.migrations_dir,
-        },
-      ]
-    : [],
-  r2_buckets: r2
-    ? [
-        {
-          binding: r2,
-          bucket_name: "site-creator-r2",
-        },
-      ]
-    : [],
-};
 
 export default defineConfig(async ({ command, mode }) => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
@@ -103,10 +68,11 @@ export default defineConfig(async ({ command, mode }) => {
       irisHmrBehindProxy(),
       vinext(),
       sites(),
+      // Worker name, D1, and compatibility flags come from root wrangler.jsonc.
+      // Do not also pass an inline `config` object here — that duplicates D1 bindings.
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
-        config: localBindingConfig,
       }),
     ],
   };

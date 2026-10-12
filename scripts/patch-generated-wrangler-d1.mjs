@@ -27,34 +27,48 @@ async function exists(filePath) {
   }
 }
 
+function normalizeDatabases(databases) {
+  const byBinding = new Map();
+  for (const database of databases) {
+    if (!database || typeof database !== "object") continue;
+    const binding = database.binding || d1Config.binding;
+    byBinding.set(binding, {
+      binding,
+      database_name: d1Config.database_name,
+      database_id: d1Config.database_id,
+      migrations_dir: d1Config.migrations_dir,
+    });
+  }
+  if (byBinding.size === 0) {
+    byBinding.set(d1Config.binding, {
+      binding: d1Config.binding,
+      database_name: d1Config.database_name,
+      database_id: d1Config.database_id,
+      migrations_dir: d1Config.migrations_dir,
+    });
+  }
+  return [...byBinding.values()];
+}
+
 let patched = 0;
 for (const wranglerPath of candidates) {
   if (!(await exists(wranglerPath))) continue;
 
   const raw = await readFile(wranglerPath, "utf8");
   const config = JSON.parse(raw);
+  const before = JSON.stringify(config.d1_databases ?? null);
   const databases = Array.isArray(config.d1_databases) ? config.d1_databases : [];
-  let changed = false;
+  const hadPlaceholder = databases.some(
+    (database) => database?.database_id === PLACEHOLDER_DATABASE_ID,
+  );
+  config.d1_databases = normalizeDatabases(databases);
+  const after = JSON.stringify(config.d1_databases);
 
-  for (const database of databases) {
-    if (!database || typeof database !== "object") continue;
-    const id = database.database_id;
-    if (id === PLACEHOLDER_DATABASE_ID || id !== d1Config.database_id) {
-      database.binding = d1Config.binding;
-      database.database_name = d1Config.database_name;
-      database.database_id = d1Config.database_id;
-      database.migrations_dir = d1Config.migrations_dir;
-      changed = true;
-    } else if (!database.migrations_dir) {
-      database.migrations_dir = d1Config.migrations_dir;
-      changed = true;
-    }
-  }
-
-  if (changed) {
+  if (before !== after || hadPlaceholder) {
     await writeFile(wranglerPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
     console.log(
-      `[d1] patched ${path.relative(projectRoot, wranglerPath)} → ${d1Config.database_id}`,
+      `[d1] patched ${path.relative(projectRoot, wranglerPath)} → ${d1Config.database_id}` +
+        (config.d1_databases.length === 1 ? "" : ` (${config.d1_databases.length} bindings)`),
     );
     patched += 1;
   } else {

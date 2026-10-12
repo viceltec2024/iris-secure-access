@@ -22,12 +22,14 @@ test("wrangler.jsonc and vite config use the committed D1 database id", () => {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
   assert.match(wrangler, new RegExp(d1.database_id));
-  assert.match(wrangler, /migrations_dir": "drizzle"/);
+  assert.match(wrangler, /"database_name": "site-creator-d1"/);
+  assert.match(wrangler, /"migrations_dir": "drizzle"/);
   assert.doesNotMatch(wrangler, new RegExp(PLACEHOLDER));
-  assert.match(vite, /config\/d1\.json/);
-  assert.match(vite, /CLOUDFLARE_D1_DATABASE_ID/);
-  assert.doesNotMatch(vite, new RegExp(PLACEHOLDER));
+  assert.match(vite, /wrangler\.jsonc/);
+  assert.doesNotMatch(vite, /config:\s*localBindingConfig/);
+  assert.doesNotMatch(vite, /database_id:\s*["']00000000-0000-4000-8000-000000000000["']/);
   assert.match(patch, new RegExp(PLACEHOLDER));
+  assert.match(patch, /normalizeDatabases/);
   assert.equal(pkg.scripts["db:remote"], "node scripts/apply-remote-d1-migrations.mjs");
   assert.match(pkg.scripts["deploy:cf"], /patch-generated-wrangler-d1/);
 });
