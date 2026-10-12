@@ -35,19 +35,16 @@ Skip `tests/rendered-html.test.mjs` unless you already ran `npm run build`. `npm
 
 Production D1 is `site-creator-d1` (`65d60391-61a8-4977-9e1b-a574447fa195`), declared in `config/d1.json` and `wrangler.jsonc`. Do not deploy with the Sites placeholder id `00000000-0000-4000-8000-000000000000`.
 
-If Cloudflare Workers Builds still runs `npx wrangler deploy`, prefer deploy command:
+`npm run build` patches and asserts `dist/server/wrangler.json` so a successful build never leaves the placeholder UUID in the deploy artifact.
 
-```bash
-npm run deploy:cf
-```
+In Cloudflare Workers Builds, set:
 
-or:
+- Build command: `npm run build`
+- Deploy command: `npm run deploy` (alias of `deploy:cf`)
 
-```bash
-node scripts/patch-generated-wrangler-d1.mjs && npx wrangler deploy -c dist/server/wrangler.json
-```
+`deploy:cf` re-patches, re-asserts, then deploys with `-c dist/server/wrangler.json` (the vinext Worker bundle + assets). Do not deploy from root `wrangler.jsonc` alone.
 
-Empty remote D1 needs one-time schema apply (Wrangler auth required):
+Empty remote D1 needs one-time schema apply after the first successful production deploy (Wrangler auth required):
 
 ```bash
 npm run db:remote

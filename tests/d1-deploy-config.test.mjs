@@ -19,6 +19,7 @@ test("wrangler.jsonc and vite config use the committed D1 database id", () => {
   const wrangler = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   const vite = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
   const patch = readFileSync(new URL("../scripts/patch-generated-wrangler-d1.mjs", import.meta.url), "utf8");
+  const assertScript = readFileSync(new URL("../scripts/assert-generated-d1.mjs", import.meta.url), "utf8");
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
   assert.match(wrangler, new RegExp(d1.database_id));
@@ -30,11 +31,21 @@ test("wrangler.jsonc and vite config use the committed D1 database id", () => {
   assert.doesNotMatch(vite, /database_id:\s*["']00000000-0000-4000-8000-000000000000["']/);
   assert.match(patch, new RegExp(PLACEHOLDER));
   assert.match(patch, /normalizeDatabases/);
+  assert.match(patch, /assert-generated-d1\.mjs/);
+  assert.match(assertScript, new RegExp(PLACEHOLDER));
+  assert.match(assertScript, /exactly one D1 binding/);
   assert.equal(pkg.scripts["db:remote"], "node scripts/apply-remote-d1-migrations.mjs");
+  assert.equal(pkg.scripts["verify:d1"], "node scripts/assert-generated-d1.mjs");
   assert.match(pkg.scripts["deploy:cf"], /patch-generated-wrangler-d1/);
+  assert.match(pkg.scripts["deploy:cf"], /assert-generated-d1/);
+  assert.match(pkg.scripts["deploy:cf"], /dist\/server\/wrangler\.json/);
+  assert.equal(pkg.scripts.deploy, "npm run deploy:cf");
 });
 
-test("build rewrites generated wrangler D1 bindings before artifact validation", () => {
+test("build and artifact validation gate on generated D1 bindings", () => {
   const build = readFileSync(new URL("../scripts/build-verified.sh", import.meta.url), "utf8");
+  const validate = readFileSync(new URL("../scripts/validate-artifact.sh", import.meta.url), "utf8");
   assert.match(build, /patch-generated-wrangler-d1\.mjs/);
+  assert.match(validate, /assert-generated-d1\.mjs/);
+  assert.match(validate, /dist\/server\/wrangler\.json/);
 });

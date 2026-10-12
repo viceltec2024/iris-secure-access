@@ -10,7 +10,7 @@ const REAL_ID = "65d60391-61a8-4977-9e1b-a574447fa195";
 const PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("patch script rewrites placeholder D1 ids in generated wrangler.json", () => {
+function stagePatchHarness(wranglerBody) {
   const staging = mkdtempSync(path.join(tmpdir(), "iris-d1-patch-"));
   const distServer = path.join(staging, "dist", "server");
   mkdirSync(distServer, { recursive: true });
@@ -26,27 +26,29 @@ test("patch script rewrites placeholder D1 ids in generated wrangler.json", () =
     readFileSync(path.join(projectRoot, "scripts", "patch-generated-wrangler-d1.mjs"), "utf8"),
   );
   writeFileSync(
-    path.join(distServer, "wrangler.json"),
-    JSON.stringify(
-      {
-        name: "iris-secure-access",
-        d1_databases: [
-          {
-            binding: "DB",
-            database_name: "site-creator-d1",
-            database_id: PLACEHOLDER,
-          },
-          {
-            binding: "DB",
-            database_name: "site-creator-d1",
-            database_id: PLACEHOLDER,
-          },
-        ],
-      },
-      null,
-      2,
-    ),
+    path.join(staging, "scripts", "assert-generated-d1.mjs"),
+    readFileSync(path.join(projectRoot, "scripts", "assert-generated-d1.mjs"), "utf8"),
   );
+  writeFileSync(path.join(distServer, "wrangler.json"), JSON.stringify(wranglerBody, null, 2));
+  return { staging, distServer };
+}
+
+test("patch script rewrites placeholder D1 ids and dedupes bindings", () => {
+  const { staging, distServer } = stagePatchHarness({
+    name: "iris-secure-access",
+    d1_databases: [
+      {
+        binding: "DB",
+        database_name: "site-creator-d1",
+        database_id: PLACEHOLDER,
+      },
+      {
+        binding: "DB",
+        database_name: "site-creator-d1",
+        database_id: PLACEHOLDER,
+      },
+    ],
+  });
 
   try {
     const result = spawnSync(
@@ -60,6 +62,55 @@ test("patch script rewrites placeholder D1 ids in generated wrangler.json", () =
     assert.equal(patched.d1_databases[0].database_id, REAL_ID);
     assert.equal(patched.d1_databases[0].migrations_dir, "drizzle");
     assert.match(result.stdout, new RegExp(REAL_ID));
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+});
+
+test("patch script injects the production binding when d1_databases is missing", () => {
+  const { staging, distServer } = stagePatchHarness({
+    name: "iris-secure-access",
+  });
+
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/patch-generated-wrangler-d1.mjs"],
+      { cwd: staging, encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const patched = JSON.parse(readFileSync(path.join(distServer, "wrangler.json"), "utf8"));
+    assert.equal(patched.d1_databases.length, 1);
+    assert.equal(patched.d1_databases[0].database_id, REAL_ID);
+    assert.equal(patched.d1_databases[0].database_name, "site-creator-d1");
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+});
+
+test("assert script rejects placeholder D1 bindings", () => {
+  const { staging, distServer } = stagePatchHarness({
+    name: "iris-secure-access",
+    d1_databases: [
+      {
+        binding: "DB",
+        database_name: "site-creator-d1",
+        database_id: PLACEHOLDER,
+        migrations_dir: "drizzle",
+      },
+    ],
+  });
+
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/assert-generated-d1.mjs"],
+      { cwd: staging, encoding: "utf8" },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}\n${result.stderr}`, /placeholder|expected/i);
+    const untouched = JSON.parse(readFileSync(path.join(distServer, "wrangler.json"), "utf8"));
+    assert.equal(untouched.d1_databases[0].database_id, PLACEHOLDER);
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }

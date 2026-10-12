@@ -6,6 +6,7 @@
 import { readFile, writeFile, access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLACEHOLDER_DATABASE_ID = "00000000-0000-4000-8000-000000000000";
@@ -50,9 +51,10 @@ function normalizeDatabases(databases) {
   return [...byBinding.values()];
 }
 
-let patched = 0;
+let touched = 0;
 for (const wranglerPath of candidates) {
   if (!(await exists(wranglerPath))) continue;
+  touched += 1;
 
   const raw = await readFile(wranglerPath, "utf8");
   const config = JSON.parse(raw);
@@ -70,17 +72,27 @@ for (const wranglerPath of candidates) {
       `[d1] patched ${path.relative(projectRoot, wranglerPath)} → ${d1Config.database_id}` +
         (config.d1_databases.length === 1 ? "" : ` (${config.d1_databases.length} bindings)`),
     );
-    patched += 1;
   } else {
+    // Still rewrite for stable formatting so assert + deploy see a consistent file.
+    await writeFile(wranglerPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
     console.log(
       `[d1] ${path.relative(projectRoot, wranglerPath)} already binds ${d1Config.database_id}`,
     );
   }
 }
 
-if (patched === 0 && !(await exists(candidates[0])) && !(await exists(candidates[1]))) {
+if (touched === 0) {
   console.error(
     "[d1] no generated wrangler.json found under dist/. Run the build first.",
   );
   process.exitCode = 1;
+} else {
+  const assertResult = spawnSync(
+    process.execPath,
+    [path.join(projectRoot, "scripts", "assert-generated-d1.mjs")],
+    { cwd: projectRoot, stdio: "inherit", env: process.env },
+  );
+  if ((assertResult.status ?? 1) !== 0) {
+    process.exitCode = assertResult.status ?? 1;
+  }
 }
