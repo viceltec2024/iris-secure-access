@@ -808,6 +808,8 @@ body{
 }
 @media(max-width:760px){
   .brand-orbit,.brand-orbit-2,.brand-scan{display:none}
+  .iris-enterprise .brand-kicker{display:block;margin-bottom:10px}
+  .iris-enterprise .brand-message p:not(.brand-kicker){display:none}
   .brand-trust{padding-top:22px}
   .auth-glass{padding:28px 20px;border-radius:18px}
 }
