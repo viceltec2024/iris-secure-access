@@ -49,7 +49,7 @@ export default async function Home() {
           <div className="auth-form platform-auth">
             <div className="heading">
               <h1>Acceso seguro</h1>
-              <p>{localAccess ? "El acceso local está activo. Entra al centro de operaciones IRIS sin ChatGPT." : "Entra con tu identidad de ChatGPT. OpenAI protege la cuenta y aplica el segundo factor."}</p>
+              <p>{user ? "Tu identidad ya está verificada. Entra al centro de operaciones." : localAccess ? "El acceso local está activo. Entra al centro de operaciones IRIS sin ChatGPT." : "Entra con tu identidad de ChatGPT. OpenAI protege la cuenta y aplica el segundo factor."}</p>
             </div>
 
             <div className="security-summary">
