@@ -1,5 +1,5 @@
 import { getChatGPTUser, irisSignInPath } from "./chatgpt-auth";
-import { Buildings, LockKey, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
+import { Buildings, LockKey, ShieldCheck, Pulse, Fingerprint } from "@phosphor-icons/react/dist/ssr";
 import IrisBrandMark from "./iris-brand-mark";
 import { devAuthEnabled } from "./dev-auth";
 
@@ -11,8 +11,14 @@ export default async function Home() {
   const destination = user ? "/dashboard" : irisSignInPath("/dashboard");
 
   return (
-    <main className="auth-shell">
+    <main className="auth-shell iris-enterprise">
       <section className="brand-panel" aria-label="IRIS Enterprise security">
+        <div className="brand-atmosphere" aria-hidden="true">
+          <i className="brand-grid" />
+          <i className="brand-orbit" />
+          <i className="brand-orbit brand-orbit-2" />
+          <i className="brand-scan" />
+        </div>
         <div className="brand-content">
           <div className="brand-lockup">
             <div className="brand-mark" aria-hidden="true"><IrisBrandMark size={88} /></div>
@@ -20,41 +26,47 @@ export default async function Home() {
           </div>
           <div className="brand-message">
             <span className="accent-line" />
-            <h2>Secure Command Gateway</h2>
-            <p>Trusted AI oversight. Protected operations.<br />Every access is verified. Every session<br />is encrypted. Your mission is our priority.</p>
+            <p className="brand-kicker">Centro de mando seguro</p>
+            <h2>La consola de seguridad que habla, verifica y actúa.</h2>
+            <p>Identidad protegida. Operaciones cifradas. Cada acceso se comprueba. Cada sesión queda registrada.</p>
           </div>
+          <ul className="brand-trust">
+            <li><Pulse weight="fill" /> SOC en vivo</li>
+            <li><Fingerprint weight="fill" /> Identidad verificada</li>
+            <li><LockKey weight="fill" /> Sesión cifrada</li>
+          </ul>
         </div>
       </section>
 
       <section className="auth-panel">
-        <div className="auth-content">
-          <div className="steps" aria-label="Secure authentication">
-            <div className="step active"><span className="step-circle">1</span><span>Identify</span></div>
+        <div className="auth-content auth-glass">
+          <div className="steps" aria-label="Autenticación segura">
+            <div className="step active"><span className="step-circle">1</span><span>Identidad</span></div>
             <span className="step-line" />
-            <div className="step"><span className="step-circle">2</span><span>Access</span></div>
+            <div className="step"><span className="step-circle">2</span><span>Acceso</span></div>
           </div>
 
           <div className="auth-form platform-auth">
             <div className="heading">
-              <h1>Secure access</h1>
-              <p>{localAccess ? "Local development access is enabled. Enter the IRIS workspace without ChatGPT sign-in." : "Sign in with your ChatGPT identity. OpenAI protects your account and handles multi-factor authentication."}</p>
+              <h1>Acceso seguro</h1>
+              <p>{localAccess ? "El acceso local está activo. Entra al centro de operaciones IRIS sin ChatGPT." : "Entra con tu identidad de ChatGPT. OpenAI protege la cuenta y aplica el segundo factor."}</p>
             </div>
 
             <div className="security-summary">
               <ShieldCheck weight="duotone" />
-              <div><strong>Identity protected by OpenAI</strong><span>No IRIS password is stored or transmitted.</span></div>
+              <div><strong>Identidad protegida por OpenAI</strong><span>IRIS no guarda ni transmite una contraseña propia.</span></div>
             </div>
 
-            {user && <p className="signed-in-note">Signed in as <strong>{user.email}</strong></p>}
+            {user && <p className="signed-in-note">Sesión iniciada como <strong>{user.email}</strong></p>}
 
             <a className="primary-button auth-link" href={destination}>
               <Buildings weight="duotone" />
-              <span>{user ? "Enter IRIS workspace" : localAccess ? "Enter IRIS workspace" : "Continue with ChatGPT"}</span>
+              <span>{user ? "Entrar al espacio IRIS" : localAccess ? "Entrar al espacio IRIS" : "Continuar con ChatGPT"}</span>
             </a>
-            <p className="auth-disclosure">By continuing, IRIS receives only your verified account identity. Permissions are enforced on the server.</p>
+            <p className="auth-disclosure">Al continuar, IRIS recibe solo tu identidad verificada. Los permisos se aplican en el servidor.</p>
           </div>
 
-          <footer className="secure-footer"><span><LockKey weight="fill" /> Encrypted session</span><span className="footer-divider" /><a href="#privacy">Privacy</a></footer>
+          <footer className="secure-footer"><span><LockKey weight="fill" /> Sesión cifrada</span><span className="footer-divider" /><a href="#privacy">Privacidad</a></footer>
         </div>
       </section>
     </main>

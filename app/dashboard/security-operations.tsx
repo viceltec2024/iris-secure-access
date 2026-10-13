@@ -292,6 +292,7 @@ export default function SecurityOperations({
   }
 
   return <main className="soc-shell">
+    <div className="soc-atmosphere" aria-hidden="true" />
     <aside className="soc-sidebar">
       <div className="soc-brand"><IrisBrandMark /><div><strong>IRIS</strong><span>SECURITY AI</span></div></div>
       <nav aria-label="IRIS modules">
