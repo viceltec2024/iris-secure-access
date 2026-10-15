@@ -29,7 +29,7 @@ Skip `tests/rendered-html.test.mjs` unless you already ran `npm run build`. `npm
 - Never fake a Mac as ONLINE. `lastSeenAt` older than 5 minutes is OFFLINE.
 - Live SOC uses the Mac agent, offline devices, and pending purchases. No `IR-1039` / `IR-1042` demo incidents.
 - Official wallet URLs only. Do not invent OAuth tokens or Robinhood sessions.
-- Do not restore neural TTS (`/api/iris-voice`) or Vinext Geist fonts.
+- Ask IRIS speaks through ElevenLabs (`/api/iris-voice`) when `ELEVENLABS_API_KEY` is set; otherwise use the browser voice. Do not restore Vinext Geist fonts.
 
 ## Done
 
