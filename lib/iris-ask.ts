@@ -5,6 +5,7 @@ import { parseWalletSessionValue } from "./iris-chain.ts";
 import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
 import { liveWorkers } from "./iris-live-soc.ts";
 import { irisMindAnswer } from "./iris-mind.ts";
+import { isMuseConfigured } from "./iris-muse.ts";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "./iris-market.ts";
 import { parsePurchaseDesk } from "./iris-purchases.ts";
 import type { IrisIncidentContext } from "./iris-local-analyst.ts";
@@ -63,6 +64,7 @@ export async function resolveIrisAsk(input: {
     marketLive: true,
     auditCount: 1,
     pendingPurchases,
+    museReady: isMuseConfigured(),
     language: input.language,
   });
   const question = [...input.messages].reverse().find(message => message.role === "user")?.content || "";

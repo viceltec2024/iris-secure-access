@@ -69,6 +69,7 @@ test("connection line and workers reflect live Mac, wallet, and market", () => {
   assert.equal(workers.find(item => item.id === "mac-agent")?.status, "RUNNING");
   assert.equal(workers.find(item => item.id === "wallet")?.status, "RUNNING");
   assert.equal(workers.find(item => item.id === "market")?.status, "RUNNING");
+  assert.equal(workers.find(item => item.id === "muse-edit")?.status, "QUEUED");
   assert.doesNotMatch(workers.map(item => item.id).join(" "), /architect|backend-auth|frontend-ux/);
 });
 

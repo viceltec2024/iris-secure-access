@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
+import { isEditAssistRequest, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,23 @@ export async function POST(request: Request) {
 
   const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
   const language = preferences.language === "en" ? "en" : "es";
+  const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  const bindings = env as unknown as Record<string, string | undefined>;
+  const museKey = museApiKey(bindings);
+  if (museKey && isEditAssistRequest(lastUser)) {
+    try {
+      const incident = parseAskIncident(preferences.incident);
+      const contextNote = incident
+        ? `Incidente seleccionado: ${incident.id} · ${incident.title} · ${incident.subject}\nRecomendación actual: ${incident.recommendation}`
+        : "";
+      const muse = await runMuseEditAgent({ apiKey: museKey, messages, language, contextNote });
+      await logAudit(user.email, "ASK_IRIS_ANALYSIS", "muse_edit", "SUCCESS", { model: muse.model });
+      return Response.json({ answer: muse.answer, source: muse.source });
+    } catch {
+      /* fall through */
+    }
+  }
+
   const resolved = await resolveIrisAsk({
     user: { email: user.email, role: user.role, displayName: user.displayName || user.email },
     messages,
@@ -35,7 +53,7 @@ export async function POST(request: Request) {
     origin: new URL(request.url).origin,
   });
 
-  const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
+  const apiKey = bindings.OPENAI_API_KEY;
   if (!apiKey || resolved.source === "live-market") {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", resolved.source === "live-market" ? "live_market" : "security_context", "SUCCESS", { model: resolved.model, ticker: resolved.ticker || "" });
     return Response.json({ answer: resolved.answer, source: resolved.source });

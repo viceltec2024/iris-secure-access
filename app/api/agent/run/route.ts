@@ -4,6 +4,7 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
+import { isEditAssistRequest, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,30 @@ export async function POST(request: Request) {
     : [];
   if (!messages.some(message => message.role === "user")) return Response.json({ error: language === "es" ? "Escribe una pregunta para IRIS." : "Write a request for IRIS." }, { status: 400 });
 
-  const apiKey = (env as unknown as Record<string, string | undefined>).OPENAI_API_KEY;
+  const bindings = env as unknown as Record<string, string | undefined>;
+  const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  const museKey = museApiKey(bindings);
+  if (museKey && isEditAssistRequest(lastUser)) {
+    try {
+      const incident = parseAskIncident(preferences.incident);
+      const contextNote = incident
+        ? `Incidente seleccionado: ${incident.id} · ${incident.title} · ${incident.subject}\nRecomendación actual: ${incident.recommendation}\nEvidencia: ${incident.evidence.join(" | ")}`
+        : "";
+      const muse = await runMuseEditAgent({
+        apiKey: museKey,
+        messages,
+        language,
+        contextNote,
+      });
+      const steps: IrisAgentStep[] = [{ tool: "muse_edit", arguments: { model: muse.model }, ok: true }];
+      await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: muse.model, source: "muse" });
+      return Response.json({ answer: muse.answer, source: muse.source, steps });
+    } catch {
+      /* fall through to OpenAI or local mind */
+    }
+  }
+
+  const apiKey = bindings.OPENAI_API_KEY;
   if (!apiKey) {
     const local = await resolveIrisAsk({
       user: { email: user.email, role: user.role, displayName: user.displayName || user.email },

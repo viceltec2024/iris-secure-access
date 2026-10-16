@@ -14,6 +14,8 @@ Open `http://127.0.0.1:5173/dashboard`. Local identity is `owner@iris.local` (AD
 
 Codex sandbox (`CODEX_SANDBOX`): `npm run dev` or `npm run dev:local`. Vite listens on IPv4 and IPv6. Local owner auth is on automatically. Do not commit `.env.local`.
 
+Optional Muse edit agent: set `MODEL_API_KEY` (Meta Model API) in `.env.local`. Ask IRIS routes “edita / reescribe / improve” requests to Muse (`muse-spark-1.3` at `https://api.meta.ai/v1`). Never commit the key.
+
 ## Test
 
 ```bash
