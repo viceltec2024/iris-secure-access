@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChatCircleDots, CornersIn, CornersOut, Microphone, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import { holdSpeechSession, irisListenPhrase, isAmbiguousStopPrefix, isBargeInStop, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, recognitionLanguage, releaseAudioForMicrophone, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, speechVolumeHint, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
+import { holdSpeechSession, irisListenPhrase, isAmbiguousStopPrefix, isBargeInStop, isHearingVoice, isRetryableVoiceError, isStopCommand, mapRecognitionError, monitorMicrophoneLevel, openMicrophone, playMpegSpeech, recognitionLanguage, releaseAudioForMicrophone, releaseMicrophone, resumeSpeechIfPaused, speakBrowserText, speechVolumeHint, spokenQuestionFromTranscript, stopSpeechEnginePlayback, unlockSpeechEngine, voiceErrorMessage } from "./iris-voice";
 import { canRecordVoice, mapMediaError, recordSpokenUtterance, transcribeRecordedAudio, type RecordControl } from "./iris-record";
 import IrisVoiceStage, { type VoiceStageMode } from "./iris-voice-stage";
 
@@ -11,6 +11,7 @@ const AGENT_STEP_LABELS: Record<string, { es: string; en: string }> = {
   get_security_overview: { es: "Revisé el estado de seguridad", en: "Reviewed security overview" },
   list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
   get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
+  muse_edit: { es: "Muse editó el texto", en: "Muse edited the text" },
 };
 
 type ChatMessage = { role: "user" | "assistant"; content: string; steps?: Array<{ tool: string; ok: boolean }> };
@@ -23,10 +24,10 @@ type RecognitionConstructor = new () => RecognitionInstance;
 const welcomeMessage = (language: Language, userName: string, section = "operations"): ChatMessage => ({ role: "assistant", content: language === "es"
   ? section === "market"
     ? `Hola, ${userName}. Soy IRIS. Estoy conectada a la bolsa en vivo: veo precios, te enseño el gráfico y te digo las lecturas más limpias. Pregúntame por un ticker o por las mejores opciones.`
-    : `Hola, ${userName}. Soy IRIS. Estoy lista para revisar contigo lo que ocurre en el sistema. Puedes preguntarme con tus propias palabras.`
+    : `Hola, ${userName}. Soy IRIS. Puedes pedirme el estado del Mac o decirme “edita” / “reescribe” para que Muse te ayude con el texto. Pregúntame con tus propias palabras.`
   : section === "market"
     ? `Hi, ${userName}. I'm IRIS. I am connected to the live market: I see prices, teach the chart, and give you the cleanest readings. Ask me for a ticker or the best options.`
-    : `Hi, ${userName}. I'm IRIS. I'm ready to review what's happening in the system with you. Ask me anything in your own words.` });
+    : `Hi, ${userName}. I'm IRIS. Ask about your Mac, or say “edit” / “rewrite” so Muse can help with the wording. Ask me in your own words.` });
 
 export default function AskIrisPanel({ section, selectedIncident, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {
   const [open, setOpen] = useState(true);
@@ -44,6 +45,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [voiceHint, setVoiceHint] = useState("");
+  const [neuralVoice, setNeuralVoice] = useState<boolean | null>(null);
   const [voiceStage, setVoiceStage] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
   const [spokenAnswer, setSpokenAnswer] = useState("");
@@ -86,6 +88,13 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const voiceMode: VoiceStageMode = listening ? "listening" : loading || voiceLoading ? "thinking" : speaking ? "speaking" : "ready";
+
+  useEffect(() => {
+    void fetch("/api/iris-voice")
+      .then(response => response.ok ? response.json() : null)
+      .then((data: { tts?: boolean } | null) => setNeuralVoice(Boolean(data?.tts)))
+      .catch(() => setNeuralVoice(false));
+  }, []);
 
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -208,10 +217,68 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     holdSpeechSession();
     releaseMicForSpeech();
     speechSeqRef.current += 1;
+    const seq = speechSeqRef.current;
     queuedSpeechRef.current = null;
     browserStopRef.current?.();
     browserStopRef.current = null;
-    await browserVoiceFallback(clean, language === "es" ? "es" : detectedLanguage(clean));
+    stopSpeechEnginePlayback();
+    voiceRequestRef.current?.abort();
+    const spokenLanguage = language === "es" ? "es" : detectedLanguage(clean);
+    if (neuralVoice === false) {
+      await browserVoiceFallback(clean, spokenLanguage);
+      return;
+    }
+    const controller = new AbortController();
+    voiceRequestRef.current = controller;
+    setVoiceLoading(true);
+    try {
+      const response = await fetch("/api/iris-voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean, language: spokenLanguage }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("voice unavailable");
+      const buffer = await response.arrayBuffer();
+      if (controller.signal.aborted || seq !== speechSeqRef.current) return;
+      await playMpegSpeech(buffer, () => {
+        if (seq !== speechSeqRef.current) return;
+        speakingRef.current = true;
+        setSpeaking(true);
+        setVoiceLoading(false);
+        setVoiceHint(speechVolumeHint(language, { speaking: true, voices: Math.max(voices.length, "speechSynthesis" in window ? window.speechSynthesis.getVoices().length : 0) }));
+        startBargeIn();
+      });
+      if (controller.signal.aborted || seq !== speechSeqRef.current) return;
+      finishNeuralVoice();
+    } catch (error) {
+      const aborted = error instanceof DOMException && error.name === "AbortError";
+      voiceRequestRef.current = null;
+      setVoiceLoading(false);
+      if (aborted || seq !== speechSeqRef.current) {
+        speakingRef.current = false;
+        setSpeaking(false);
+        skipResumeRef.current = false;
+        return;
+      }
+      if (neuralVoice === true) setNeuralVoice(null);
+      await browserVoiceFallback(clean, spokenLanguage);
+    }
+  }
+
+  function finishNeuralVoice() {
+    voiceRequestRef.current = null;
+    stopBargeIn();
+    speakingRef.current = false;
+    setSpeaking(false);
+    setVoiceLoading(false);
+    audioRef.current = null;
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    if (!skipResumeRef.current) resumeVoiceConversation();
+    skipResumeRef.current = false;
   }
 
   function clearVoiceTimers() {

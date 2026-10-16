@@ -58,16 +58,24 @@ test("Ask IRIS voice orb is large enough to read, not a 120px icon", () => {
   assert.doesNotMatch(css, /\.iris-chat\.voice-open \.iris-voice-stage\{min-height:132px/);
 });
 
-test("Ask IRIS speaks with the browser voice, not OpenAI neural TTS", () => {
+test("Ask IRIS speaks with ElevenLabs neural voice and falls back to the browser", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   const voice = readFileSync(new URL("../app/dashboard/iris-voice.ts", import.meta.url), "utf8");
+  const route = readFileSync(new URL("../app/api/iris-voice/route.ts", import.meta.url), "utf8");
+  const envExample = readFileSync(new URL("../.env.example", import.meta.url), "utf8");
   assert.match(panel, /speakBrowserText\(/);
   assert.match(panel, /irisListenPhrase\(/);
   assert.match(panel, /sendQueueRef/);
   assert.doesNotMatch(panel, /Un momento\./);
-  assert.doesNotMatch(panel, /\/api\/iris-voice/);
-  assert.doesNotMatch(panel, /playMpegSpeech/);
-  assert.doesNotMatch(panel, /neuralVoice/);
+  assert.match(panel, /\/api\/iris-voice/);
+  assert.match(panel, /playMpegSpeech/);
+  assert.match(panel, /neuralVoice/);
+  assert.match(panel, /finishNeuralVoice/);
+  assert.match(route, /api\.elevenlabs\.io\/v1\/text-to-speech/);
+  assert.match(route, /ELEVENLABS_API_KEY/);
+  assert.match(route, /xi-api-key/);
+  assert.doesNotMatch(route, /api\.openai\.com\/v1\/audio\/speech/);
+  assert.match(envExample, /ELEVENLABS_API_KEY=/);
   assert.match(voice, /synth\.speak\(/);
   assert.match(voice, /synth\.getVoices\(\)/);
   assert.match(voice, /SPEECH_CANCEL_GAP_MS/);
@@ -150,6 +158,8 @@ test("local dashboard access signs in on this machine, not ChatGPT", () => {
   assert.match(vite, /IRIS_PUBLIC_ORIGIN/);
   assert.match(localDev, /CODEX_SANDBOX/);
   assert.match(agents, /npm run dev:local/);
+  assert.match(agents, /ElevenLabs/);
+  assert.doesNotMatch(agents, /Do not restore neural TTS/);
 });
 
 test("dashboard fonts come from Inter, not vinext Geist filesystem URLs", () => {
