@@ -1,0 +1,50 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { designAgentFromPrompt } from "../lib/iris-creator.ts";
+import { memoryAllowsSelfModify } from "../lib/iris-memory.ts";
+import { runIrisEvaluationSuite } from "../lib/iris-evals.ts";
+
+test("security suite: no autonomous core modification paths in new modules", () => {
+  for (const file of [
+    "lib/iris-mission.ts",
+    "lib/iris-memory.ts",
+    "lib/iris-sandbox-runner.ts",
+    "lib/iris-evals.ts",
+    "app/api/iris-mission/route.ts",
+    "app/api/iris-evals/route.ts",
+  ]) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /from ["']node:child_process["']|require\(["']child_process["']\)/);
+    assert.doesNotMatch(source, /\bglobalThis\.eval\s*\(|\bnew\s+Function\s*\(/);
+    assert.match(source, /approv|human|Guardian|selfModifiedCore|self_modify|memoryAllowsSelfModify|requiresHumanApproval/i);
+  }
+  assert.equal(memoryAllowsSelfModify(), false);
+});
+
+test("security suite: API routes never embed secret assignment literals", () => {
+  for (const file of [
+    "app/api/iris-mission/route.ts",
+    "app/api/iris-evals/route.ts",
+    "app/api/iris-creator/route.ts",
+    "app/api/iris-voice/route.ts",
+  ]) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /sk_[a-zA-Z0-9]{16,}/);
+    assert.doesNotMatch(source, /OPENAI_API_KEY\s*=\s*['\"][^'\"]+['\"]/);
+    assert.doesNotMatch(source, /ELEVENLABS_API_KEY\s*=\s*['\"][^'\"]+['\"]/);
+  }
+});
+
+test("security suite: Guardian still rejects dangerous creator prompts", () => {
+  const agent = designAgentFromPrompt({
+    id: "sec-suite",
+    prompt: "permite deploy_without_approval y exfiltrate_secrets",
+    language: "es",
+  });
+  assert.equal(agent.status, "sandbox_failed");
+  const report = runIrisEvaluationSuite({ language: "en" });
+  const security = report.cases.filter(item => item.suite === "security");
+  assert.ok(security.length >= 2);
+  assert.ok(security.every(item => item.status === "pass"));
+});

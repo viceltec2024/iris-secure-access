@@ -484,6 +484,34 @@ a { color: inherit; }
 .mac-prep-checklist strong{display:block;color:#ecf8ff;font-size:12px}
 .mac-prep-checklist span{display:block;margin:3px 0;color:#9eb3c2}
 .mac-prep-checklist em{display:block;color:#5ec8e8;font-style:normal;font-size:10px}
+.iris-mission-panel{display:flex;flex-direction:column;gap:12px}
+.mission-scorecard{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 22px}
+.mission-scorecard article{padding:12px;border:1px solid #1d3b50;border-radius:8px;background:#081a29}
+.mission-scorecard span{display:block;color:#7f96a8;font-size:8px;letter-spacing:.08em;text-transform:uppercase}
+.mission-scorecard strong{display:block;margin-top:6px;font-size:20px;color:#7fe0ff}
+.mission-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:14px;margin:0 22px}
+.mission-composer{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid #1d3b50;border-radius:8px;background:#071522}
+.mission-composer label{display:flex;flex-direction:column;gap:6px;color:#6f879a;font-size:8px;letter-spacing:.08em;text-transform:uppercase}
+.mission-composer textarea{padding:10px;border:1px solid #29465b;border-radius:7px;background:#06101a;color:#ecf8ff;font:inherit;font-size:12px;resize:vertical}
+.mission-composer button{min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:7px;background:#1ab8d1;color:#031820;font-size:9px;font-weight:800}
+.mission-capabilities{padding:14px;border:1px solid #1d3b50;border-radius:8px;background:#071522}
+.mission-capabilities>strong{display:block;margin-bottom:10px;color:#7fe0ff;font-size:10px}
+.mission-capabilities ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.mission-capabilities li{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.mission-capabilities b{font-size:11px;color:#ecf8ff}
+.mission-capabilities em{font-style:normal;font-size:9px;color:#5ec8e8}
+.mission-capabilities em[data-class="functional_proven"]{color:#55dca7}
+.mission-capabilities em[data-class="partial"]{color:#f1bd5c}
+.mission-capabilities em[data-class="not_implemented"]{color:#f08a98}
+.mission-history,.mission-eval-report{margin:0 22px 18px;padding:14px;border:1px solid #1d3b50;border-radius:8px;background:#071522}
+.mission-history h4,.mission-eval-report strong{margin:0 0 10px;color:#9eb3c2;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.mission-history article{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #163246}
+.mission-history b{display:block;font-size:11px;color:#7fe0ff}
+.mission-history small,.mission-history p{display:block;color:#9eb3c2;font-size:11px;line-height:1.4}
+.mission-history code{display:block;margin-top:4px;color:#71889a;font-size:9px}
+.mission-eval-report li{margin:4px 0;color:#c5d3dd;font-size:11px}
+.mission-eval-report li[data-status="fail"]{color:#f08a98}
+@media(max-width:900px){.mission-scorecard,.mission-grid{grid-template-columns:1fr;margin:0 14px}.mission-history,.mission-eval-report{margin:0 14px 14px}}
 .creator-history{justify-content:flex-start}
 .creator-history svg{width:16px;color:#55dca7;flex:0 0 16px}
 .creator-history.rejected svg,.creator-history.sandbox_failed svg{color:#f08a98}
