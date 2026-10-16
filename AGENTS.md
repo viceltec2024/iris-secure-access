@@ -31,6 +31,25 @@ Skip `tests/rendered-html.test.mjs` unless you already ran `npm run build`. `npm
 - Official wallet URLs only. Do not invent OAuth tokens or Robinhood sessions.
 - Ask IRIS speaks through ElevenLabs (`/api/iris-voice`) when `ELEVENLABS_API_KEY` is set; otherwise use the browser voice. Do not restore Vinext Geist fonts.
 
+## Cloudflare D1 deploy
+
+Production D1 is `site-creator-d1` (`65d60391-61a8-4977-9e1b-a574447fa195`), declared in `config/d1.json` and `wrangler.jsonc`. Do not deploy with the Sites placeholder id `00000000-0000-4000-8000-000000000000`.
+
+`npm run build` patches and asserts `dist/server/wrangler.json` so a successful build never leaves the placeholder UUID in the deploy artifact.
+
+In Cloudflare Workers Builds, set:
+
+- Build command: `npm run build`
+- Deploy command: `npm run deploy` (alias of `deploy:cf`)
+
+`deploy:cf` re-patches, re-asserts, then deploys with `-c dist/server/wrangler.json` (the vinext Worker bundle + assets). Do not deploy from root `wrangler.jsonc` alone.
+
+Empty remote D1 needs one-time schema apply after the first successful production deploy (Wrangler auth required):
+
+```bash
+npm run db:remote
+```
+
 ## Done
 
 A change is done when the tests above pass, the dashboard still signs in locally, and Ask IRIS returns a written reply for a typed question.

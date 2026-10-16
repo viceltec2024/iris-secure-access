@@ -13,7 +13,7 @@ Drizzle support.
 
 The Sites lifecycle CLI runs the locked dependency install before returning this checkout. Edit the source under `app/`, then checkpoint when a coherent milestone is ready to inspect or share. The remote Sites builder runs `npm run build` against the pushed commit. Do not repeat install or build as a normal pre-checkpoint step.
 
-This starter does not use `wrangler.jsonc`.
+Cloudflare Workers deploys use root `wrangler.jsonc` and `config/d1.json` for the real `site-creator-d1` database id. `npm run build` patches and asserts `dist/server/wrangler.json` so Workers Builds never ships the old Sites placeholder UUID. Set the Workers Builds deploy command to `npm run deploy`. After the first successful deploy, apply schema with `npm run db:remote` (requires Wrangler auth).
 
 `install:ci` is intentionally a single, non-retrying `npm ci`. It refuses a concurrent install for the same project, consumes a matching image-seeded npm cache with `--prefer-offline` while retaining registry fallback for a missing cache object, otherwise downloads and verifies the complete vinext tarball recorded in `package-lock.json`, limits npm to one socket, and terminates a stalled install. `build` applies a short timeout and then validates the Sites artifact. These helpers target Linux and use GNU `timeout`; they are not native macOS scripts.
 
@@ -24,7 +24,7 @@ Scripts that need writable project-scoped home, npm, XDG, and temporary paths us
 - edit site code under `app/`
 - `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
 - `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
+- `wrangler.jsonc` and `config/d1.json` bind production Cloudflare D1 for local and deploy
 - `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
 - `db/schema.ts` starts intentionally empty
 - `examples/d1/` contains an optional D1 example surface
@@ -97,6 +97,9 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm test`: build, validate, and verify the rendered development-preview metadata
 - `npm run validate:artifact`: recheck an existing artifact's manifest and ESM `default.fetch` export
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run db:remote`: apply committed `drizzle/` migrations to remote `site-creator-d1`
+- `npm run verify:d1`: assert generated `dist/server/wrangler.json` binds production D1
+- `npm run deploy` / `npm run deploy:cf`: patch + assert D1, then `wrangler deploy -c dist/server/wrangler.json`
 
 Use build and validation commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
 
