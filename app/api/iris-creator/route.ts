@@ -1,11 +1,15 @@
 import { eq } from "drizzle-orm";
+import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { appSettings } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import {
+  addAgentProposal,
   addCreatedAgent,
   approveCreatedAgent,
+  buildImprovementProposal,
+  decideAgentProposal,
   designAgentFromPrompt,
   emptyCreatorDesk,
   normalizeCreatorPrompt,
@@ -15,7 +19,9 @@ import {
   tickApprovedAgents,
   type AgentSchedule,
   type CreatorDeskState,
+  type ProposalType,
 } from "../../../lib/iris-creator";
+import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -40,13 +46,29 @@ async function saveDesk(email: string, key: string, state: CreatorDeskState) {
   });
 }
 
-export async function GET() {
+function modelBindings() {
+  return env as unknown as {
+    OPENAI_API_KEY?: string;
+    ELEVENLABS_API_KEY?: string;
+    AI?: unknown;
+  };
+}
+
+function deskPayload(state: CreatorDeskState, language: "es" | "en" = "es") {
+  return {
+    ...state,
+    models: buildModelCoordinationReport(modelBindings(), language),
+  };
+}
+
+export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const language = new URL(request.url).searchParams.get("language") === "en" ? "en" : "es";
   const { key, state } = await loadDesk(user.email);
   const next = tickApprovedAgents(state);
   if (JSON.stringify(next) !== JSON.stringify(state)) await saveDesk(user.email, key, next);
-  return Response.json(next);
+  return Response.json(deskPayload(next, language));
 }
 
 export async function POST(request: Request) {
@@ -59,6 +81,8 @@ export async function POST(request: Request) {
     language?: string;
     schedule?: string;
     agentId?: string;
+    proposalId?: string;
+    proposalType?: string;
   };
 
   const { key, state } = await loadDesk(user.email);
@@ -85,7 +109,7 @@ export async function POST(request: Request) {
         specialty: agent.blueprint.specialty,
         sandboxPassed: agent.sandbox.passed,
       });
-      return Response.json({ ...next, created: agent });
+      return Response.json({ ...deskPayload(next, language), created: agent });
     }
 
     if (body.action === "approve") {
@@ -95,7 +119,7 @@ export async function POST(request: Request) {
         specialty: result.agent.blueprint.specialty,
         schedule: result.agent.schedule,
       });
-      return Response.json({ ...result.state, approved: result.agent });
+      return Response.json({ ...deskPayload(result.state, language), approved: result.agent });
     }
 
     if (body.action === "reject") {
@@ -104,7 +128,7 @@ export async function POST(request: Request) {
       await logAudit(user.email, "IRIS_CREATOR_REJECTED", result.agent.id, "SUCCESS", {
         specialty: result.agent.blueprint.specialty,
       });
-      return Response.json({ ...result.state, rejected: result.agent });
+      return Response.json({ ...deskPayload(result.state, language), rejected: result.agent });
     }
 
     if (body.action === "pause") {
@@ -113,7 +137,51 @@ export async function POST(request: Request) {
       await logAudit(user.email, "IRIS_CREATOR_PAUSED", result.agent.id, "SUCCESS", {
         specialty: result.agent.blueprint.specialty,
       });
-      return Response.json({ ...result.state, paused: result.agent });
+      return Response.json({ ...deskPayload(result.state, language), paused: result.agent });
+    }
+
+    if (body.action === "propose_improvement") {
+      const agentId = String(body.agentId || "");
+      const agent = state.agents.find(item => item.id === agentId);
+      if (!agent) throw new Error("Agent not found");
+      const proposal = buildImprovementProposal({
+        id: crypto.randomUUID(),
+        agent,
+        type: body.proposalType as ProposalType | undefined,
+        language,
+      });
+      const result = addAgentProposal(state, agentId, proposal);
+      await saveDesk(user.email, key, result.state);
+      await logAudit(user.email, "IRIS_CREATOR_PROPOSAL", proposal.id, "SUCCESS", {
+        agentId,
+        type: proposal.type,
+        status: proposal.status,
+      });
+      return Response.json({ ...deskPayload(result.state, language), proposal: result.proposal });
+    }
+
+    if (body.action === "approve_proposal" || body.action === "reject_proposal") {
+      const decision = body.action === "approve_proposal" ? "approve" : "reject";
+      const result = decideAgentProposal(
+        state,
+        String(body.agentId || ""),
+        String(body.proposalId || ""),
+        decision,
+        user.email,
+      );
+      await saveDesk(user.email, key, result.state);
+      await logAudit(
+        user.email,
+        decision === "approve" ? "IRIS_CREATOR_PROPOSAL_APPROVED" : "IRIS_CREATOR_PROPOSAL_REJECTED",
+        result.proposal.id,
+        "SUCCESS",
+        {
+          agentId: result.agent.id,
+          type: result.proposal.type,
+          applied: false,
+        },
+      );
+      return Response.json({ ...deskPayload(result.state, language), proposal: result.proposal });
     }
 
     return Response.json({ error: "Unknown action" }, { status: 400 });

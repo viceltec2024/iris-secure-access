@@ -10,6 +10,7 @@ import IrisMarketPanel from "./iris-market-panel";
 import { Language, text } from "./dashboard-i18n";
 import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase } from "../../lib/iris-live-soc";
 import { IRIS_AGENT_SCRIPT_VERSION, irisAgentShellCommand } from "../../lib/iris-device-view";
+import { macAgentPrepSteps } from "../../lib/iris-mac-prep";
 import { irisReconnectOrigin } from "../../lib/iris-origin";
 import { formatUtcClock } from "../../lib/iris-time";
 
@@ -425,6 +426,11 @@ export default function SecurityOperations({
 
       {section === "devices" && <section className="module-panel devices-view">
         <div className="module-toolbar"><div><h2>{language === "es" ? "Protección real de dispositivos" : "Real device protection"}</h2><p>{language === "es" ? "IRIS verifica controles, aplicaciones y cambios mediante el agente autorizado." : "IRIS verifies controls, applications, and changes through the authorized agent."}</p></div><button className="add-device" onClick={createDeviceEnrollment} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar mi Mac" : "Register my Mac")}</button></div>
+        {devices.length === 0 && <div className="mac-prep-checklist" aria-label={language === "es" ? "Preparación del agente Mac" : "Mac agent preparation"}>
+          <h3>{language === "es" ? "Preparación del agente Mac (telemetría real)" : "Mac agent preparation (real telemetry)"}</h3>
+          <p>{language === "es" ? "Sin check-in real el dispositivo no aparece ONLINE. IRIS no inventa agentes conectados." : "Without a real check-in the device will not show ONLINE. IRIS does not invent connected agents."}</p>
+          <ol>{macAgentPrepSteps(language).map(step => <li key={step.id}><strong>{step.title}</strong><span>{step.detail}</span><em>{language === "es" ? "Listo cuando: " : "Done when: "}{step.doneWhen}</em></li>)}</ol>
+        </div>}
         <div className="device-grid">{devices.map(device => <article key={device.id}>
           <div className="device-card-head"><div className="device-icon"><Desktop weight="duotone" /></div><div><strong>{device.name}</strong><span>{device.telemetry?.hostname || device.platform}</span></div><b className={`provenance-badge ${device.provenance.toLowerCase()}`}>{device.provenance === "REAL" ? "REAL" : (language === "es" ? "NO VERIFICADO" : "UNVERIFIED")}</b></div>
           <div className="device-status-line"><b className={`device-state ${device.status.toLowerCase()}`}>{device.status === "PENDING" ? (language === "es" ? "PENDIENTE" : "PENDING") : device.status}</b><strong>{language === "es" ? "Salud" : "Health"}: {device.status === "ONLINE" ? `${device.healthScore ?? "—"}${device.healthScore !== null ? "/100" : ""}` : (language === "es" ? "sin reporte fresco" : "no fresh report")}</strong></div>

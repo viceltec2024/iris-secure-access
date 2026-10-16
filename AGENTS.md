@@ -30,6 +30,9 @@ Skip `tests/rendered-html.test.mjs` unless you already ran `npm run build`. `npm
 - Live SOC uses the Mac agent, offline devices, and pending purchases. No `IR-1039` / `IR-1042` demo incidents.
 - Official wallet URLs only. Do not invent OAuth tokens or Robinhood sessions.
 - Ask IRIS speaks through ElevenLabs (`/api/iris-voice`) when `ELEVENLABS_API_KEY` is set; otherwise use the browser voice. Do not restore Vinext Geist fonts.
+- IRIS Creator designs supervised agents with Guardian sandbox + human approval. Proposals (code/tests) never auto-apply, push, or deploy.
+- Do not claim Meta AI or other providers are integrated unless code + a proven live path exist. A configured key is not a proven integration.
+- Do not deploy or publish production changes without explicit owner authorization.
 
 ## Done
 

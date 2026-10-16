@@ -14,6 +14,8 @@ export const AGENT_PERMISSIONS = [
   "read_business_context",
   "draft_replies",
   "propose_actions",
+  "propose_code_changes",
+  "propose_tests",
   "notify_owner",
   "run_on_schedule",
 ] as const;
@@ -44,6 +46,22 @@ export type AgentBlueprint = {
   constraints: string[];
 };
 
+export const PROPOSAL_TYPES = ["code_improvement", "test_plan", "action"] as const;
+export type ProposalType = (typeof PROPOSAL_TYPES)[number];
+export const PROPOSAL_STATUSES = ["awaiting_approval", "approved", "rejected"] as const;
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+
+export type AgentProposal = {
+  id: string;
+  type: ProposalType;
+  title: string;
+  body: string;
+  status: ProposalStatus;
+  createdAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+};
+
 export type CreatedAgent = {
   id: string;
   name: string;
@@ -64,6 +82,7 @@ export type CreatedAgent = {
     blockedCapabilities: string[];
     findings: GuardianFinding[];
   };
+  proposals: AgentProposal[];
   createdAt: string;
   updatedAt: string;
   approvedAt?: string;
@@ -96,7 +115,9 @@ export function parseCreatorDesk(value: string): CreatorDeskState {
   try {
     const parsed = JSON.parse(value) as Partial<CreatorDeskState>;
     return {
-      agents: Array.isArray(parsed.agents) ? parsed.agents.filter(isStoredAgent) : [],
+      agents: Array.isArray(parsed.agents)
+        ? parsed.agents.filter(isStoredAgent).map(normalizeStoredAgent)
+        : [],
     };
   } catch {
     return emptyCreatorDesk();
@@ -113,6 +134,25 @@ function isStoredAgent(value: unknown): value is CreatedAgent {
     && CREATED_AGENT_STATUSES.includes(agent.status)
     && agent.autonomy === "supervised"
     && agent.guardian?.requiresHumanApproval === true
+  );
+}
+
+function normalizeStoredAgent(agent: CreatedAgent): CreatedAgent {
+  return {
+    ...agent,
+    proposals: Array.isArray(agent.proposals) ? agent.proposals.filter(isStoredProposal) : [],
+  };
+}
+
+function isStoredProposal(value: unknown): value is AgentProposal {
+  if (!value || typeof value !== "object") return false;
+  const proposal = value as AgentProposal;
+  return Boolean(
+    proposal.id
+    && typeof proposal.title === "string"
+    && typeof proposal.body === "string"
+    && PROPOSAL_TYPES.includes(proposal.type)
+    && PROPOSAL_STATUSES.includes(proposal.status)
   );
 }
 
@@ -210,6 +250,8 @@ export function designAgentFromPrompt(input: {
     "read_business_context",
     "draft_replies",
     "propose_actions",
+    "propose_code_changes",
+    "propose_tests",
     "notify_owner",
     schedule === "on_demand" ? "notify_owner" : "run_on_schedule",
   ].filter((value, index, all): value is AgentPermission => AGENT_PERMISSIONS.includes(value as AgentPermission) && all.indexOf(value) === index);
@@ -230,6 +272,7 @@ export function designAgentFromPrompt(input: {
       blockedCapabilities: [...BLOCKED_CAPABILITIES],
       findings: [],
     },
+    proposals: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -261,6 +304,23 @@ export function proposeAction(input) {
     type: "proposal",
     requiresHumanApproval: true,
     summary: String(input?.summary || "").slice(0, 280),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function proposeImprovement(input) {
+  const type = input?.type === "test_plan" ? "test_plan" : "code_improvement";
+  const permission = type === "test_plan" ? "propose_tests" : "propose_code_changes";
+  if (!agentSpec.permissions.includes(permission)) {
+    throw new Error("permission_denied");
+  }
+  return {
+    type: "proposal",
+    proposalType: type,
+    requiresHumanApproval: true,
+    applied: false,
+    summary: String(input?.summary || "").slice(0, 280),
+    body: String(input?.body || "").slice(0, 4000),
     createdAt: new Date().toISOString(),
   };
 }
@@ -467,6 +527,126 @@ export function tickApprovedAgents(state: CreatorDeskState, now = new Date().toI
       if (agent.schedule === "on_demand") return agent;
       return { ...agent, lastTickAt: now, updatedAt: now };
     }),
+  };
+}
+
+export function buildImprovementProposal(input: {
+  id: string;
+  agent: CreatedAgent;
+  type?: ProposalType;
+  language?: "es" | "en";
+  now?: string;
+}): AgentProposal {
+  const language = input.language || "es";
+  const type: ProposalType = input.type === "test_plan" ? "test_plan" : "code_improvement";
+  const specialty = input.agent.blueprint.specialty;
+  const now = input.now || new Date().toISOString();
+  if (type === "test_plan") {
+    return {
+      id: input.id,
+      type,
+      title: language === "es" ? `Plan de pruebas · ${specialty}` : `Test plan · ${specialty}`,
+      body: language === "es"
+        ? [
+          `# Plan de pruebas propuesto (no ejecutado)`,
+          `1. unit: designAgentFromPrompt + sandbox Guardian para “${specialty}”`,
+          `2. api: POST /api/iris-creator create → awaiting_approval`,
+          `3. security: rechazar prompts con exec_shell / spend_money`,
+          `4. voice: GET /api/iris-voice solo si ElevenLabs está listo`,
+          ``,
+          `Estado: awaiting_approval. IRIS no aplica ni corre CI sin tu OK.`,
+        ].join("\n")
+        : [
+          `# Proposed test plan (not executed)`,
+          `1. unit: designAgentFromPrompt + Guardian sandbox for “${specialty}”`,
+          `2. api: POST /api/iris-creator create → awaiting_approval`,
+          `3. security: reject prompts with exec_shell / spend_money`,
+          `4. voice: GET /api/iris-voice only when ElevenLabs is ready`,
+          ``,
+          `Status: awaiting_approval. IRIS will not apply or run CI without your OK.`,
+        ].join("\n"),
+      status: "awaiting_approval",
+      createdAt: now,
+    };
+  }
+  return {
+    id: input.id,
+    type,
+    title: language === "es" ? `Mejora de código · ${specialty}` : `Code improvement · ${specialty}`,
+    body: language === "es"
+      ? [
+        `# Propuesta de mejora (no aplicada al repo)`,
+        `- Ampliar metas del agente “${specialty}” con checklist auditable`,
+        `- Mantener autonomy: supervised y requiresHumanApproval: true`,
+        `- Añadir prueba que bloquee deploy_without_approval`,
+        ``,
+        `IRIS solo propone. Aprobar aquí no hace git push ni deploy.`,
+      ].join("\n")
+      : [
+        `# Improvement proposal (not applied to the repo)`,
+        `- Expand “${specialty}” agent goals with an auditable checklist`,
+        `- Keep autonomy: supervised and requiresHumanApproval: true`,
+        `- Add a test that blocks deploy_without_approval`,
+        ``,
+        `IRIS only proposes. Approving here does not git push or deploy.`,
+      ].join("\n"),
+    status: "awaiting_approval",
+    createdAt: now,
+  };
+}
+
+export function addAgentProposal(state: CreatorDeskState, agentId: string, proposal: AgentProposal) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  if (agent.status !== "approved" && agent.status !== "awaiting_approval") {
+    throw new Error("Agent cannot propose until designed");
+  }
+  if (proposal.type === "code_improvement" && !agent.permissions.includes("propose_code_changes")) {
+    throw new Error("permission_denied");
+  }
+  if (proposal.type === "test_plan" && !agent.permissions.includes("propose_tests")) {
+    throw new Error("permission_denied");
+  }
+  const next: CreatedAgent = {
+    ...agent,
+    proposals: [proposal, ...(agent.proposals || [])].slice(0, 40),
+    updatedAt: proposal.createdAt,
+  };
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    agent: next,
+    proposal,
+  };
+}
+
+export function decideAgentProposal(
+  state: CreatorDeskState,
+  agentId: string,
+  proposalId: string,
+  decision: "approve" | "reject",
+  actorEmail: string,
+  now = new Date().toISOString(),
+) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  const proposal = (agent.proposals || []).find(item => item.id === proposalId);
+  if (!proposal) throw new Error("Proposal not found");
+  if (proposal.status !== "awaiting_approval") throw new Error("Proposal is not awaiting approval");
+  const nextProposal: AgentProposal = {
+    ...proposal,
+    status: decision === "approve" ? "approved" : "rejected",
+    decidedAt: now,
+    decidedBy: actorEmail,
+  };
+  const next: CreatedAgent = {
+    ...agent,
+    proposals: agent.proposals.map(item => item.id === proposalId ? nextProposal : item),
+    updatedAt: now,
+  };
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    agent: next,
+    proposal: nextProposal,
   };
 }
 

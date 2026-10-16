@@ -5,8 +5,12 @@ import { useEffect, useState } from "react";
 import { CheckCircle, Robot, ShieldCheck, Warning, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 import type { AgentSchedule, CreatedAgent, CreatorDeskState } from "../../lib/iris-creator";
+import type { ModelCoordinationReport } from "../../lib/iris-model-registry";
+
+type CreatorDeskResponse = CreatorDeskState & { models?: ModelCoordinationReport };
 
 const emptyDesk: CreatorDeskState = { agents: [] };
+const emptyModels: ModelCoordinationReport = { generatedAt: "", coordinators: [], notes: [] };
 
 function statusLabel(status: CreatedAgent["status"], es: boolean) {
   const map: Record<CreatedAgent["status"], [string, string]> = {
@@ -30,6 +34,7 @@ function scheduleLabel(schedule: AgentSchedule, es: boolean) {
 export default function IrisCreatorPanel({ language }: { language: Language }) {
   const es = language === "es";
   const [desk, setDesk] = useState<CreatorDeskState>(emptyDesk);
+  const [models, setModels] = useState<ModelCoordinationReport>(emptyModels);
   const [prompt, setPrompt] = useState(es
     ? "Crea una inteligencia artificial especializada en administrar mi tienda Pet Grooming Store"
     : "Create an AI specialized in managing my Pet Grooming Store");
@@ -38,16 +43,23 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<CreatedAgent | null>(null);
 
+  function applyDesk(payload: CreatorDeskResponse) {
+    setDesk({ agents: payload.agents || [] });
+    if (payload.models) setModels(payload.models);
+  }
+
   async function refresh() {
-    const response = await fetch("/api/iris-creator", { cache: "no-store" });
-    if (response.ok) setDesk(await response.json() as CreatorDeskState);
+    const response = await fetch(`/api/iris-creator?language=${language}`, { cache: "no-store" });
+    if (response.ok) applyDesk(await response.json() as CreatorDeskResponse);
   }
 
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 20_000);
     return () => window.clearInterval(timer);
-  }, []);
+    // Poll Creator desk + model coordination; refresh closes over language.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
 
   async function post(body: Record<string, unknown>) {
     setBusy(true);
@@ -58,13 +70,14 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...body, language }),
       });
-      const payload = await response.json() as CreatorDeskState & {
+      const payload = await response.json() as CreatorDeskResponse & {
         error?: string;
         created?: CreatedAgent;
         approved?: CreatedAgent;
+        proposal?: { id: string; title: string; status: string };
       };
       if (!response.ok) throw new Error(payload.error || "creator");
-      setDesk(payload);
+      applyDesk(payload);
       return payload;
     } catch (error) {
       setNotice(error instanceof Error ? error.message : (es ? "No se pudo procesar el agente." : "The agent could not be processed."));
@@ -198,6 +211,19 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
 
       {notice && <p className="creator-notice">{notice}</p>}
 
+      {models.coordinators.length > 0 ? <div className="creator-models">
+        <strong>{es ? "Coordinación de modelos (estado real)" : "Model coordination (honest status)"}</strong>
+        <div className="creator-model-grid">
+          {models.coordinators.map(item => <article key={item.id} className={`creator-model ${item.status}`}>
+            <b>{item.label}</b>
+            <small>{item.role}</small>
+            <span>{item.status.replaceAll("_", " ")}</span>
+            <p>{item.detail}</p>
+          </article>)}
+        </div>
+        {models.notes.slice(0, 2).map(note => <p key={note} className="creator-model-note">{note}</p>)}
+      </div> : null}
+
       {waiting.length > 0 && <div className="creator-waiting">
         <strong>{es ? "Guardian espera tu aprobación" : "Guardian is waiting for your approval"}</strong>
         {waiting.map(item => <article key={item.id}>
@@ -220,7 +246,25 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
               <b>{item.name}</b>
               <small>{scheduleLabel(item.schedule, es)} · {item.lastTickAt ? (es ? `latido ${new Date(item.lastTickAt).toLocaleTimeString(language)}` : `tick ${new Date(item.lastTickAt).toLocaleTimeString(language)}`) : (es ? "sin latido" : "no tick")}</small>
             </div>
-            <button disabled={busy} onClick={() => void post({ action: "pause", agentId: item.id })}>{es ? "Pausar" : "Pause"}</button>
+            <div className="creator-card-actions">
+              <button disabled={busy} onClick={() => void post({ action: "propose_improvement", agentId: item.id, proposalType: "code_improvement" }).then(result => {
+                if (result?.proposal) setNotice(es ? `Propuesta lista: ${result.proposal.title}. Requiere tu OK (no aplica cambios al repo).` : `Proposal ready: ${result.proposal.title}. Needs your OK (does not apply repo changes).`);
+              })}>{es ? "Proponer código" : "Propose code"}</button>
+              <button disabled={busy} onClick={() => void post({ action: "propose_improvement", agentId: item.id, proposalType: "test_plan" }).then(result => {
+                if (result?.proposal) setNotice(es ? `Plan de pruebas propuesto. Aún no se ejecutó CI.` : `Test plan proposed. CI was not run.`);
+              })}>{es ? "Proponer tests" : "Propose tests"}</button>
+              <button disabled={busy} onClick={() => void post({ action: "pause", agentId: item.id })}>{es ? "Pausar" : "Pause"}</button>
+            </div>
+            {(item.proposals || []).filter(proposal => proposal.status === "awaiting_approval").slice(0, 3).map(proposal => <div className="creator-proposal" key={proposal.id}>
+              <div>
+                <b>{proposal.title}</b>
+                <pre>{proposal.body.slice(0, 420)}</pre>
+              </div>
+              <button disabled={busy} onClick={() => void post({ action: "approve_proposal", agentId: item.id, proposalId: proposal.id }).then(result => {
+                if (result) setNotice(es ? "Propuesta aprobada como registro. IRIS no desplegó ni publicó cambios." : "Proposal approved as a record. IRIS did not deploy or publish changes.");
+              })}>{es ? "Aprobar propuesta" : "Approve proposal"}</button>
+              <button disabled={busy} onClick={() => void post({ action: "reject_proposal", agentId: item.id, proposalId: proposal.id })}>{es ? "Rechazar" : "Reject"}</button>
+            </div>)}
           </article>)}
         </div>
         <div>

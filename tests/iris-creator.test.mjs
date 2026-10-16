@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  addAgentProposal,
   approveCreatedAgent,
+  buildImprovementProposal,
   creatorAskReply,
+  decideAgentProposal,
   designAgentFromPrompt,
   extractSpecialty,
   isCreatorRequest,
@@ -11,6 +14,8 @@ import {
   runGuardianChecks,
   tickApprovedAgents,
 } from "../lib/iris-creator.ts";
+import { buildModelCoordinationReport } from "../lib/iris-model-registry.ts";
+import { macAgentPrepSteps } from "../lib/iris-mac-prep.ts";
 
 test("extracts specialty from a Pet Grooming Store prompt", () => {
   const specialty = extractSpecialty("IRIS, crea una inteligencia artificial especializada en administrar mi tienda Pet Grooming Store");
@@ -72,4 +77,49 @@ test("reject keeps the agent offline", () => {
   const rejected = rejectCreatedAgent({ agents: [agent] }, agent.id);
   assert.equal(rejected.agent.status, "rejected");
   assert.match(creatorAskReply("es", "Ana", "Pet Grooming Store"), /IRIS Creator/);
+});
+
+test("approved agents propose code/tests that still need human approval and never auto-apply", () => {
+  const agent = designAgentFromPrompt({
+    id: "agent-3",
+    prompt: "Crea una IA especializada en administrar mi librería",
+    language: "es",
+  });
+  const approved = approveCreatedAgent({ agents: [agent] }, agent.id, "owner@iris.local");
+  const proposal = buildImprovementProposal({
+    id: "prop-1",
+    agent: approved.agent,
+    type: "code_improvement",
+    language: "es",
+  });
+  assert.match(proposal.body, /no aplicada|no aplica/i);
+  assert.equal(proposal.status, "awaiting_approval");
+  const queued = addAgentProposal(approved.state, agent.id, proposal);
+  assert.equal(queued.agent.proposals.length, 1);
+  const decided = decideAgentProposal(queued.state, agent.id, proposal.id, "approve", "owner@iris.local");
+  assert.equal(decided.proposal.status, "approved");
+  assert.match(decided.proposal.body, /no aplicada|no aplica/i);
+  assert.ok(approved.agent.permissions.includes("propose_code_changes"));
+  assert.ok(approved.agent.permissions.includes("propose_tests"));
+});
+
+test("model registry reports Meta AI as unavailable and does not invent readiness", () => {
+  const report = buildModelCoordinationReport({ ELEVENLABS_API_KEY: "sk_test" }, "es");
+  const meta = report.coordinators.find(item => item.id === "meta_ai");
+  const eleven = report.coordinators.find(item => item.id === "elevenlabs");
+  const openai = report.coordinators.find(item => item.id === "openai");
+  assert.equal(meta?.status, "unavailable");
+  assert.equal(meta?.provenInCode, false);
+  assert.equal(eleven?.status, "ready");
+  assert.equal(openai?.status, "missing");
+  assert.ok(report.notes.some(note => /clave configurada|configured key/i.test(note)));
+});
+
+test("Mac prep checklist never claims ONLINE without enrollment", () => {
+  const steps = macAgentPrepSteps("es");
+  assert.equal(steps.length, 4);
+  const text = steps.map(step => `${step.title} ${step.detail} ${step.doneWhen}`).join(" ");
+  assert.match(text, /Nunca inventes ONLINE/);
+  assert.match(text, /lastSeenAt menor a 5 minutos/);
+  assert.doesNotMatch(text, /dispositivo ya está ONLINE|already ONLINE/i);
 });
