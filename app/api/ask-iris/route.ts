@@ -3,7 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
-import { isEditAssistRequest, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
+import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +29,9 @@ export async function POST(request: Request) {
   const language = preferences.language === "en" ? "en" : "es";
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
   const bindings = env as unknown as Record<string, string | undefined>;
+  const wantsEdit = isEditAssistRequest(lastUser);
   const museKey = museApiKey(bindings);
-  if (museKey && isEditAssistRequest(lastUser)) {
+  if (wantsEdit && museKey) {
     try {
       const incident = parseAskIncident(preferences.incident);
       const contextNote = incident
@@ -40,8 +41,15 @@ export async function POST(request: Request) {
       await logAudit(user.email, "ASK_IRIS_ANALYSIS", "muse_edit", "SUCCESS", { model: muse.model });
       return Response.json({ answer: muse.answer, source: muse.source });
     } catch {
-      /* fall through */
+      const answer = localMuseEditFallback(lastUser, language);
+      await logAudit(user.email, "ASK_IRIS_ANALYSIS", "muse_edit", "SUCCESS", { model: "muse-local-fallback", fallback: true });
+      return Response.json({ answer, source: "muse-local" });
     }
+  }
+  if (wantsEdit) {
+    const answer = localMuseEditFallback(lastUser, language);
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "muse_edit", "SUCCESS", { model: "muse-local-fallback" });
+    return Response.json({ answer, source: "muse-local" });
   }
 
   const resolved = await resolveIrisAsk({

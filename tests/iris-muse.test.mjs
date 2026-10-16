@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  extractEditableDraft,
   isEditAssistRequest,
   isMuseConfigured,
+  localMuseEditFallback,
   museApiKey,
   museEditInstructions,
   MUSE_BASE_URL,
@@ -17,6 +19,14 @@ test("Muse detects Spanish and English edit intents", () => {
   assert.equal(isEditAssistRequest("Improve this wording and make it shorter"), true);
   assert.equal(isEditAssistRequest("¿Cómo está mi Mac?"), false);
   assert.equal(isEditAssistRequest("hola iris"), false);
+});
+
+test("Muse local fallback polishes draft text without inventing SOC status", () => {
+  assert.equal(extractEditableDraft("Reescribe: activa el firewall y vuelve a reportar"), "activa el firewall y vuelve a reportar");
+  const answer = localMuseEditFallback("Reescribe: activa el firewall y vuelve a reportar", "es");
+  assert.match(answer, /Activa el firewall y vuelve a reportar\./);
+  assert.match(answer, /MODEL_API_KEY/);
+  assert.doesNotMatch(answer, /0 dispositivos|hallazgos verificados/);
 });
 
 test("Muse API key resolves from MODEL_API_KEY without hardcoding secrets", () => {

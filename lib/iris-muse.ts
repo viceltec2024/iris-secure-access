@@ -65,6 +65,49 @@ Rules:
 - If the request is ambiguous, ask for the text to edit in one sentence.`;
 }
 
+/** Extrae el texto a editar tras “:”, comillas o la frase completa. */
+export function extractEditableDraft(question: string) {
+  const trimmed = question.trim();
+  const quoted = trimmed.match(/[«"“]([\s\S]+?)[»"”]/);
+  if (quoted?.[1]?.trim()) return quoted[1].trim().slice(0, 2000);
+  const colon = trimmed.match(/:\s*([\s\S]+)$/);
+  if (colon?.[1]?.trim() && colon[1].trim().length >= 8) return colon[1].trim().slice(0, 2000);
+  return "";
+}
+
+function lightPolish(draft: string, language: "es" | "en") {
+  let text = draft.replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  text = text.charAt(0).toLocaleUpperCase() + text.slice(1);
+  if (!/[.!?…]$/.test(text)) text += ".";
+  if (language === "es") {
+    text = text
+      .replace(/\bmac\b/gi, "Mac")
+      .replace(/\bfirewall\b/gi, "firewall")
+      .replace(/\bpor favor\b/gi, "por favor");
+  }
+  return text;
+}
+
+/**
+ * Respuesta local cuando Muse no está configurado o falló.
+ * Propone un pulido básico del draft y recuerda configurar MODEL_API_KEY.
+ */
+export function localMuseEditFallback(question: string, language: "es" | "en") {
+  const draft = extractEditableDraft(question);
+  const polished = draft ? lightPolish(draft, language) : "";
+  if (language === "es") {
+    if (polished) {
+      return `${polished}\n\n(Borrador local. Con MODEL_API_KEY, Muse reescribe con más matices.)`;
+    }
+    return "Soy Muse, el agente de edición de IRIS. Pégame el texto tras dos puntos o entre comillas — por ejemplo: Reescribe: activa el firewall y vuelve a reportar — o configura MODEL_API_KEY en .env.local para usar Meta Muse.";
+  }
+  if (polished) {
+    return `${polished}\n\n(Local draft. With MODEL_API_KEY, Muse rewrites with more nuance.)`;
+  }
+  return "I'm Muse, IRIS's editing agent. Paste the text after a colon or in quotes — e.g. Rewrite: enable the firewall and report again — or set MODEL_API_KEY in .env.local to use Meta Muse.";
+}
+
 export async function runMuseEditAgent(input: {
   apiKey: string;
   messages: MuseChatMessage[];

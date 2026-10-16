@@ -4,7 +4,7 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
-import { isEditAssistRequest, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
+import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
 
 export const dynamic = "force-dynamic";
 
@@ -50,8 +50,9 @@ export async function POST(request: Request) {
 
   const bindings = env as unknown as Record<string, string | undefined>;
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  const wantsEdit = isEditAssistRequest(lastUser);
   const museKey = museApiKey(bindings);
-  if (museKey && isEditAssistRequest(lastUser)) {
+  if (wantsEdit && museKey) {
     try {
       const incident = parseAskIncident(preferences.incident);
       const contextNote = incident
@@ -67,8 +68,17 @@ export async function POST(request: Request) {
       await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: muse.model, source: "muse" });
       return Response.json({ answer: muse.answer, source: muse.source, steps });
     } catch {
-      /* fall through to OpenAI or local mind */
+      const answer = localMuseEditFallback(lastUser, language);
+      const steps: IrisAgentStep[] = [{ tool: "muse_edit", arguments: { fallback: "local" }, ok: false }];
+      await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: "muse-local-fallback", source: "muse-local" });
+      return Response.json({ answer, source: "muse-local", steps });
     }
+  }
+  if (wantsEdit) {
+    const answer = localMuseEditFallback(lastUser, language);
+    const steps: IrisAgentStep[] = [{ tool: "muse_edit", arguments: { fallback: "local" }, ok: true }];
+    await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: "muse-local-fallback", source: "muse-local" });
+    return Response.json({ answer, source: "muse-local", steps });
   }
 
   const apiKey = bindings.OPENAI_API_KEY;
