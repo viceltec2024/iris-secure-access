@@ -270,10 +270,10 @@ export function localIrisAnswer(input: IrisAnalystInput) {
       : `${name}, in Live market you see the tape, the chart, and readings that refresh every 8 seconds. Ask me about NVDA, AAPL, or Bitcoin and I will teach the chart.`;
   }
 
-  if (/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy)/.test(question)) {
+  if (/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy|d[eé]bito|recarga)/.test(question)) {
     return es
-      ? `${walletBlock} IRIS puede programar compras de ETH, USDC, BTC o SOL, pero nunca paga sola: cada compra espera tu aprobación y se completa en MetaMask o Robinhood.`
-      : `${walletBlock} IRIS can schedule ETH, USDC, BTC, or SOL buys, but it never pays alone: every purchase waits for your approval and finishes in MetaMask or Robinhood.`;
+      ? `${walletBlock} En el teléfono abre Débito, elige 10, 25, 50 o 100 USD. IRIS puede programar compras de ETH o USDC, pero nunca paga sola: cada débito espera tu aprobación y se completa en MetaMask o Robinhood.`
+      : `${walletBlock} On your phone open Debit, pick 10, 25, 50, or 100 USD. IRIS can schedule ETH or USDC buys, but it never pays alone: every debit waits for your approval and finishes in MetaMask or Robinhood.`;
   }
 
   if (/(amenaza|threat|malware|ubicaci[oó]n|d[oó]nde|where|firewall|filevault|gatekeeper)/.test(question)) {

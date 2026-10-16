@@ -14,6 +14,13 @@ export type PurchaseSource = (typeof PURCHASE_SOURCES)[number];
 export const PURCHASE_CADENCES = ["once", "daily", "weekly"] as const;
 export type PurchaseCadence = (typeof PURCHASE_CADENCES)[number];
 
+export const PHONE_DEBIT_PRESETS = [10, 25, 50, 100] as const;
+export const PHONE_DEBIT_ASSETS = ["USDC", "ETH"] as const;
+
+export function isPhoneDebitAsset(value: string): value is "USDC" | "ETH" {
+  return value === "USDC" || value === "ETH";
+}
+
 export const PURCHASE_ASSETS = {
   ETH: { symbol: "ETH", name: "Ether", robinhoodSymbol: "ETH", token: "", sources: ["metamask", "robinhood"] },
   BTC: { symbol: "BTC", name: "Bitcoin", robinhoodSymbol: "BTC", token: "", sources: ["robinhood"] },

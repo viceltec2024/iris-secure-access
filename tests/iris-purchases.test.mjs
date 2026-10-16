@@ -7,10 +7,12 @@ import {
   createPurchasePlan,
   createPurchaseProposal,
   isOfficialCheckoutUrl,
+  isPhoneDebitAsset,
   isPlanDue,
   markProposalOpened,
   materializeDueProposals,
   parseAmountUsd,
+  PHONE_DEBIT_PRESETS,
   rejectProposal,
 } from "../lib/iris-purchases.ts";
 
@@ -52,4 +54,16 @@ test("rejects a proposed buy without opening checkout", () => {
   assert.equal(desk.proposals[0].status, "rejected");
   assert.equal(parseAmountUsd("0"), null);
   assert.equal(parseAmountUsd(25), 25);
+});
+
+test("phone debit presets stay on official USDC and ETH checkouts", () => {
+  assert.deepEqual([...PHONE_DEBIT_PRESETS], [10, 25, 50, 100]);
+  assert.equal(isPhoneDebitAsset("USDC"), true);
+  assert.equal(isPhoneDebitAsset("ETH"), true);
+  assert.equal(isPhoneDebitAsset("BTC"), false);
+  const plan = createPurchasePlan({ id: "phone-1", asset: "USDC", amountUsd: 25, source: "metamask", cadence: "once" });
+  const url = buildPurchaseCheckout(plan);
+  assert.match(url, /^https:\/\/app\.uniswap\.org\/swap\?/);
+  assert.equal(isOfficialCheckoutUrl(url), true);
+  assert.doesNotMatch(url, /carrier|telcel|att|claro/i);
 });

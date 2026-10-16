@@ -14,6 +14,7 @@ test("accepts Oye IRIS, Hola IRIS, and IRIS alone as wake phrases", () => {
 
 test("stop commands do not become questions", () => {
   assert.equal(isStopCommand("para IRIS"), true);
+  assert.equal(isStopCommand("cancela"), true);
   assert.equal(isStopCommand("stop"), true);
   assert.equal(isStopCommand("para de hablar"), true);
   assert.equal(isStopCommand("para ya"), true);
