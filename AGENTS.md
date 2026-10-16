@@ -14,7 +14,12 @@ Open `http://127.0.0.1:5173/dashboard`. Local identity is `owner@iris.local` (AD
 
 Codex sandbox (`CODEX_SANDBOX`): `npm run dev` or `npm run dev:local`. Vite listens on IPv4 and IPv6. Local owner auth is on automatically. Do not commit `.env.local`.
 
-Optional Muse edit agent: set `MODEL_API_KEY` (Meta Model API) in `.env.local`. Ask IRIS routes “edita / reescribe / improve” requests to Muse (`muse-spark-1.3` at `https://api.meta.ai/v1`). Never commit the key.
+Provider keys in `.env.local` (never commit):
+- `OPENAI_API_KEY` — ChatGPT / analysis agent (`/api/agent/run`)
+- `MODEL_API_KEY` — Muse edit agent for “edita / reescribe / improve” (`muse-spark-1.3`)
+- `ELEVENLABS_API_KEY` — neural TTS via `/api/iris-voice` (Sarah voice by default); without it, browser `speechSynthesis`
+
+Coordination: edit → Muse, SOC/tools → OpenAI, speech → ElevenLabs, otherwise → local IRIS mind. Check `/api/iris-providers/status` (auth required) for configured=true/false only.
 
 ## Test
 
@@ -31,7 +36,7 @@ Skip `tests/rendered-html.test.mjs` unless you already ran `npm run build`. `npm
 - Never fake a Mac as ONLINE. `lastSeenAt` older than 5 minutes is OFFLINE.
 - Live SOC uses the Mac agent, offline devices, and pending purchases. No `IR-1039` / `IR-1042` demo incidents.
 - Official wallet URLs only. Do not invent OAuth tokens or Robinhood sessions.
-- Do not restore neural TTS (`/api/iris-voice`) or Vinext Geist fonts.
+- Ask IRIS speaks through ElevenLabs (`/api/iris-voice`) when `ELEVENLABS_API_KEY` is set; otherwise use the browser voice. Do not restore Vinext Geist fonts or OpenAI neural TTS.
 
 ## Done
 

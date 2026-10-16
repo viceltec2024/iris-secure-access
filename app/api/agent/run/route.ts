@@ -5,6 +5,7 @@ import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
+import { routeIrisTextRequest } from "../../../../lib/iris-model-router";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,8 @@ export async function POST(request: Request) {
 
   const bindings = env as unknown as Record<string, string | undefined>;
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
-  const wantsEdit = isEditAssistRequest(lastUser);
+  const route = routeIrisTextRequest({ question: lastUser, env: bindings });
+  const wantsEdit = route.kind === "edit" || isEditAssistRequest(lastUser);
   const museKey = museApiKey(bindings);
   if (wantsEdit && museKey) {
     try {
