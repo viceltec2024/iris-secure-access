@@ -4,8 +4,8 @@ import { provisionIrisUser } from "../../../lib/authz";
 
 export const dynamic = "force-dynamic";
 
-/** Rachel — default feminine multilingual voice; override with ELEVENLABS_VOICE_ID. */
-const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+/** Sarah — premade voice that works on the free API tier; override with ELEVENLABS_VOICE_ID. */
+const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const DEFAULT_MODEL_ID = "eleven_multilingual_v2";
 
 function voiceBindings() {
