@@ -33,7 +33,16 @@ jobs:
         run: npm run lint
 
       - name: Unit and security tests
-        run: node --experimental-strip-types --test tests/*.mjs
+        # Skip rendered-html until after build (see AGENTS.md).
+        run: |
+          mapfile -t test_files < <(find tests -name '*.mjs' ! -name 'rendered-html.test.mjs' | sort)
+          node --experimental-strip-types --test "${test_files[@]}"
+
+      - name: Build verified artifact
+        run: npm run build
+
+      - name: Rendered HTML smoke (post-build)
+        run: node --experimental-loader ./scripts/cloudflare-validation-loader.mjs --test tests/rendered-html.test.mjs
 
       - name: Secret hygiene scan
         run: |
