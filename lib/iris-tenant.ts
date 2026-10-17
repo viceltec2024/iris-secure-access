@@ -199,6 +199,76 @@ export async function listOrgMembers(organizationId: string) {
     .orderBy(desc(organizationMembers.createdAt));
 }
 
+export async function countActiveOwners(organizationId: string) {
+  const rows = await getDb()
+    .select()
+    .from(organizationMembers)
+    .where(and(
+      eq(organizationMembers.organizationId, organizationId),
+      eq(organizationMembers.status, "ACTIVE"),
+      eq(organizationMembers.role, "OWNER"),
+    ));
+  return rows.length;
+}
+
+export async function updateOrgMemberRole(input: {
+  organizationId: string;
+  actorEmail: string;
+  actorRole: OrgRole;
+  email: string;
+  role: OrgRole;
+}) {
+  if (!canAdminOrg(input.actorRole)) throw new Error("Administrator access required");
+  const email = input.email.trim().toLowerCase();
+  const member = await getMembership(input.organizationId, email);
+  if (!member) throw new Error("Member not found");
+  if (member.role === "OWNER" && input.role !== "OWNER") {
+    const owners = await countActiveOwners(input.organizationId);
+    if (owners <= 1) throw new Error("Cannot demote the last OWNER");
+  }
+  if (input.role === "OWNER" && input.actorRole !== "OWNER") {
+    throw new Error("Only an OWNER can promote another OWNER");
+  }
+  const now = new Date().toISOString();
+  const [row] = await getDb().update(organizationMembers).set({
+    role: input.role,
+    updatedAt: now,
+  }).where(eq(organizationMembers.id, member.id)).returning();
+  await logAudit(input.actorEmail, "ORG_MEMBER_ROLE_UPDATED", input.organizationId, "SUCCESS", {
+    email,
+    from: member.role,
+    to: row.role,
+  }, input.organizationId);
+  return row;
+}
+
+export async function removeOrgMember(input: {
+  organizationId: string;
+  actorEmail: string;
+  actorRole: OrgRole;
+  email: string;
+}) {
+  if (!canAdminOrg(input.actorRole)) throw new Error("Administrator access required");
+  const email = input.email.trim().toLowerCase();
+  if (email === input.actorEmail.trim().toLowerCase()) throw new Error("Cannot remove yourself");
+  const member = await getMembership(input.organizationId, email);
+  if (!member) throw new Error("Member not found");
+  if (member.role === "OWNER") {
+    const owners = await countActiveOwners(input.organizationId);
+    if (owners <= 1) throw new Error("Cannot remove the last OWNER");
+  }
+  const now = new Date().toISOString();
+  const [row] = await getDb().update(organizationMembers).set({
+    status: "REMOVED",
+    updatedAt: now,
+  }).where(eq(organizationMembers.id, member.id)).returning();
+  await logAudit(input.actorEmail, "ORG_MEMBER_REMOVED", input.organizationId, "SUCCESS", {
+    email,
+    role: member.role,
+  }, input.organizationId);
+  return row;
+}
+
 export async function resolveActiveOrganization(email: string, preferredOrgId?: string | null): Promise<OrgContext> {
   const normalized = email.trim().toLowerCase();
   const memberships = await listMembershipsForEmail(normalized);

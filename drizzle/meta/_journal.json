@@ -85,6 +85,13 @@
       "when": 1792203600000,
       "tag": "0011_saas_organizations",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792228800000,
+      "tag": "0012_saas_phase_b",
+      "breakpoints": true
     }
   ]
 }

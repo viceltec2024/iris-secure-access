@@ -35,10 +35,62 @@ export const organizations = sqliteTable("organizations", {
   plan: text("plan", { enum: ["starter", "business", "enterprise"] }).notNull().default("starter"),
   status: text("status", { enum: ["ACTIVE", "SUSPENDED"] }).notNull().default("ACTIVE"),
   budgetCentsMonthly: integer("budget_cents_monthly").notNull().default(2500),
+  billingMode: text("billing_mode", { enum: ["off", "test"] }).notNull().default("off"),
+  subscriptionStatus: text("subscription_status", { enum: ["none", "test_trial", "test_active", "past_due"] }).notNull().default("none"),
+  stripeCustomerTestId: text("stripe_customer_test_id"),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("organizations_slug_unique").on(table.slug)]);
+
+export const organizationInvites = sqliteTable("organization_invites", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  email: text("email").notNull(),
+  role: text("role", { enum: ["ADMIN", "OPERATOR", "VIEWER"] }).notNull().default("OPERATOR"),
+  tokenHash: text("token_hash").notNull(),
+  tokenPrefix: text("token_prefix").notNull(),
+  invitedBy: text("invited_by").notNull(),
+  status: text("status", { enum: ["PENDING", "ACCEPTED", "REVOKED", "EXPIRED"] }).notNull().default("PENDING"),
+  expiresAt: text("expires_at").notNull(),
+  acceptedAt: text("accepted_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_invites_token_hash_unique").on(table.tokenHash),
+  index("organization_invites_org_email_idx").on(table.organizationId, table.email),
+  index("organization_invites_org_status_idx").on(table.organizationId, table.status),
+]);
+
+export const organizationApiKeys = sqliteTable("organization_api_keys", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  name: text("name").notNull(),
+  keyPrefix: text("key_prefix").notNull(),
+  keyHash: text("key_hash").notNull(),
+  scopes: text("scopes").notNull().default("[\"read\"]"),
+  createdBy: text("created_by").notNull(),
+  lastUsedAt: text("last_used_at"),
+  revokedAt: text("revoked_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_api_keys_key_hash_unique").on(table.keyHash),
+  index("organization_api_keys_org_idx").on(table.organizationId),
+]);
+
+export const organizationBillingEvents = sqliteTable("organization_billing_events", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  actorEmail: text("actor_email").notNull(),
+  kind: text("kind").notNull(),
+  plan: text("plan"),
+  amountCents: integer("amount_cents").notNull().default(0),
+  mode: text("mode", { enum: ["test", "blocked_live"] }).notNull().default("test"),
+  providerRef: text("provider_ref"),
+  metadata: text("metadata").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("organization_billing_events_org_created_idx").on(table.organizationId, table.createdAt),
+]);
 
 export const organizationMembers = sqliteTable("organization_members", {
   id: text("id").primaryKey(),

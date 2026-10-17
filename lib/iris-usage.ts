@@ -9,12 +9,11 @@ import { organizationUsageMonthly, usageEvents } from "../db/schema";
 import {
   currentUsagePeriod,
   evaluatePlanLimits,
-  getBillingProvider,
-  type BillingProvider,
   type IrisPlanId,
   type LimitDecision,
   type UsageSnapshot,
 } from "./iris-plans.ts";
+import { getBillingProvider, type BillingProvider } from "./iris-billing-core.ts";
 
 export { getBillingProvider, type BillingProvider };
 

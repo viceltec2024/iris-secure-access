@@ -71,11 +71,13 @@ Ver `docs/IRIS-1.0-OPS.md`. Límites sugeridos pre-prod:
 
 ## Multi-tenant (SaaS)
 
-- Migración `0011_saas_organizations` obligatoria antes de staging
+- Migraciones `0011_saas_organizations` + `0012_saas_phase_b` obligatorias antes de staging
 - Cookie `iris_org_id` + membership server-side en cada API de producto
 - Claves de desks: `iris_*:org:{organizationId}` (ver `docs/IRIS-SAAS-PROPOSAL.md`)
+- Invites: tokens `iris_inv_*` (hash only); API keys org `iris_ak_*` (hash only)
 - Gobernanza: `docs/IRIS-DATA-GOVERNANCE.md` (retención / export / delete)
-- Cobros: `BillingProvider.chargeEnabled = false` hasta autorización expresa
+- Cobros: `chargeEnabled = false`; staging puede usar `IRIS_BILLING_TEST=1` (simulado)
+- Nunca cargar `sk_live_*` ni `IRIS_BILLING_LIVE=1` en staging sin OK de producción
 
 ## Checklist staging (antes de pedir prod)
 

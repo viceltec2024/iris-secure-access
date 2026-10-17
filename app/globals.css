@@ -438,6 +438,11 @@ a { color: inherit; }
 .iris-org-panel .creator-compose input,.iris-org-panel .creator-compose select{min-width:160px;flex:1;padding:10px;border:1px solid #29465b;border-radius:7px;background:#06101a;color:#ecf8ff;font:inherit;font-size:12px}
 .iris-org-panel .creator-compose button{padding:0 14px;min-height:40px;border:0;border-radius:7px;background:#1ab8d1;color:#031820;font-size:9px;font-weight:800}
 .iris-org-panel .creator-compose button:disabled{opacity:.5}
+.iris-org-members li{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.iris-org-members select,.iris-org-members button,.iris-org-panel .creator-findings button{font:inherit;font-size:10px;padding:4px 8px;border-radius:6px;border:1px solid #29465b;background:#06101a;color:#d7ecf8;cursor:pointer}
+.iris-org-onetime{margin-top:14px;padding:12px;border:1px solid #6b5320;border-radius:8px;background:#1a1408;display:flex;gap:10px;align-items:flex-start;color:#f0c674}
+.iris-org-onetime code{display:block;margin:6px 0;word-break:break-all;color:#ffe7a8;font-size:11px}
+.iris-org-onetime button{border:0;border-radius:6px;background:#3a2e12;color:#f0c674;padding:4px 8px;cursor:pointer}
 .creator-desk{margin:0 22px 22px;padding:18px;border:1px solid #2a4d6b;border-radius:10px;background:linear-gradient(160deg,rgba(46,170,220,.08),#071522 48%)}
 .creator-desk-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
 .creator-desk-head span{color:#5ec8e8;font-size:8px;font-weight:800;letter-spacing:.12em}

@@ -83,11 +83,18 @@ export default defineConfig(async ({ command, mode }) => {
   const elevenKey = localEnv.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY || "";
   const elevenVoice = localEnv.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID || "";
   const elevenModel = localEnv.ELEVENLABS_MODEL_ID || process.env.ELEVENLABS_MODEL_ID || "";
+  const billingTest = localEnv.IRIS_BILLING_TEST || process.env.IRIS_BILLING_TEST || "";
+  const billingLive = localEnv.IRIS_BILLING_LIVE || process.env.IRIS_BILLING_LIVE || "";
+  const stripeSecret = localEnv.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY || "";
   if (openaiKey) localVars.OPENAI_API_KEY = openaiKey;
   if (museKey) localVars.MODEL_API_KEY = museKey;
   if (elevenKey) localVars.ELEVENLABS_API_KEY = elevenKey;
   if (elevenVoice) localVars.ELEVENLABS_VOICE_ID = elevenVoice;
   if (elevenModel) localVars.ELEVENLABS_MODEL_ID = elevenModel;
+  // Billing: only inject flags/keys into local worker vars. Live charging stays blocked in code.
+  if (billingTest) localVars.IRIS_BILLING_TEST = billingTest;
+  if (billingLive) localVars.IRIS_BILLING_LIVE = billingLive;
+  if (stripeSecret) localVars.STRIPE_SECRET_KEY = stripeSecret;
 
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");

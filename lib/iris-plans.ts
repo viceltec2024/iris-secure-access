@@ -99,18 +99,3 @@ export function evaluatePlanLimits(input: {
   }
   return { allowed: true, code: "ok", detail: "within_limits" };
 }
-
-/** Stub billing provider — real charging requires owner authorization. */
-export type BillingProvider = {
-  id: "none" | "stripe";
-  chargeEnabled: false;
-  note: string;
-};
-
-export function getBillingProvider(): BillingProvider {
-  return {
-    id: "none",
-    chargeEnabled: false,
-    note: "Payment integration disabled until explicitly authorized. Plans enforce soft limits only.",
-  };
-}

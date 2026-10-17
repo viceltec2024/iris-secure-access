@@ -1,7 +1,7 @@
 # IRIS AI SaaS — Propuesta técnica multiempresa
 
-**Estado:** propuesta + implementación inicial en PR #18 (draft)  
-**Producción / merge / pagos:** no autorizados
+**Estado:** Fase A + Fase B en PR #18 (draft)  
+**Producción / merge / cobros reales:** no autorizados
 
 ## 1. Objetivo
 
@@ -36,9 +36,10 @@ Request → Auth identity → resolveActiveOrganization(email, cookie)
 
 ### No incluido aún (requiere OK)
 
-- Stripe / pasarela de cobro
+- Stripe **live** / cobros reales (`chargeEnabled` permanece `false`)
 - Deploy staging/prod
 - Object storage de archivos por tenant (R2) — diseño listo, no contratado
+- Envío de email SMTP para invitaciones (hoy: token one-time en UI admin)
 
 ## 3. Migraciones D1
 
@@ -100,8 +101,10 @@ Pagos: interfaz `BillingProvider` stub; integración real **solo tras autorizaci
 
 | Fase | Contenido | Auth needed |
 |------|-----------|-------------|
-| A (esta) | Proposal + schema + tenant libs + scope APIs + metering stub + tests | No |
-| B | UI org completa + invites email | No |
-| C | Stripe/Billing | **Sí** |
+| A | Proposal + schema + tenant libs + scope APIs + metering stub + tests | No |
+| B (esta) | Invites + roles admin + org API keys + billing **test** + staging prep | No (test only) |
+| C | Stripe live / cobros reales | **Sí expresa** |
 | D | Staging deploy + drills | **Sí** |
 | E | Production | **Sí expresa** |
+
+Detalle Fase B: `docs/IRIS-PHASE-B.md`.

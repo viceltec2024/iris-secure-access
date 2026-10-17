@@ -36,3 +36,26 @@ export function assertTenantKeyIsolation(orgA: string, orgB: string) {
   }
   return true;
 }
+
+const INVITE_ROLES: Array<Exclude<OrgRole, "OWNER">> = ["ADMIN", "OPERATOR", "VIEWER"];
+
+export function sanitizeInviteRole(role: string | undefined): Exclude<OrgRole, "OWNER"> {
+  const value = String(role || "OPERATOR").toUpperCase();
+  if (value === "ADMIN" || value === "OPERATOR" || value === "VIEWER") return value;
+  return "OPERATOR";
+}
+
+export function inviteRoleAllowed(role: string) {
+  return INVITE_ROLES.includes(role as Exclude<OrgRole, "OWNER">);
+}
+
+export type OrgKeyScope = "read" | "missions" | "creator" | "admin";
+
+export function normalizeOrgKeyScopes(scopes: unknown): OrgKeyScope[] {
+  const allowed: OrgKeyScope[] = ["read", "missions", "creator", "admin"];
+  if (!Array.isArray(scopes) || !scopes.length) return ["read"];
+  const next = scopes
+    .map(item => String(item).toLowerCase())
+    .filter((item): item is OrgKeyScope => allowed.includes(item as OrgKeyScope));
+  return next.length ? Array.from(new Set(next)) : ["read"];
+}

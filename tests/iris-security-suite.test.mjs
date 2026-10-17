@@ -74,8 +74,10 @@ test("security suite: multi-tenant APIs scope desks by organizationId", () => {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     assert.match(source, /organizationId|orgDeskKey|requireOrgContext/);
   }
-  const billing = readFileSync(new URL("../lib/iris-plans.ts", import.meta.url), "utf8");
+  const billing = readFileSync(new URL("../lib/iris-billing-core.ts", import.meta.url), "utf8");
   assert.match(billing, /chargeEnabled:\s*false/);
+  assert.match(billing, /blocked_live/);
+  assert.doesNotMatch(billing, /chargeEnabled:\s*true/);
 });
 
 test("security suite: Guardian still rejects dangerous creator prompts", () => {

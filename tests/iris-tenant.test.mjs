@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { getBillingProvider } from "../lib/iris-billing-core.ts";
 import {
   evaluatePlanLimits,
   PLAN_LIMITS,
   currentUsagePeriod,
-  getBillingProvider,
 } from "../lib/iris-plans.ts";
 import {
   assertTenantKeyIsolation,
@@ -101,9 +101,9 @@ test("business and enterprise raise seats vs starter", () => {
 });
 
 test("billing provider is stubbed with chargeEnabled false", () => {
-  const billing = getBillingProvider();
+  const billing = getBillingProvider({});
   assert.equal(billing.chargeEnabled, false);
-  assert.equal(billing.id, "none");
+  assert.equal(billing.mode, "off");
 });
 
 test("org-scoped product APIs require organization context", () => {
