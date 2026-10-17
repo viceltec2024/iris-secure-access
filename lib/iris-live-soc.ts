@@ -335,6 +335,7 @@ export function liveWorkers(input: {
   marketLive?: boolean;
   auditCount?: number;
   pendingPurchases?: number;
+  museReady?: boolean;
   language: "es" | "en";
   now?: string;
 }): LiveWorker[] {
@@ -351,8 +352,18 @@ export function liveWorkers(input: {
   const walletTask = input.walletConnected && input.walletAddress
     ? `${input.walletAddress.slice(0, 8)}…${input.walletAddress.slice(-6)}`
     : (es ? "Sin wallet conectada" : "No wallet connected");
+  const museReady = input.museReady === true;
   return [
     { id: "mac-agent", role: es ? "Agente Mac" : "Mac agent", status: macStatus, task: macTask, updatedAt: now },
+    {
+      id: "muse-edit",
+      role: es ? "Muse · edición" : "Muse · edit",
+      status: museReady ? "RUNNING" : "QUEUED",
+      task: museReady
+        ? (es ? "Reescribe alertas, copy y recomendaciones" : "Rewrites alerts, copy, and recommendations")
+        : (es ? "Configura MODEL_API_KEY" : "Set MODEL_API_KEY"),
+      updatedAt: now,
+    },
     { id: "wallet", role: es ? "Wallet Base" : "Base wallet", status: input.walletConnected ? "RUNNING" : "QUEUED", task: walletTask, updatedAt: now },
     { id: "market", role: es ? "Bolsa en vivo" : "Live market", status: input.marketLive ? "RUNNING" : "QUEUED", task: es ? "Cinta Yahoo cada 8 s" : "Yahoo tape every 8s", updatedAt: now },
     { id: "audit", role: es ? "Auditoría" : "Audit trail", status: (input.auditCount || 0) > 0 ? "RUNNING" : "QUEUED", task: `${input.auditCount || 0} ${es ? "eventos reales" : "live events"}`, updatedAt: now },

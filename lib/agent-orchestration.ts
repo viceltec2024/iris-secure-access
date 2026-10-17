@@ -21,6 +21,7 @@ const AGENT_TASKS: Record<string, string> = {
   architect: "Divide el trabajo, define contratos y criterios de aceptación.",
   "backend-auth": "Implementa acceso, sesión, reglas y APIs de IRIS.",
   "frontend-ux": "Implementa el portal, login y estados de seguridad.",
+  "muse-edit": "Edita y reescribe copy, alertas y recomendaciones con Muse.",
   "qa-ci": "Ejecuta lint, build, tests y evidencia de calidad.",
   security: "Revisa vulnerabilidades explotables y bloquea hallazgos críticos.",
 };
@@ -86,6 +87,7 @@ export async function startAgentWorkflow(actorEmail: string) {
   await writeStatus("architect", "DONE", actorEmail, now);
   await writeStatus("backend-auth", "RUNNING", actorEmail, now);
   await writeStatus("frontend-ux", "RUNNING", actorEmail, now);
+  await writeStatus("muse-edit", "RUNNING", actorEmail, now);
   await writeStatus("qa-ci", "QUEUED", actorEmail, now);
   await writeStatus("security", "QUEUED", actorEmail, now);
 }
@@ -113,11 +115,13 @@ export async function ensureAgentsWorking(actorEmail: string) {
   const byId = new Map(agents.map(agent => [agent.id, agent]));
   const backend = byId.get("backend-auth");
   const frontend = byId.get("frontend-ux");
+  const muse = byId.get("muse-edit");
   const qa = byId.get("qa-ci");
   const security = byId.get("security");
 
   if (elapsed >= STEP_MS && backend?.status === "RUNNING") await writeStatus("backend-auth", "DONE", "iris.system");
   if (elapsed >= STEP_MS && frontend?.status === "RUNNING") await writeStatus("frontend-ux", "DONE", "iris.system");
+  if (elapsed >= STEP_MS && muse?.status === "RUNNING") await writeStatus("muse-edit", "DONE", "iris.system");
   if (elapsed >= STEP_MS && qa?.status === "QUEUED") await writeStatus("qa-ci", "RUNNING", "iris.system");
   if (elapsed >= STEP_MS * 2 && qa?.status === "RUNNING") await writeStatus("qa-ci", "DONE", "iris.system");
   if (elapsed >= STEP_MS * 2 && security?.status === "QUEUED") await writeStatus("security", "RUNNING", "iris.system");

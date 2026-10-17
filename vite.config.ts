@@ -77,6 +77,18 @@ export default defineConfig(async ({ command, mode }) => {
     define["process.env.IRIS_DEV_WALLET"] = JSON.stringify(localEnv.IRIS_DEV_WALLET || "0x49BeAEc30C7431235c3262a2B1C0C5d8b5a0d3E1");
   }
 
+  const localVars: Record<string, string> = {};
+  const openaiKey = localEnv.OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
+  const museKey = localEnv.MODEL_API_KEY || localEnv.MUSE_API_KEY || process.env.MODEL_API_KEY || process.env.MUSE_API_KEY || "";
+  const elevenKey = localEnv.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY || "";
+  const elevenVoice = localEnv.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID || "";
+  const elevenModel = localEnv.ELEVENLABS_MODEL_ID || process.env.ELEVENLABS_MODEL_ID || "";
+  if (openaiKey) localVars.OPENAI_API_KEY = openaiKey;
+  if (museKey) localVars.MODEL_API_KEY = museKey;
+  if (elevenKey) localVars.ELEVENLABS_API_KEY = elevenKey;
+  if (elevenVoice) localVars.ELEVENLABS_VOICE_ID = elevenVoice;
+  if (elevenModel) localVars.ELEVENLABS_MODEL_ID = elevenModel;
+
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
@@ -99,7 +111,10 @@ export default defineConfig(async ({ command, mode }) => {
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
-        config: localBindingConfig,
+        config: {
+          ...localBindingConfig,
+          ...(Object.keys(localVars).length ? { vars: localVars } : {}),
+        },
       }),
     ],
   };
