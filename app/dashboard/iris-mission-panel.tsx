@@ -79,7 +79,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
       if (!response.ok) throw new Error(payload.error || "mission");
       setDesk(payload);
       setNotice(action === "approve"
-        ? (es ? "Misión verificada. IRIS no modificó el núcleo ni el repo." : "Mission verified. IRIS did not modify core or repo.")
+        ? (es ? "Informe aceptado por humano. La verificación por evidencia es independiente." : "Report accepted by human. Evidence verification is independent.")
         : action === "cancel"
           ? (es ? "Misión cancelada." : "Mission cancelled.")
           : (es ? "Misión rechazada." : "Mission rejected."));
@@ -113,7 +113,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
     }
   }
 
-  const waiting = desk.missions.filter(item => item.status === "awaiting_approval");
+  const waiting = desk.missions.filter(item => ["executed", "awaiting_approval", "verified"].includes(item.status));
 
   return <section className="module-panel iris-mission-panel">
     <div className="module-toolbar">
@@ -160,14 +160,15 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
     {notice && <p className="creator-notice">{notice}</p>}
 
     {waiting.length > 0 && <div className="creator-waiting">
-      <strong>{es ? "Misiones en espera de tu OK" : "Missions waiting for your OK"}</strong>
+      <strong>{es ? "Misiones ejecutadas — aceptación humana" : "Executed missions — human acceptance"}</strong>
       {waiting.map(item => <article key={item.id}>
         <span><Flag /></span>
         <div>
           <b>{item.agent?.name || item.id.slice(0, 8)}</b>
           <small>{item.objective.slice(0, 120)}</small>
+          <small>{es ? "Estado" : "Status"}: {item.status} · {item.verification?.passed ? (es ? "evidencia OK" : "evidence OK") : (es ? "evidencia pendiente" : "evidence pending")}</small>
         </div>
-        <button disabled={busy} onClick={() => void decide(item.id, "approve")}><CheckCircle />{es ? "Verificar" : "Verify"}</button>
+        <button disabled={busy} onClick={() => void decide(item.id, "approve")}><CheckCircle />{es ? "Aceptar" : "Accept"}</button>
         <button disabled={busy} onClick={() => void decide(item.id, "reject")}>{es ? "Rechazar" : "Reject"}</button>
         <button disabled={busy} onClick={() => void decide(item.id, "cancel")}>{es ? "Cancelar" : "Cancel"}</button>
       </article>)}

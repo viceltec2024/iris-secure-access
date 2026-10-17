@@ -147,8 +147,8 @@ export function buildCoordinatorSnapshot(input: {
     },
     missions: {
       total: missions.length,
-      awaitingApproval: missions.filter(item => item.status === "awaiting_approval").length,
-      verified: missions.filter(item => item.status === "verified" || item.status === "completed").length,
+      awaitingApproval: missions.filter(item => ["executed", "awaiting_approval", "verified"].includes(item.status)).length,
+      verified: missions.filter(item => item.status === "verified").length,
       failed: missions.filter(item => item.status === "failed").length,
       cancelled: missions.filter(item => item.status === "cancelled").length,
     },

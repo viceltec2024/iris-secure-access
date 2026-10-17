@@ -25,20 +25,23 @@ export type MemoryStore = {
   records: MemoryRecord[];
   /** Soft cap to avoid unbounded growth in appSettings JSON. */
   maxRecords: number;
+  /** Monotonic revision for optimistic concurrency / CAS. */
+  revision: number;
 };
 
 const MAX_RECORDS = 200;
 const MAX_BODY = 4000;
 
 export function emptyMemoryStore(): MemoryStore {
-  return { records: [], maxRecords: MAX_RECORDS };
+  return { records: [], maxRecords: MAX_RECORDS, revision: 0 };
 }
 
 export function parseMemoryStore(value: string): MemoryStore {
   try {
     const parsed = JSON.parse(value) as Partial<MemoryStore>;
     const records = Array.isArray(parsed.records) ? parsed.records.filter(isMemoryRecord) : [];
-    return { records, maxRecords: MAX_RECORDS };
+    const revision = typeof parsed.revision === "number" && parsed.revision >= 0 ? Math.floor(parsed.revision) : 0;
+    return { records, maxRecords: MAX_RECORDS, revision };
   } catch {
     return emptyMemoryStore();
   }
@@ -66,6 +69,7 @@ export function appendMemory(store: MemoryStore, record: MemoryRecord): MemorySt
   };
   return {
     ...store,
+    revision: (store.revision || 0) + 1,
     records: [next, ...store.records].slice(0, store.maxRecords || MAX_RECORDS),
   };
 }
@@ -78,6 +82,7 @@ export function requestLessonPromotion(store: MemoryStore, recordId: string): Me
   const next: MemoryRecord = { ...record, promotion: "pending" };
   return {
     ...store,
+    revision: (store.revision || 0) + 1,
     records: store.records.map(item => item.id === recordId ? next : item),
   };
 }
@@ -104,6 +109,7 @@ export function decideLessonPromotion(
   return {
     store: {
       ...store,
+      revision: (store.revision || 0) + 1,
       records: store.records.map(item => item.id === recordId ? next : item),
     },
     record: next,

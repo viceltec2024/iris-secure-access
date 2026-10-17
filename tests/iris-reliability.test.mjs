@@ -17,14 +17,16 @@ test("reliability: repeated missions stay supervised and non-destructive", () =>
   }
 });
 
-test("reliability: approve does not flip appliedToRepo or selfModifiedCore", () => {
+test("reliability: human accept does not flip appliedToRepo or invent verification alone", () => {
   const mission = runMission({
     id: "rel-approve",
     objective: "Crear agente de reportes semanales de seguridad",
     language: "es",
   });
+  assert.equal(mission.status, "verified");
+  assert.equal(mission.verification?.passed, true);
   const approved = approveMission(addMission({ missions: [] }, mission), mission.id, "owner@iris.local");
-  assert.equal(approved.mission.status, "verified");
+  assert.equal(approved.mission.status, "accepted");
   assert.equal(approved.mission.result?.appliedToRepo, false);
   assert.equal(approved.mission.result?.selfModifiedCore, false);
 });

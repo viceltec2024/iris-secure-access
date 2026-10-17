@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  acceptMission,
   addMission,
-  approveMission,
   cancelMission,
+  evaluateMissionEvidence,
   planAndEnqueueMission,
   processMissionQueue,
   rejectMission,
@@ -13,7 +14,7 @@ import { runIsolatedAgentSandbox } from "../lib/iris-sandbox-runner.ts";
 import { designAgentFromPrompt } from "../lib/iris-creator.ts";
 import { enqueueJob, emptyJobQueue, leaseNextJob, failJob, reclaimExpiredLeases } from "../lib/iris-job-queue.ts";
 
-test("mission plans, queues, sandboxes, and waits for human verification without touching the repo", () => {
+test("mission execution auto-verifies from evidence; human accept is separate", () => {
   const mission = runMission({
     id: "mission-1",
     objective: "Crear un agente SOC para revisar alertas y proponer acciones",
@@ -21,18 +22,46 @@ test("mission plans, queues, sandboxes, and waits for human verification without
     now: "2026-10-16T01:30:00.000Z",
     ownerEmail: "owner@iris.local",
   });
-  assert.equal(mission.status, "awaiting_approval");
+  assert.equal(mission.status, "verified");
+  assert.equal(mission.verification?.passed, true);
+  assert.ok(mission.result?.evidence.some(item => item.includes("verifier=evidence")));
   assert.equal(mission.result?.appliedToRepo, false);
   assert.equal(mission.result?.selfModifiedCore, false);
-  assert.equal(mission.result?.verifiable, true);
-  assert.ok(mission.jobId);
-  assert.ok(mission.sandbox?.ok);
-  assert.equal(mission.sandbox?.isolation.claimsContainerOrVm, false);
 
   const desk = addMission({ missions: [], queue: emptyJobQueue() }, mission);
-  const approved = approveMission(desk, mission.id, "owner@iris.local", "2026-10-16T01:31:00.000Z");
-  assert.equal(approved.mission.status, "verified");
-  assert.equal(approved.mission.result?.appliedToRepo, false);
+  const accepted = acceptMission(desk, mission.id, "owner@iris.local", "2026-10-16T01:31:00.000Z");
+  assert.equal(accepted.mission.status, "accepted");
+  assert.equal(accepted.mission.acceptedBy, "owner@iris.local");
+  assert.equal(accepted.mission.result?.appliedToRepo, false);
+  // Human accept must not be the sole verifier stamp
+  assert.ok(!String(accepted.mission.result?.summary || "").includes("verified_by=owner@iris.local"));
+});
+
+test("human approval alone cannot invent verification without sandbox evidence", () => {
+  const fake = {
+    id: "fake",
+    objective: "objetivo suficientemente largo",
+    status: "executed",
+    language: "es",
+    steps: [],
+    agent: null,
+    sandbox: null,
+    attempts: 1,
+    maxAttempts: 3,
+    timeoutMs: 1000,
+    result: {
+      summary: "sin sandbox",
+      evidence: [],
+      verifiable: true,
+      appliedToRepo: false,
+      selfModifiedCore: false,
+    },
+    createdAt: "2026-10-16T01:30:00.000Z",
+    updatedAt: "2026-10-16T01:30:00.000Z",
+  };
+  const evidence = evaluateMissionEvidence(fake);
+  assert.equal(evidence.passed, false);
+  assert.ok(evidence.reasons.includes("missing_sandbox"));
 });
 
 test("unsafe objectives fail in sandbox and never verify", () => {
@@ -43,6 +72,7 @@ test("unsafe objectives fail in sandbox and never verify", () => {
     ownerEmail: "owner@iris.local",
   });
   assert.equal(mission.status, "failed");
+  assert.notEqual(mission.status, "verified");
   assert.equal(mission.result?.appliedToRepo, false);
   const waiting = runMission({
     id: "mission-2",
@@ -68,6 +98,22 @@ test("mission cancel stops queued work and never applies repo changes", () => {
   assert.ok(cancelled.desk.queue.jobs.every(job => job.subjectId !== planned.mission.id || job.status === "cancelled"));
 });
 
+test("queue rejects duplicate active jobs for the same subject", () => {
+  let queue = emptyJobQueue();
+  queue = enqueueJob(queue, {
+    id: "job-1",
+    kind: "mission_execute",
+    subjectId: "m1",
+    ownerEmail: "owner@iris.local",
+  }).queue;
+  assert.throws(() => enqueueJob(queue, {
+    id: "job-2",
+    kind: "mission_execute",
+    subjectId: "m1",
+    ownerEmail: "owner@iris.local",
+  }), /duplicate_active_job/);
+});
+
 test("queue retries on lease expiry then dead-letters after max attempts", () => {
   let queue = emptyJobQueue();
   const enqueued = enqueueJob(queue, {
@@ -89,7 +135,7 @@ test("queue retries on lease expiry then dead-letters after max attempts", () =>
   assert.equal(failed.job.status, "dead_letter");
 });
 
-test("processMissionQueue executes one leased job into awaiting_approval", () => {
+test("processMissionQueue executes one leased job into verified when evidence passes", () => {
   const planned = planAndEnqueueMission({
     id: "mission-process",
     objective: "Auditar postura de seguridad y proponer seguimiento",
@@ -98,7 +144,7 @@ test("processMissionQueue executes one leased job into awaiting_approval", () =>
   });
   const processed = processMissionQueue(planned.desk, "es");
   assert.ok(processed.processed);
-  assert.equal(processed.processed?.status, "awaiting_approval");
+  assert.equal(processed.processed?.status, "verified");
   assert.equal(processed.job?.status, "succeeded");
 });
 

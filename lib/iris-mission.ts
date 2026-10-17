@@ -1,5 +1,6 @@
 /**
- * Mission engine: objective → plan → queue → execute (policy sandbox) → human verify.
+ * Mission engine: objective → plan → queue → execute (policy sandbox) → evidence verify → human accept.
+ * `verified` means execution evidence passed — never a human rubber-stamp alone.
  * Never mutates IRIS core or the git repo.
  */
 
@@ -24,9 +25,11 @@ export const MISSION_STATUSES = [
   "planned",
   "queued",
   "executing",
-  "awaiting_approval",
-  "verified",
-  "completed", // legacy alias retained for stored desks; new approvals write "verified"
+  "executed", // sandbox finished; evidence may or may not pass
+  "awaiting_approval", // legacy alias for executed (UI compat)
+  "verified", // evidence checker passed (NOT human approval)
+  "accepted", // human accepted a verified/executed report
+  "completed", // legacy alias for accepted
   "failed",
   "rejected",
   "cancelled",
@@ -64,6 +67,13 @@ export type MissionRecord = {
   updatedAt: string;
   approvedAt?: string;
   approvedBy?: string;
+  verifiedAt?: string;
+  verification?: {
+    passed: boolean;
+    reasons: string[];
+  };
+  acceptedAt?: string;
+  acceptedBy?: string;
   cancelledAt?: string;
   cancelledBy?: string;
 };
@@ -124,8 +134,8 @@ export function buildMissionPlan(objective: string, language: "es" | "en" = "es"
       ["queue", "Encolar ejecución", "Job mission_execute con timeout y reintentos"],
       ["design", "Crear agente especializado", "IRIS Creator genera spec supervisado"],
       ["sandbox", "Ejecutar policy sandbox", "Sin shell, sin escritura al repo"],
-      ["human", "Esperar verificación humana", "Ningún cambio importante sin OK"],
-      ["report", "Marcar verificada", "Evidencia + appliedToRepo=false"],
+      ["report", "Verificar evidencia automática", "verified solo con evidencia; no basta un OK humano"],
+      ["human", "Aceptación humana (opcional)", "Aceptar/rechazar el informe; no sustituye evidencia"],
     ]
     : [
       ["parse", "Parse objective", `Received: ${objective.slice(0, 160)}`],
@@ -133,8 +143,8 @@ export function buildMissionPlan(objective: string, language: "es" | "en" = "es"
       ["queue", "Enqueue execution", "mission_execute job with timeout/retries"],
       ["design", "Create specialized agent", "IRIS Creator builds supervised spec"],
       ["sandbox", "Run policy sandbox", "No shell, no repo writes"],
-      ["human", "Await human verification", "No important change without OK"],
-      ["report", "Mark verified", "Evidence + appliedToRepo=false"],
+      ["report", "Auto-verify evidence", "verified requires evidence; human OK is not enough"],
+      ["human", "Human acceptance (optional)", "Accept/reject the report; does not replace evidence"],
     ];
   return titles.map(([id, title, detail]) => ({
     id,
@@ -321,10 +331,10 @@ export function executeMissionJob(input: {
     };
   }
 
-  steps = markSteps(steps, ["parse", "plan", "queue", "design", "sandbox", "human"]);
-  return {
+  steps = markSteps(steps, ["parse", "plan", "queue", "design", "sandbox"]);
+  const executed: MissionRecord = {
     ...input.mission,
-    status: "awaiting_approval",
+    status: "executed",
     language,
     steps,
     agent,
@@ -333,13 +343,14 @@ export function executeMissionJob(input: {
     updatedAt: now,
     result: {
       summary: language === "es"
-        ? `Ejecutada en policy sandbox para “${agent.blueprint.specialty}”. Esperando verificación humana. IRIS no escribió en el repo.`
-        : `Executed in policy sandbox for “${agent.blueprint.specialty}”. Awaiting human verification. IRIS did not write to the repo.`,
+        ? `Ejecutada en policy sandbox para “${agent.blueprint.specialty}”. La evidencia se evalúa automáticamente; la aceptación humana es un paso aparte.`
+        : `Executed in policy sandbox for “${agent.blueprint.specialty}”. Evidence is evaluated automatically; human acceptance is separate.`,
       evidence: [
         `specialty=${agent.blueprint.specialty}`,
         `sandbox_checks=${sandbox.checks.filter(check => check.ok).length}/${sandbox.checks.length}`,
         `duration_ms=${sandbox.durationMs}`,
         `isolation=${sandbox.isolation.level}`,
+        `tool_trace=${sandbox.toolTrace.length}`,
         "appliedToRepo=false",
         "selfModifiedCore=false",
       ],
@@ -347,6 +358,70 @@ export function executeMissionJob(input: {
       appliedToRepo: false,
       selfModifiedCore: false,
     },
+  };
+  return markVerifiedFromEvidence(executed, now);
+}
+
+/** Evidence-only verification. Human approval never calls this as a rubber stamp. */
+export function evaluateMissionEvidence(mission: MissionRecord): { passed: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (!mission.sandbox) reasons.push("missing_sandbox");
+  if (!mission.result) reasons.push("missing_result");
+  if (!mission.agent) reasons.push("missing_agent");
+  if (mission.result?.appliedToRepo !== false) reasons.push("appliedToRepo_not_false");
+  if (mission.result?.selfModifiedCore !== false) reasons.push("selfModifiedCore_not_false");
+  if (mission.sandbox && !mission.sandbox.ok) reasons.push("sandbox_not_ok");
+  if (mission.sandbox && mission.sandbox.isolation.claimsContainerOrVm) reasons.push("false_isolation_claim");
+  if (mission.sandbox && mission.sandbox.isolation.claimsOsShell) reasons.push("false_shell_claim");
+  if (mission.sandbox && !mission.sandbox.checks.every(check => check.ok)) reasons.push("sandbox_checks_failed");
+  if (mission.sandbox && mission.sandbox.proposalSample?.applied !== false) reasons.push("proposal_marked_applied");
+  if (mission.sandbox && !mission.sandbox.proposalSample?.requiresHumanApproval) reasons.push("proposal_missing_human_gate");
+  if (!(mission.result?.evidence || []).some(item => item.startsWith("sandbox_checks="))) reasons.push("missing_sandbox_checks_evidence");
+  if (!(mission.result?.evidence || []).some(item => item.includes("appliedToRepo=false"))) reasons.push("missing_appliedToRepo_evidence");
+  if (!["executed", "awaiting_approval", "verified", "accepted", "completed"].includes(mission.status)
+    && mission.status !== "executing") {
+    // allow evaluation during post-exec transition
+  }
+  const passed = reasons.length === 0 && Boolean(mission.sandbox?.ok) && Boolean(mission.result?.verifiable);
+  if (passed) reasons.push("evidence_ok");
+  return { passed, reasons };
+}
+
+export function markVerifiedFromEvidence(mission: MissionRecord, now = new Date().toISOString()): MissionRecord {
+  const verification = evaluateMissionEvidence({ ...mission, status: "executed" });
+  if (!verification.passed) {
+    return {
+      ...mission,
+      status: "executed",
+      verification,
+      updatedAt: now,
+      result: mission.result
+        ? {
+          ...mission.result,
+          summary: `${mission.result.summary} · evidence_pending=${verification.reasons.join(",")}`,
+          appliedToRepo: false,
+          selfModifiedCore: false,
+        }
+        : null,
+    };
+  }
+  const steps = markSteps(mission.steps, ["parse", "plan", "queue", "design", "sandbox", "report"]);
+  return {
+    ...mission,
+    status: "verified",
+    steps,
+    verification,
+    verifiedAt: now,
+    updatedAt: now,
+    result: mission.result
+      ? {
+        ...mission.result,
+        summary: `${mission.result.summary} · verified_by=evidence`,
+        evidence: [...mission.result.evidence, `verified_at=${now}`, "verifier=evidence"],
+        appliedToRepo: false,
+        selfModifiedCore: false,
+      }
+      : null,
   };
 }
 
@@ -427,22 +502,30 @@ export function processMissionQueue(
   }
 }
 
-export function approveMission(desk: MissionDesk, missionId: string, actorEmail: string, now = new Date().toISOString()) {
+/**
+ * Human acceptance of an executed/verified report.
+ * Does NOT set status=verified — verification is evidence-only.
+ */
+export function acceptMission(desk: MissionDesk, missionId: string, actorEmail: string, now = new Date().toISOString()) {
   const mission = desk.missions.find(item => item.id === missionId);
   if (!mission) throw new Error("Mission not found");
-  if (mission.status !== "awaiting_approval") throw new Error("Mission is not awaiting approval");
+  if (!["executed", "awaiting_approval", "verified"].includes(mission.status)) {
+    throw new Error("Mission is not awaiting human acceptance");
+  }
   const steps = markSteps(mission.steps, ["parse", "plan", "queue", "design", "sandbox", "human", "report"]);
   const next: MissionRecord = {
     ...mission,
-    status: "verified",
+    status: "accepted",
     steps,
+    acceptedAt: now,
+    acceptedBy: actorEmail,
     approvedAt: now,
     approvedBy: actorEmail,
     updatedAt: now,
     result: mission.result
       ? {
         ...mission.result,
-        summary: `${mission.result.summary} · verified_by=${actorEmail}`,
+        summary: `${mission.result.summary} · accepted_by=${actorEmail}`,
         appliedToRepo: false,
         selfModifiedCore: false,
       }
@@ -457,10 +540,15 @@ export function approveMission(desk: MissionDesk, missionId: string, actorEmail:
   };
 }
 
+/** @deprecated Use acceptMission — kept for API alias; never marks verified. */
+export function approveMission(desk: MissionDesk, missionId: string, actorEmail: string, now = new Date().toISOString()) {
+  return acceptMission(desk, missionId, actorEmail, now);
+}
+
 export function rejectMission(desk: MissionDesk, missionId: string, now = new Date().toISOString()) {
   const mission = desk.missions.find(item => item.id === missionId);
   if (!mission) throw new Error("Mission not found");
-  if (mission.status !== "awaiting_approval" && mission.status !== "queued" && mission.status !== "planned") {
+  if (!["awaiting_approval", "executed", "verified", "queued", "planned"].includes(mission.status)) {
     throw new Error("Mission cannot be rejected in its current state");
   }
   const next: MissionRecord = {
@@ -488,7 +576,7 @@ export function cancelMission(
 ) {
   const mission = desk.missions.find(item => item.id === missionId);
   if (!mission) throw new Error("Mission not found");
-  if (["verified", "completed", "rejected", "cancelled"].includes(mission.status)) {
+  if (["accepted", "completed", "rejected", "cancelled"].includes(mission.status)) {
     throw new Error("Mission already finished");
   }
   const jobs = desk.queue.jobs.map(job => {

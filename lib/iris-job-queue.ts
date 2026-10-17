@@ -77,6 +77,14 @@ export function enqueueJob(
     now?: string;
   },
 ): { queue: JobQueueState; job: IrisJob } {
+  const duplicate = queue.jobs.find(job =>
+    job.subjectId === input.subjectId
+    && job.kind === input.kind
+    && (job.status === "queued" || job.status === "running")
+  );
+  if (duplicate) {
+    throw new Error("duplicate_active_job");
+  }
   const now = input.now || new Date().toISOString();
   const job: IrisJob = {
     id: input.id,

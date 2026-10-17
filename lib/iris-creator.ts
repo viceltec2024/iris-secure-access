@@ -1,3 +1,5 @@
+import { detectPromptInjection } from "./iris-guardian.ts";
+
 export const CREATED_AGENT_STATUSES = [
   "draft",
   "sandbox_passed",
@@ -346,6 +348,15 @@ export function runGuardianChecks(agent: CreatedAgent, language: "es" | "en" = "
       ? "Guardian exige aprobación humana antes de activar el agente."
       : "Guardian requires human approval before activating the agent.",
   });
+
+  const injection = detectPromptInjection(`${agent.prompt}\n${source}`, language);
+  if (injection.blocked) {
+    findings.push({
+      severity: "block",
+      code: `INJECTION_${injection.code}`,
+      message: injection.message,
+    });
+  }
 
   for (const capability of BLOCKED_CAPABILITIES) {
     if (new RegExp(capability.replaceAll("_", "[_\\s-]*"), "i").test(agent.prompt) && /permit|allow|habilita|permite|sin aprob/i.test(agent.prompt)) {
