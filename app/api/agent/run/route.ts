@@ -5,7 +5,9 @@ import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
+import { fetchWithTimeout } from "../../../../lib/iris-fetch";
 import { routeIrisTextRequest } from "../../../../lib/iris-model-router";
+import { IRIS_PROVIDER_CATALOG, PROVIDER_REQUEST_TIMEOUT_MS, resolveOpenAiModel } from "../../../../lib/iris-provider-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -100,13 +102,14 @@ export async function POST(request: Request) {
   const input: Array<Record<string, unknown>> = messages.map(message => ({ role: message.role, content: message.content }));
   const steps: IrisAgentStep[] = [];
 
+  const openaiModel = resolveOpenAiModel(bindings);
   try {
     for (let step = 0; step < MAX_STEPS; step += 1) {
-      const ai = await fetch("https://api.openai.com/v1/responses", {
+      const ai = await fetchWithTimeout(IRIS_PROVIDER_CATALOG.openai.chatEndpoint, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gpt-5.6-sol",
+          model: openaiModel,
           instructions: `You are IRIS Agentic AI, a cybersecurity copilot with read-only tools.
 Use tools only when needed. Never claim an action happened unless a tool result proves it.
 Never perform destructive actions. Never invent device or alert data.
@@ -118,7 +121,7 @@ When enough evidence is available, give the direct answer and a short next-actio
           tools: IRIS_AGENT_TOOLS,
           max_output_tokens: 1200,
         }),
-      });
+      }, PROVIDER_REQUEST_TIMEOUT_MS);
       const payload = await ai.json() as { error?: { message?: string }; output?: ModelOutput[] };
       if (!ai.ok) throw new Error(payload.error?.message || "OpenAI request failed");
 
