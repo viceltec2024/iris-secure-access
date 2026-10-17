@@ -67,7 +67,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
     }
   }
 
-  async function decide(missionId: string, action: "approve" | "reject") {
+  async function decide(missionId: string, action: "approve" | "reject" | "cancel") {
     setBusy(true);
     try {
       const response = await fetch("/api/iris-mission", {
@@ -79,8 +79,10 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
       if (!response.ok) throw new Error(payload.error || "mission");
       setDesk(payload);
       setNotice(action === "approve"
-        ? (es ? "Misión aprobada. IRIS no modificó el núcleo ni el repo." : "Mission approved. IRIS did not modify core or repo.")
-        : (es ? "Misión rechazada." : "Mission rejected."));
+        ? (es ? "Misión verificada. IRIS no modificó el núcleo ni el repo." : "Mission verified. IRIS did not modify core or repo.")
+        : action === "cancel"
+          ? (es ? "Misión cancelada." : "Mission cancelled.")
+          : (es ? "Misión rechazada." : "Mission rejected."));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "error");
     } finally {
@@ -118,8 +120,8 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
       <div>
         <h2>{es ? "IRIS Mission + Evals" : "IRIS Mission + Evals"}</h2>
         <p>{es
-          ? "Objetivo → plan → agente → sandbox aislado → aprobación humana. Sin auto-modificar IRIS."
-          : "Objective → plan → agent → isolated sandbox → human approval. No IRIS self-modification."}</p>
+          ? "Objetivo → plan → cola → policy sandbox → verificación humana. Sin contenedor/VM ni auto-modificar IRIS."
+          : "Objective → plan → queue → policy sandbox → human verification. No container/VM and no IRIS self-modification."}</p>
       </div>
       <button type="button" className="add-device" disabled={busy} onClick={() => void runEvals()}>
         <ShieldCheck />{busy ? (es ? "Evaluando…" : "Evaluating…") : (es ? "Correr evaluaciones" : "Run evaluations")}
@@ -165,8 +167,9 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
           <b>{item.agent?.name || item.id.slice(0, 8)}</b>
           <small>{item.objective.slice(0, 120)}</small>
         </div>
-        <button disabled={busy} onClick={() => void decide(item.id, "approve")}><CheckCircle />{es ? "Aprobar" : "Approve"}</button>
+        <button disabled={busy} onClick={() => void decide(item.id, "approve")}><CheckCircle />{es ? "Verificar" : "Verify"}</button>
         <button disabled={busy} onClick={() => void decide(item.id, "reject")}>{es ? "Rechazar" : "Reject"}</button>
+        <button disabled={busy} onClick={() => void decide(item.id, "cancel")}>{es ? "Cancelar" : "Cancel"}</button>
       </article>)}
     </div>}
 

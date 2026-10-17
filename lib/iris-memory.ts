@@ -3,7 +3,7 @@
  * Lessons never mutate core code. Promotion requires a human actor.
  */
 
-export type MemoryKind = "eval_result" | "mission_result" | "lesson" | "operator_note";
+export type MemoryKind = "eval_result" | "mission_result" | "lesson" | "operator_note" | "error_solution";
 
 export type MemoryRecord = {
   id: string;
@@ -52,7 +52,7 @@ function isMemoryRecord(value: unknown): value is MemoryRecord {
     && typeof row.title === "string"
     && typeof row.body === "string"
     && typeof row.createdBy === "string"
-    && ["eval_result", "mission_result", "lesson", "operator_note"].includes(row.kind)
+    && ["eval_result", "mission_result", "lesson", "operator_note", "error_solution"].includes(row.kind)
     && ["none", "pending", "approved", "rejected"].includes(row.promotion)
   );
 }
@@ -134,6 +134,51 @@ export function buildLessonFromEval(input: {
     createdBy: input.actorEmail,
     promotion: "pending",
     sourceId: input.evalId,
+  };
+}
+
+/** Retrieve relevant memory without mutating anything. */
+export function searchMemory(store: MemoryStore, query: string, limit = 8) {
+  const tokens = String(query || "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(token => token.length >= 3)
+    .slice(0, 12);
+  if (!tokens.length) {
+    return store.records.slice(0, limit);
+  }
+  const scored = store.records.map(record => {
+    const hay = `${record.title} ${record.body} ${record.tags.join(" ")}`.toLowerCase();
+    const score = tokens.reduce((sum, token) => sum + (hay.includes(token) ? 1 : 0), 0)
+      + (record.kind === "lesson" && record.promotion === "approved" ? 0.5 : 0);
+    return { record, score };
+  });
+  return scored
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(item => item.record);
+}
+
+export function recordErrorSolution(input: {
+  id: string;
+  title: string;
+  error: string;
+  solution: string;
+  actorEmail: string;
+  sourceId?: string;
+  now?: string;
+}): MemoryRecord {
+  return {
+    id: input.id,
+    kind: "error_solution",
+    title: input.title.slice(0, 160),
+    body: `ERROR:\n${input.error.slice(0, 1500)}\n\nSOLUTION:\n${input.solution.slice(0, 2000)}`,
+    tags: ["error", "solution"],
+    createdAt: input.now || new Date().toISOString(),
+    createdBy: input.actorEmail,
+    promotion: "none",
+    sourceId: input.sourceId,
   };
 }
 

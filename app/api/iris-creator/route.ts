@@ -9,6 +9,7 @@ import {
   addCreatedAgent,
   approveCreatedAgent,
   buildImprovementProposal,
+  cancelCreatedAgent,
   decideAgentProposal,
   designAgentFromPrompt,
   emptyCreatorDesk,
@@ -146,6 +147,15 @@ export async function POST(request: Request) {
         specialty: result.agent.blueprint.specialty,
       });
       return Response.json({ ...deskPayload(result.state, language), paused: result.agent });
+    }
+
+    if (body.action === "cancel") {
+      const result = cancelCreatedAgent(state, String(body.agentId || ""));
+      await saveDesk(user.email, key, result.state);
+      await logAudit(user.email, "IRIS_CREATOR_CANCELLED", result.agent.id, "SUCCESS", {
+        specialty: result.agent.blueprint.specialty,
+      });
+      return Response.json({ ...deskPayload(result.state, language), cancelled: result.agent });
     }
 
     if (body.action === "propose_improvement") {

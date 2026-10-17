@@ -24,7 +24,7 @@ test("reliability: approve does not flip appliedToRepo or selfModifiedCore", () 
     language: "es",
   });
   const approved = approveMission(addMission({ missions: [] }, mission), mission.id, "owner@iris.local");
-  assert.equal(approved.mission.status, "completed");
+  assert.equal(approved.mission.status, "verified");
   assert.equal(approved.mission.result?.appliedToRepo, false);
   assert.equal(approved.mission.result?.selfModifiedCore, false);
 });

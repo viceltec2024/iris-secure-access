@@ -57,8 +57,8 @@ export const PRIORITY_CAPABILITIES: PriorityCapability[] = [
     name: "Goal → plan → agents → sandbox → verifiable results",
     priority: 5,
     classification: "partial",
-    evidence: "Mission planner in lib/iris-mission.ts with isolated sandbox runner and human gate.",
-    gap: "Does not write production code to disk or run CI outside the in-process sandbox.",
+    evidence: "Mission queue (timeout/retry/cancel) + policy sandbox + human verify in lib/iris-mission.ts / iris-job-queue.ts.",
+    gap: "Policy sandbox is not a container/VM. No durable worker fleet beyond request-scoped queue state in D1.",
   },
   {
     id: "memory_learning",
@@ -81,8 +81,8 @@ export const PRIORITY_CAPABILITIES: PriorityCapability[] = [
     name: "Multi-model coordination",
     priority: 8,
     classification: "partial",
-    evidence: "Official endpoints via iris-model-router + registry (OpenAI, Muse/Meta Model API, ElevenLabs, Cloudflare AI, local).",
-    gap: "Live OpenAI/Muse/ElevenLabs calls remain unproven without real keys in this environment; no scored fallback board.",
+    evidence: "Coordinator + router + provider probes (OpenAI/Muse/ElevenLabs/CF AI/local). Probes never invent live_ok.",
+    gap: "Live provider OK requires real keys + successful HTTP probe in the target environment.",
   },
   {
     id: "voice",

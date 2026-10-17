@@ -6,19 +6,28 @@ import { memoryAllowsSelfModify } from "../lib/iris-memory.ts";
 import { runIrisEvaluationSuite } from "../lib/iris-evals.ts";
 
 test("security suite: no autonomous core modification paths in new modules", () => {
-  for (const file of [
+  const gateFiles = [
     "lib/iris-mission.ts",
     "lib/iris-memory.ts",
     "lib/iris-sandbox-runner.ts",
     "lib/iris-evals.ts",
+    "lib/iris-job-queue.ts",
+    "lib/iris-tool-acl.ts",
+    "lib/iris-coordinator.ts",
+    "lib/iris-provider-probe.ts",
     "app/api/iris-mission/route.ts",
     "app/api/iris-evals/route.ts",
-  ]) {
+  ];
+  for (const file of gateFiles) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     assert.doesNotMatch(source, /from ["']node:child_process["']|require\(["']child_process["']\)/);
     assert.doesNotMatch(source, /\bglobalThis\.eval\s*\(|\bnew\s+Function\s*\(/);
     assert.match(source, /approv|human|Guardian|selfModifiedCore|self_modify|memoryAllowsSelfModify|requiresHumanApproval/i);
   }
+  const coordinatorApi = readFileSync(new URL("../app/api/iris-coordinator/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(coordinatorApi, /from ["']node:child_process["']|require\(["']child_process["']\)/);
+  assert.doesNotMatch(coordinatorApi, /\bglobalThis\.eval\s*\(|\bnew\s+Function\s*\(/);
+  assert.match(coordinatorApi, /Unauthorized|enforceRateLimit|probeAllProviders|decideCoordinatorTask/);
   assert.equal(memoryAllowsSelfModify(), false);
 });
 
@@ -29,6 +38,8 @@ test("security suite: API routes never embed secret assignment literals", () => 
     "app/api/iris-creator/route.ts",
     "app/api/iris-voice/route.ts",
     "app/api/iris-providers/status/route.ts",
+    "app/api/iris-coordinator/route.ts",
+    "lib/iris-provider-probe.ts",
   ]) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     assert.doesNotMatch(source, /sk_[a-zA-Z0-9]{16,}/);

@@ -6,6 +6,7 @@ export const CREATED_AGENT_STATUSES = [
   "approved",
   "rejected",
   "paused",
+  "cancelled",
 ] as const;
 
 export type CreatedAgentStatus = (typeof CREATED_AGENT_STATUSES)[number];
@@ -512,6 +513,23 @@ export function pauseCreatedAgent(state: CreatorDeskState, agentId: string, now 
   const next: CreatedAgent = {
     ...agent,
     status: "paused",
+    updatedAt: now,
+  };
+  return {
+    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    agent: next,
+  };
+}
+
+export function cancelCreatedAgent(state: CreatorDeskState, agentId: string, now = new Date().toISOString()) {
+  const agent = state.agents.find(item => item.id === agentId);
+  if (!agent) throw new Error("Agent not found");
+  if (["rejected", "cancelled"].includes(agent.status)) {
+    throw new Error("Agent already stopped");
+  }
+  const next: CreatedAgent = {
+    ...agent,
+    status: "cancelled",
     updatedAt: now,
   };
   return {

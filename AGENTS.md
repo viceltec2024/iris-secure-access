@@ -19,7 +19,7 @@ Provider keys in `.env.local` (never commit):
 - `MODEL_API_KEY` — Muse edit agent for “edita / reescribe / improve” (`muse-spark-1.3`)
 - `ELEVENLABS_API_KEY` — neural TTS via `/api/iris-voice` (Sarah voice by default); without it, browser `speechSynthesis`
 
-Coordination: edit → Muse, SOC/tools → OpenAI, speech → ElevenLabs, otherwise → local IRIS mind. Check `/api/iris-providers/status` (auth required) for configured=true/false only. A configured key is not a proven live integration.
+Coordination: edit → Muse, SOC/tools → OpenAI, speech → ElevenLabs, otherwise → local IRIS mind. Check `/api/iris-providers/status` or `POST /api/iris-coordinator` (`probe_providers`) for honest readiness. A configured key is not a proven live integration. Agent/mission isolation is `worker_request_isolate+policy_sandbox` (not container/VM).
 
 ## Test
 

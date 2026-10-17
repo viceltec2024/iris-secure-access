@@ -1,6 +1,10 @@
 /**
- * In-process isolated checks for Creator agent specs.
- * Never eval() user source, never touch the filesystem, never spawn shell.
+ * Policy sandbox for Creator agent specs and mission execution.
+ *
+ * Honest isolation claim:
+ * - Runs inside the Cloudflare Worker request isolate.
+ * - Enforces allowlists, forbids shell/eval/fs writes, caps outputs.
+ * - Does NOT claim Docker, microVM, or OS process isolation.
  */
 
 import {
@@ -10,12 +14,19 @@ import {
   type CreatedAgent,
   type SandboxCheck,
 } from "./iris-creator.ts";
+import { authorizeTool, defaultToolsForAgent } from "./iris-tool-acl.ts";
 
 export type IsolatedRunResult = {
   ok: boolean;
   checks: SandboxCheck[];
   proposalSample: { type: string; requiresHumanApproval: true; applied: false; summary: string } | null;
   heartbeat: { ok: boolean; status: string; autonomy: "supervised" } | null;
+  toolTrace: Array<{ tool: string; allowed: boolean; reason: string }>;
+  isolation: {
+    level: "worker_request_isolate+policy_sandbox";
+    claimsContainerOrVm: false;
+    claimsOsShell: false;
+  };
   errors: string[];
   durationMs: number;
 };
@@ -23,6 +34,7 @@ export type IsolatedRunResult = {
 export function runIsolatedAgentSandbox(agent: CreatedAgent, language: "es" | "en" = "es"): IsolatedRunResult {
   const started = Date.now();
   const errors: string[] = [];
+  const toolTrace: IsolatedRunResult["toolTrace"] = [];
   const source = agent.sourcePreview || generateAgentSource(agent);
   const findings = runGuardianChecks({ ...agent, sourcePreview: source }, language);
   const blocked = findings.some(item => item.severity === "block");
@@ -32,6 +44,13 @@ export function runIsolatedAgentSandbox(agent: CreatedAgent, language: "es" | "e
     const allowedInPrompt = new RegExp(`(permit|allow|habilita|permite).{0,40}${cap}`, "i").test(agent.prompt);
     return enabled || allowedInPrompt;
   });
+
+  const sandboxAcl = authorizeTool({
+    tool: "policy_sandbox",
+    allowedTools: defaultToolsForAgent(),
+    agentStatus: agent.status,
+  });
+  toolTrace.push({ tool: "policy_sandbox", allowed: sandboxAcl.allowed, reason: sandboxAcl.reason });
 
   const checks: SandboxCheck[] = [
     {
@@ -68,12 +87,26 @@ export function runIsolatedAgentSandbox(agent: CreatedAgent, language: "es" | "e
       ].includes(item)),
       detail: language === "es" ? "Sin permisos peligrosos." : "No dangerous permissions.",
     },
+    {
+      id: "acl_policy_sandbox",
+      label: language === "es" ? "ACL policy sandbox" : "ACL policy sandbox",
+      ok: sandboxAcl.allowed,
+      detail: sandboxAcl.reason,
+    },
   ];
 
   let proposalSample: IsolatedRunResult["proposalSample"] = null;
   let heartbeat: IsolatedRunResult["heartbeat"] = null;
 
   try {
+    const proposalAcl = authorizeTool({
+      tool: "proposal_queue",
+      allowedTools: defaultToolsForAgent(),
+      agentStatus: agent.status === "draft" ? "sandbox_passed" : agent.status,
+      humanApproved: true,
+    });
+    toolTrace.push({ tool: "proposal_queue", allowed: proposalAcl.allowed, reason: proposalAcl.reason });
+    if (!proposalAcl.allowed) throw new Error("permission_denied");
     if (!agent.permissions.includes("propose_actions") && !agent.permissions.includes("propose_code_changes")) {
       throw new Error("permission_denied");
     }
@@ -105,6 +138,12 @@ export function runIsolatedAgentSandbox(agent: CreatedAgent, language: "es" | "e
     checks,
     proposalSample,
     heartbeat,
+    toolTrace,
+    isolation: {
+      level: "worker_request_isolate+policy_sandbox",
+      claimsContainerOrVm: false,
+      claimsOsShell: false,
+    },
     errors,
     durationMs: Date.now() - started,
   };
