@@ -18,6 +18,7 @@ export const IRIS_AGENT_TOOL_LABELS: Record<string, { es: string; en: string }> 
   get_security_overview: { es: "Revisé el estado de seguridad", en: "Reviewed security overview" },
   list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
   get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
+  muse_edit: { es: "Muse editó el texto", en: "Muse edited the text" },
 };
 
 export const IRIS_AGENT_TOOLS = [

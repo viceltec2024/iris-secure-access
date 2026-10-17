@@ -77,6 +77,25 @@ export default defineConfig(async ({ command, mode }) => {
     define["process.env.IRIS_DEV_WALLET"] = JSON.stringify(localEnv.IRIS_DEV_WALLET || "0x49BeAEc30C7431235c3262a2B1C0C5d8b5a0d3E1");
   }
 
+  const localVars: Record<string, string> = {};
+  const openaiKey = localEnv.OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
+  const museKey = localEnv.MODEL_API_KEY || localEnv.MUSE_API_KEY || process.env.MODEL_API_KEY || process.env.MUSE_API_KEY || "";
+  const elevenKey = localEnv.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY || "";
+  const elevenVoice = localEnv.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID || "";
+  const elevenModel = localEnv.ELEVENLABS_MODEL_ID || process.env.ELEVENLABS_MODEL_ID || "";
+  const billingTest = localEnv.IRIS_BILLING_TEST || process.env.IRIS_BILLING_TEST || "";
+  const billingLive = localEnv.IRIS_BILLING_LIVE || process.env.IRIS_BILLING_LIVE || "";
+  const stripeSecret = localEnv.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY || "";
+  if (openaiKey) localVars.OPENAI_API_KEY = openaiKey;
+  if (museKey) localVars.MODEL_API_KEY = museKey;
+  if (elevenKey) localVars.ELEVENLABS_API_KEY = elevenKey;
+  if (elevenVoice) localVars.ELEVENLABS_VOICE_ID = elevenVoice;
+  if (elevenModel) localVars.ELEVENLABS_MODEL_ID = elevenModel;
+  // Billing: only inject flags/keys into local worker vars. Live charging stays blocked in code.
+  if (billingTest) localVars.IRIS_BILLING_TEST = billingTest;
+  if (billingLive) localVars.IRIS_BILLING_LIVE = billingLive;
+  if (stripeSecret) localVars.STRIPE_SECRET_KEY = stripeSecret;
+
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
@@ -99,7 +118,10 @@ export default defineConfig(async ({ command, mode }) => {
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
-        config: localBindingConfig,
+        config: {
+          ...localBindingConfig,
+          ...(Object.keys(localVars).length ? { vars: localVars } : {}),
+        },
       }),
     ],
   };

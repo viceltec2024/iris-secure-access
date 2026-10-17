@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint, unit tests, and security checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit and security tests
+        # Skip rendered-html until after build (see AGENTS.md).
+        run: |
+          mapfile -t test_files < <(find tests -name '*.mjs' ! -name 'rendered-html.test.mjs' | sort)
+          node --experimental-strip-types --test "${test_files[@]}"
+
+      - name: Build verified artifact
+        run: npm run build
+
+      - name: Rendered HTML smoke (post-build)
+        run: node --experimental-loader ./scripts/cloudflare-validation-loader.mjs --test tests/rendered-html.test.mjs
+
+      - name: Secret hygiene scan
+        run: |
+          set -euo pipefail
+          if git grep -nE 'sk-[a-zA-Z0-9]{20,}|sk_[a-zA-Z0-9]{20,}|OPENAI_API_KEY\s*=\s*["'\''][^"'\'']+|ELEVENLABS_API_KEY\s*=\s*["'\''][^"'\'']+|MODEL_API_KEY\s*=\s*["'\''][^"'\'']+' -- ':!.env.example' ':!package-lock.json' ':!*.webp' ':!*.png' ':!*.svg'; then
+            echo "Possible committed secret material detected." >&2
+            exit 1
+          fi
+          echo "Secret hygiene scan passed."

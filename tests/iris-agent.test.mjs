@@ -18,12 +18,14 @@ test("IRIS agent run falls back locally and stays inside five steps", () => {
   assert.match(route, /MAX_STEPS = 5/);
   assert.match(route, /resolveIrisAsk/);
   assert.match(route, /IRIS_AGENT_TOOLS/);
+  assert.match(route, /runMuseEditAgent/);
   assert.doesNotMatch(route, /arbitrary shell/);
 });
 
 test("Ask IRIS shows investigation steps without chain of thought", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   assert.match(panel, /Revisé el estado de seguridad/);
+  assert.match(panel, /Muse editó el texto/);
   assert.match(panel, /iris-chat-steps/);
   assert.doesNotMatch(panel, /chain-of-thought|thinking out loud/i);
 });

@@ -14,6 +14,7 @@ export const users = sqliteTable("users", {
 export const auditEvents = sqliteTable("audit_events", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   actorEmail: text("actor_email").notNull(),
+  organizationId: text("organization_id"),
   action: text("action").notNull(),
   resource: text("resource").notNull(),
   outcome: text("outcome", { enum: ["SUCCESS", "DENIED"] }).notNull(),
@@ -24,6 +25,114 @@ export const auditEvents = sqliteTable("audit_events", {
 }, (table) => [
   index("audit_events_actor_email_idx").on(table.actorEmail),
   index("audit_events_created_at_idx").on(table.createdAt),
+  index("audit_events_organization_id_idx").on(table.organizationId),
+]);
+
+export const organizations = sqliteTable("organizations", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull(),
+  name: text("name").notNull(),
+  plan: text("plan", { enum: ["starter", "business", "enterprise"] }).notNull().default("starter"),
+  status: text("status", { enum: ["ACTIVE", "SUSPENDED"] }).notNull().default("ACTIVE"),
+  budgetCentsMonthly: integer("budget_cents_monthly").notNull().default(2500),
+  billingMode: text("billing_mode", { enum: ["off", "test"] }).notNull().default("off"),
+  subscriptionStatus: text("subscription_status", { enum: ["none", "test_trial", "test_active", "past_due"] }).notNull().default("none"),
+  stripeCustomerTestId: text("stripe_customer_test_id"),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [uniqueIndex("organizations_slug_unique").on(table.slug)]);
+
+export const organizationInvites = sqliteTable("organization_invites", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  email: text("email").notNull(),
+  role: text("role", { enum: ["ADMIN", "OPERATOR", "VIEWER"] }).notNull().default("OPERATOR"),
+  tokenHash: text("token_hash").notNull(),
+  tokenPrefix: text("token_prefix").notNull(),
+  invitedBy: text("invited_by").notNull(),
+  status: text("status", { enum: ["PENDING", "ACCEPTED", "REVOKED", "EXPIRED"] }).notNull().default("PENDING"),
+  expiresAt: text("expires_at").notNull(),
+  acceptedAt: text("accepted_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_invites_token_hash_unique").on(table.tokenHash),
+  index("organization_invites_org_email_idx").on(table.organizationId, table.email),
+  index("organization_invites_org_status_idx").on(table.organizationId, table.status),
+]);
+
+export const organizationApiKeys = sqliteTable("organization_api_keys", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  name: text("name").notNull(),
+  keyPrefix: text("key_prefix").notNull(),
+  keyHash: text("key_hash").notNull(),
+  scopes: text("scopes").notNull().default("[\"read\"]"),
+  createdBy: text("created_by").notNull(),
+  lastUsedAt: text("last_used_at"),
+  revokedAt: text("revoked_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_api_keys_key_hash_unique").on(table.keyHash),
+  index("organization_api_keys_org_idx").on(table.organizationId),
+]);
+
+export const organizationBillingEvents = sqliteTable("organization_billing_events", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  actorEmail: text("actor_email").notNull(),
+  kind: text("kind").notNull(),
+  plan: text("plan"),
+  amountCents: integer("amount_cents").notNull().default(0),
+  mode: text("mode", { enum: ["test", "blocked_live"] }).notNull().default("test"),
+  providerRef: text("provider_ref"),
+  metadata: text("metadata").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("organization_billing_events_org_created_idx").on(table.organizationId, table.createdAt),
+]);
+
+export const organizationMembers = sqliteTable("organization_members", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  userEmail: text("user_email").notNull(),
+  role: text("role", { enum: ["OWNER", "ADMIN", "OPERATOR", "VIEWER"] }).notNull().default("OPERATOR"),
+  status: text("status", { enum: ["ACTIVE", "INVITED", "REMOVED"] }).notNull().default("ACTIVE"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_members_org_email_unique").on(table.organizationId, table.userEmail),
+  index("organization_members_user_email_idx").on(table.userEmail),
+]);
+
+export const organizationUsageMonthly = sqliteTable("organization_usage_monthly", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  period: text("period").notNull(),
+  requests: integer("requests").notNull().default(0),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  missions: integer("missions").notNull().default(0),
+  agentRuns: integer("agent_runs").notNull().default(0),
+  estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_usage_monthly_org_period_unique").on(table.organizationId, table.period),
+]);
+
+export const usageEvents = sqliteTable("usage_events", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  actorEmail: text("actor_email").notNull(),
+  kind: text("kind").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
+  metadata: text("metadata").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("usage_events_org_created_idx").on(table.organizationId, table.createdAt),
 ]);
 
 export const incidentStates = sqliteTable("incident_states", {
