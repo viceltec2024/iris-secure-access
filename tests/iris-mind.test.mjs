@@ -216,3 +216,13 @@ test("Ask IRIS uses the selected incident when asked about it", async () => {
   assert.match(result.answer, /IR-2001/);
   assert.match(result.answer, /Aprueba ENABLE FIREWALL/);
 });
+
+test("Ask IRIS routes agent-creation requests to IRIS Creator", async () => {
+  const result = await irisMindAnswer({
+    ...base,
+    question: "IRIS, crea una inteligencia artificial especializada en administrar mi tienda Pet Grooming Store",
+  });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /IRIS Creator/);
+  assert.match(result.answer, /Pet Grooming Store|Guardian|aprobaci[oó]n/i);
+});

@@ -1,19 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, Eye, LockKey, Plus, Pulse, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
+import { Bell, ArrowClockwise, ChartLineUp, CheckCircle, CopySimple, Cube, Desktop, Eye, Flag, LockKey, Plus, Pulse, Robot, ShieldCheck, SignOut, Siren, Trash, TrendUp, UsersThree, Warning, Wrench, X } from "@phosphor-icons/react";
 import IrisBrandMark from "../iris-brand-mark";
 import AskIrisPanel from "./ask-iris-panel";
 import IrisChainPanel from "./iris-chain-panel";
+import IrisCreatorPanel from "./iris-creator-panel";
 import IrisMarketPanel from "./iris-market-panel";
+import IrisMissionPanel from "./iris-mission-panel";
 import { Language, text } from "./dashboard-i18n";
 import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase } from "../../lib/iris-live-soc";
 import { IRIS_AGENT_SCRIPT_VERSION, irisAgentShellCommand } from "../../lib/iris-device-view";
+import { macAgentPrepSteps } from "../../lib/iris-mac-prep";
 import { irisReconnectOrigin } from "../../lib/iris-origin";
 import { formatUtcClock } from "../../lib/iris-time";
 
 type Incident = LiveIncident;
-type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "market" | "approvals" | "audit";
+type Section = "operations" | "alerts" | "incidents" | "intelligence" | "devices" | "chain" | "market" | "creator" | "mission" | "approvals" | "audit";
+const SECTIONS: Section[] = ["operations", "alerts", "incidents", "intelligence", "devices", "chain", "market", "creator", "mission", "approvals", "audit"];
+function sectionFromHash(hash = "") {
+  const value = hash.replace(/^#/, "") as Section;
+  return SECTIONS.includes(value) ? value : null;
+}
 type AuditEvent = { id: number; actorEmail: string; action: string; resource: string; outcome: string; createdAt: string };
 type WalletState = { connected: boolean; address: string; mode?: string };
 type DeviceTelemetry = { hostname?: string; osVersion?: string; architecture?: string; diskUsedPercent?: number; memoryUsedPercent?: number; firewallEnabled?: boolean; gatekeeperEnabled?: boolean; fileVaultEnabled?: boolean; sipEnabled?: boolean; automaticUpdatesEnabled?: boolean; installedApplicationCount?: number; riskyApplications?: string[]; trustedApplications?: string[]; xProtectPresent?: boolean; xProtectVersion?: string; malwareRemovalToolPresent?: boolean; persistenceItemCount?: number; unsignedPersistenceItems?: string[]; securityFindings?: string[]; changes?: string[]; changeDetectedAt?: string; collectedAt?: string; transportEncryption?: "TLS+HMAC" | "AES-256-CBC+HMAC-SHA256" };
@@ -68,7 +76,7 @@ export default function SecurityOperations({
   const [selected, setSelected] = useState<Incident>(() => buildLiveIncidents({ alerts: [], devices: initialDevices, language: "es" })[0] || emptyLiveIncident("es"));
   const [filter, setFilter] = useState("All");
   const [lastUpdate, setLastUpdate] = useState("ahora mismo");
-  const [section, setSection] = useState<Section>("operations");
+  const [section, setSection] = useState<Section>(() => (typeof window !== "undefined" && sectionFromHash(window.location.hash)) || "operations");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [executionNote, setExecutionNote] = useState("");
   const [devices, setDevices] = useState<Device[]>(initialDevices);
@@ -150,6 +158,22 @@ export default function SecurityOperations({
     const marketTimer = window.setInterval(loadMarket, 30_000);
     return () => window.clearInterval(marketTimer);
   }, []);
+
+  useEffect(() => {
+    const applyHash = () => {
+      const next = sectionFromHash(window.location.hash);
+      if (next) setSection(next);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const next = `#${section}`;
+    if (window.location.hash !== next) window.history.replaceState(null, "", next);
+  }, [section]);
 
   const agentRuntime = useMemo(() => liveWorkers({
     devices,
@@ -300,6 +324,8 @@ export default function SecurityOperations({
         <button className={section === "devices" ? "active" : ""} onClick={() => setSection("devices")}><Desktop /> {language === "es" ? "Dispositivos" : "Devices"} <b>{devices.length}</b></button>
         <button className={section === "chain" ? "active" : ""} onClick={() => setSection("chain")}><Cube /> IRIS Chain</button>
         <button className={section === "market" ? "active" : ""} onClick={() => setSection("market")}><TrendUp /> {language === "es" ? "Bolsa en vivo" : "Live market"}</button>
+        <button className={section === "creator" ? "active" : ""} onClick={() => setSection("creator")}><Robot /> IRIS Creator</button>
+        <button className={section === "mission" ? "active" : ""} onClick={() => setSection("mission")}><Flag /> {language === "es" ? "Misiones · Evals" : "Missions · Evals"}</button>
         <button className={section === "approvals" ? "active" : ""} onClick={() => setSection("approvals")}><ShieldCheck /> {t("approvals")} <b>{open}</b></button>
         <button className={section === "audit" ? "active" : ""} onClick={() => setSection("audit")}><LockKey /> {t("audit")} <b>{liveAuditCount}</b></button>
         {user.role === "ADMIN" && <a href="/admin/users"><UsersThree /> {t("access")}</a>}
@@ -308,7 +334,7 @@ export default function SecurityOperations({
     </aside>
 
     <section className="soc-main">
-      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", market: language === "es" ? "Bolsa en vivo" : "Live market", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => { loadSecurityStateRef.current(); setLastUpdate(t("now")); }}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
+      <header className="soc-header"><div><p>{t("command")}</p><h1>{{ operations: t("securityOperations"), alerts: language === "es" ? "Centro de alertas reales" : "Real alert center", incidents: t("incidentResponse"), intelligence: t("threatIntelligence"), devices: language === "es" ? "Dispositivos protegidos" : "Protected devices", chain: "IRIS Chain", market: language === "es" ? "Bolsa en vivo" : "Live market", creator: "IRIS Creator", mission: language === "es" ? "Misiones y evaluaciones" : "Missions and evaluations", approvals: t("approvalCenter"), audit: t("audit") }[section]}</h1><span><i /> {connectionLine} · {t("updated")} {lastUpdate}</span></div><div className="header-actions"><div className="language-switch" aria-label="Language"><button className={language === "en" ? "active" : ""} onClick={() => changeLanguage("en")}>EN</button><button className={language === "es" ? "active" : ""} onClick={() => changeLanguage("es")}>ES</button></div><button aria-label="Refresh data" onClick={() => { loadSecurityStateRef.current(); setLastUpdate(t("now")); }}><Pulse /></button><button aria-label="Open real alerts" onClick={() => setSection("alerts")}><Bell /><b>{activeAlerts.length}</b></button><a href={signOutPath}><SignOut /> {t("signOut")}</a></div></header>
 
       {waitingDevice && reconnectCommand && <section className="ops-reconnect">
         <div>
@@ -402,6 +428,11 @@ export default function SecurityOperations({
 
       {section === "devices" && <section className="module-panel devices-view">
         <div className="module-toolbar"><div><h2>{language === "es" ? "Protección real de dispositivos" : "Real device protection"}</h2><p>{language === "es" ? "IRIS verifica controles, aplicaciones y cambios mediante el agente autorizado." : "IRIS verifies controls, applications, and changes through the authorized agent."}</p></div><button className="add-device" onClick={createDeviceEnrollment} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar mi Mac" : "Register my Mac")}</button></div>
+        {devices.length === 0 && <div className="mac-prep-checklist" aria-label={language === "es" ? "Preparación del agente Mac" : "Mac agent preparation"}>
+          <h3>{language === "es" ? "Preparación del agente Mac (telemetría real)" : "Mac agent preparation (real telemetry)"}</h3>
+          <p>{language === "es" ? "Sin check-in real el dispositivo no aparece ONLINE. IRIS no inventa agentes conectados." : "Without a real check-in the device will not show ONLINE. IRIS does not invent connected agents."}</p>
+          <ol>{macAgentPrepSteps(language).map(step => <li key={step.id}><strong>{step.title}</strong><span>{step.detail}</span><em>{language === "es" ? "Listo cuando: " : "Done when: "}{step.doneWhen}</em></li>)}</ol>
+        </div>}
         <div className="device-grid">{devices.map(device => <article key={device.id}>
           <div className="device-card-head"><div className="device-icon"><Desktop weight="duotone" /></div><div><strong>{device.name}</strong><span>{device.telemetry?.hostname || device.platform}</span></div><b className={`provenance-badge ${device.provenance.toLowerCase()}`}>{device.provenance === "REAL" ? "REAL" : (language === "es" ? "NO VERIFICADO" : "UNVERIFIED")}</b></div>
           <div className="device-status-line"><b className={`device-state ${device.status.toLowerCase()}`}>{device.status === "PENDING" ? (language === "es" ? "PENDIENTE" : "PENDING") : device.status}</b><strong>{language === "es" ? "Salud" : "Health"}: {device.status === "ONLINE" ? `${device.healthScore ?? "—"}${device.healthScore !== null ? "/100" : ""}` : (language === "es" ? "sin reporte fresco" : "no fresh report")}</strong></div>
@@ -443,6 +474,8 @@ export default function SecurityOperations({
       </section>}
       {section === "chain" && <IrisChainPanel language={language} isAdmin={user.role === "ADMIN"} />}
       {section === "market" && <IrisMarketPanel language={language} onOpenPurchases={() => setSection("chain")} />}
+      {section === "creator" && <IrisCreatorPanel language={language} />}
+      {section === "mission" && <IrisMissionPanel language={language} />}
       <AskIrisPanel section={section} selectedIncident={selectedView} incidents={incidents.map(localized)} devices={devices} userRole={user.role} userName={user.displayName.split(" ")[0]} language={language} />
     </section>
   </main>;

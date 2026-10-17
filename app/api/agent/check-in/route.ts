@@ -1,6 +1,7 @@
 import { eq, lt } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { agentRequestNonces, devices, remediationPlans, securityAlerts, trustedApplications } from "../../../../db/schema";
+import { logAudit } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { takePendingAgentCommands } from "../../../../lib/iris-agent-commands";
 
@@ -203,8 +204,15 @@ export async function POST(request: Request) {
     telemetry = enrichTelemetry({ ...cleanTelemetry(body.telemetry || {}), transportEncryption: "TLS+HMAC" });
     const token = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
     const issuedAt = new Date();
-    await db.update(devices).set({ agentTokenHash: await sha256(token), agentTokenIssuedAt: issuedAt.toISOString(), agentTokenExpiresAt: new Date(issuedAt.getTime() + TOKEN_LIFETIME_MS).toISOString(), status: "ONLINE", risk: calculateRisk(telemetry), telemetry: JSON.stringify(telemetry), lastSeenAt: issuedAt.toISOString() }).where(eq(devices.id, device.id));
+    const risk = calculateRisk(telemetry);
+    await db.update(devices).set({ agentTokenHash: await sha256(token), agentTokenIssuedAt: issuedAt.toISOString(), agentTokenExpiresAt: new Date(issuedAt.getTime() + TOKEN_LIFETIME_MS).toISOString(), status: "ONLINE", risk, telemetry: JSON.stringify(telemetry), lastSeenAt: issuedAt.toISOString() }).where(eq(devices.id, device.id));
     await syncAlerts(device, telemetry);
+    await logAudit(device.ownerEmail, "AGENT_ENROLLED", device.id, "SUCCESS", {
+      hostname: telemetry.hostname || "",
+      risk,
+      findings: (telemetry.securityFindings || []).length,
+      transport: telemetry.transportEncryption || "TLS+HMAC",
+    });
     const commands = await takePendingAgentCommands(device.id);
     return Response.json({ agentToken: token, deviceId: device.id, status: "ONLINE", intervalSeconds: 120, reportEncryption: "AES-256-CBC+HMAC-SHA256", commands });
   }
@@ -240,6 +248,15 @@ export async function POST(request: Request) {
   const risk = calculateRisk(telemetry);
   await db.update(devices).set({ status: "ONLINE", risk, telemetry: JSON.stringify(telemetry), lastSeenAt: new Date().toISOString() }).where(eq(devices.id, device.id));
   await syncAlerts(device, telemetry);
+  const meaningful = Boolean(telemetry.securityFindings?.length || telemetry.changes?.length || risk !== device.risk);
+  if (meaningful) {
+    await logAudit(device.ownerEmail, "AGENT_CHECKIN", device.id, "SUCCESS", {
+      risk,
+      findings: (telemetry.securityFindings || []).length,
+      changes: (telemetry.changes || []).length,
+      transport: telemetry.transportEncryption || "TLS+HMAC",
+    });
+  }
   const commands = await takePendingAgentCommands(device.id);
   return Response.json({ deviceId: device.id, status: "ONLINE", risk, intervalSeconds: 120, commands });
 }
