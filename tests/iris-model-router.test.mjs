@@ -34,6 +34,9 @@ test("router sends SOC questions to OpenAI when configured", () => {
   });
   assert.equal(decision.provider, "openai");
   assert.equal(decision.kind, "agent");
+  assert.equal(decision.model, "gpt-4o");
+  assert.ok(decision.timeoutMs >= 1000);
+  assert.equal(decision.fallback, "local");
 });
 
 test("router uses local mind without OpenAI", () => {
@@ -60,8 +63,10 @@ test("provider status never includes secret values", () => {
   const blob = JSON.stringify(status);
   assert.doesNotMatch(blob, /sk-secret|LLM\|secret|el-secret/);
   assert.equal(status.find(item => item.id === "openai")?.configured, true);
+  assert.equal(status.find(item => item.id === "openai")?.operationalClaim, "configured_untested");
   assert.equal(status.find(item => item.id === "muse")?.configured, true);
   assert.equal(status.find(item => item.id === "elevenlabs")?.configured, true);
+  assert.equal(status.find(item => item.id === "local")?.operationalClaim, "local_ready");
 });
 
 test("providers status route and voice route stay secret-safe", () => {

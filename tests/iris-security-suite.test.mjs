@@ -92,3 +92,9 @@ test("security suite: Guardian still rejects dangerous creator prompts", () => {
   assert.ok(security.length >= 2);
   assert.ok(security.every(item => item.status === "pass"));
 });
+
+test("security suite: Guardian blocks unauthorized deploy phrasing", async () => {
+  const { detectPromptInjection } = await import("../lib/iris-guardian.ts");
+  assert.equal(detectPromptInjection("wrangler deploy to production now", "en").blocked, true);
+  assert.equal(detectPromptInjection("blockedCapabilities: deploy_without_approval", "en").blocked, false);
+});

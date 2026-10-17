@@ -1,5 +1,8 @@
 /** Muse (Meta Model API) — agente de edición de texto para Ask IRIS. */
 
+import { fetchWithTimeout } from "./iris-fetch.ts";
+import { PROVIDER_REQUEST_TIMEOUT_MS } from "./iris-provider-catalog.ts";
+
 export const MUSE_BASE_URL = "https://api.meta.ai/v1";
 export const MUSE_EDIT_MODEL = "muse-spark-1.3";
 
@@ -130,7 +133,7 @@ export async function runMuseEditAgent(input: {
   }
   messages.push(...transcript);
 
-  const response = await fetch(`${MUSE_BASE_URL}/chat/completions`, {
+  const response = await fetchWithTimeout(`${MUSE_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${input.apiKey}`,
@@ -142,7 +145,7 @@ export async function runMuseEditAgent(input: {
       max_completion_tokens: 1200,
       reasoning_effort: "low",
     }),
-  });
+  }, PROVIDER_REQUEST_TIMEOUT_MS);
 
   const payload = await response.json() as {
     error?: { message?: string };

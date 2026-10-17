@@ -82,11 +82,20 @@ Ver `docs/IRIS-1.0-OPS.md`. Límites sugeridos pre-prod:
 ## Checklist staging (antes de pedir prod)
 
 - [ ] Secrets staging cargados (no git)
-- [ ] Migraciones aplicadas en D1 staging (incluye 0011 orgs)
-- [ ] Probe providers ejecutado; integraciones live o explícitamente disabled
+- [ ] Migraciones aplicadas en D1 staging (incluye 0011 orgs + 0012 phase B)
+- [ ] Probe providers ejecutado; integraciones `live_ok` o explícitamente `skipped_no_key`/`live_failed`
 - [ ] Smoke: sign-in, Ask IRIS, Creator run_task, Mission verified≠accept
 - [ ] Smoke multi-tenant: crear org B, confirmar que no lee desks de org A
-- [ ] Export org (`POST /api/iris-orgs` action=export) como OWNER
+- [ ] Invite revoke + expire; API key revoke (verifyOrgApiKey → null)
+- [ ] Export org (`POST /api/iris-orgs` action=export) como OWNER sin secretos
+- [ ] Billing: solo `IRIS_BILLING_TEST=1`; `chargeEnabled=false`
 - [ ] Backup export + restore drill
 - [ ] Rollback ensayado una vez
 - [ ] CI verde en el commit candidato
+
+## GO / NO-GO (plantilla)
+
+| Destino | Requisito mínimo | Estado tipico pre-autorización |
+|---------|------------------|--------------------------------|
+| Staging | CI verde + migraciones + probes honestos + aislamiento | **NO-GO** hasta OK expresa |
+| Producción | Staging drills + live providers autorizados + backups + cobros policy | **NO-GO** hasta OK expresa |

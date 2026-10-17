@@ -7,9 +7,14 @@ import { getDb } from "../db";
 import { organizationInvites, organizationMembers } from "../db/schema";
 import { logAudit } from "./authz.ts";
 import { randomToken, sha256Hex } from "./iris-secret-hygiene.ts";
-import { canAdminOrg, sanitizeInviteRole, type OrgRole } from "./iris-tenant-core.ts";
+import {
+  canAdminOrg,
+  evaluateInviteAcceptability,
+  sanitizeInviteRole,
+  type OrgRole,
+} from "./iris-tenant-core.ts";
 
-export { inviteRoleAllowed, sanitizeInviteRole } from "./iris-tenant-core.ts";
+export { inviteRoleAllowed, sanitizeInviteRole, evaluateInviteAcceptability } from "./iris-tenant-core.ts";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -80,7 +85,26 @@ export async function createOrgInvite(input: {
   };
 }
 
+export async function expireStaleInvites(organizationId: string, now = new Date()) {
+  const rows = await getDb()
+    .select()
+    .from(organizationInvites)
+    .where(and(
+      eq(organizationInvites.organizationId, organizationId),
+      eq(organizationInvites.status, "PENDING"),
+    ));
+  let expired = 0;
+  for (const row of rows) {
+    if (Date.parse(row.expiresAt) < now.getTime()) {
+      await getDb().update(organizationInvites).set({ status: "EXPIRED" }).where(eq(organizationInvites.id, row.id));
+      expired += 1;
+    }
+  }
+  return expired;
+}
+
 export async function listOrgInvites(organizationId: string) {
+  await expireStaleInvites(organizationId);
   const rows = await getDb()
     .select()
     .from(organizationInvites)
@@ -125,12 +149,18 @@ export async function acceptOrgInvite(input: {
     .where(eq(organizationInvites.tokenHash, tokenHash))
     .limit(1);
   if (!row) throw new Error("Invite not found");
-  if (row.status !== "PENDING") throw new Error("Invite is no longer pending");
-  if (new Date(row.expiresAt).getTime() < Date.now()) {
-    await getDb().update(organizationInvites).set({ status: "EXPIRED" }).where(eq(organizationInvites.id, row.id));
-    throw new Error("Invite expired");
+  const decision = evaluateInviteAcceptability({
+    status: row.status as "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED",
+    expiresAt: row.expiresAt,
+    inviteEmail: row.email,
+    actorEmail: email,
+  });
+  if (!decision.ok) {
+    if (decision.code === "EXPIRED" && row.status === "PENDING") {
+      await getDb().update(organizationInvites).set({ status: "EXPIRED" }).where(eq(organizationInvites.id, row.id));
+    }
+    throw new Error(decision.detail);
   }
-  if (row.email !== email) throw new Error("Invite email does not match signed-in user");
 
   const now = new Date().toISOString();
   const [existing] = await getDb()
