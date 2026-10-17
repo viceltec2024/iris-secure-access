@@ -28,11 +28,26 @@ test("security suite: API routes never embed secret assignment literals", () => 
     "app/api/iris-evals/route.ts",
     "app/api/iris-creator/route.ts",
     "app/api/iris-voice/route.ts",
+    "app/api/iris-providers/status/route.ts",
   ]) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     assert.doesNotMatch(source, /sk_[a-zA-Z0-9]{16,}/);
     assert.doesNotMatch(source, /OPENAI_API_KEY\s*=\s*['\"][^'\"]+['\"]/);
     assert.doesNotMatch(source, /ELEVENLABS_API_KEY\s*=\s*['\"][^'\"]+['\"]/);
+    assert.doesNotMatch(source, /MODEL_API_KEY\s*=\s*['\"][^'\"]+['\"]/);
+  }
+});
+
+test("security suite: Creator/Mission/Voice/Evals POST paths enforce rate limits", () => {
+  for (const file of [
+    "app/api/iris-creator/route.ts",
+    "app/api/iris-mission/route.ts",
+    "app/api/iris-evals/route.ts",
+    "app/api/iris-voice/route.ts",
+  ]) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    assert.match(source, /enforceRateLimit/);
+    assert.match(source, /429/);
   }
 });
 

@@ -22,6 +22,7 @@ import {
   type ProposalType,
 } from "../../../lib/iris-creator";
 import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
+import { enforceRateLimit } from "../../../lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,8 @@ function modelBindings() {
   return env as unknown as {
     OPENAI_API_KEY?: string;
     ELEVENLABS_API_KEY?: string;
+    MODEL_API_KEY?: string;
+    MUSE_API_KEY?: string;
     AI?: unknown;
   };
 }
@@ -74,6 +77,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!(await enforceRateLimit(`iris-creator:${user.email}`, 40, 60 * 1000))) {
+    await logAudit(user.email, "IRIS_CREATOR", "creator", "DENIED", { reason: "rate_limited" });
+    return Response.json({ error: "Demasiadas solicitudes. Espera un momento." }, { status: 429, headers: { "Retry-After": "60" } });
+  }
 
   const body = await request.json().catch(() => ({})) as {
     action?: string;

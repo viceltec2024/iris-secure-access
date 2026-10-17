@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint, unit tests, and security checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit and security tests
+        run: node --experimental-strip-types --test tests/*.mjs
+
+      - name: Secret hygiene scan
+        run: |
+          set -euo pipefail
+          if git grep -nE 'sk-[a-zA-Z0-9]{20,}|sk_[a-zA-Z0-9]{20,}|OPENAI_API_KEY\s*=\s*["'\''][^"'\'']+|ELEVENLABS_API_KEY\s*=\s*["'\''][^"'\'']+|MODEL_API_KEY\s*=\s*["'\''][^"'\'']+' -- ':!.env.example' ':!package-lock.json' ':!*.webp' ':!*.png' ':!*.svg'; then
+            echo "Possible committed secret material detected." >&2
+            exit 1
+          fi
+          echo "Secret hygiene scan passed."

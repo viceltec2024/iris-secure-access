@@ -12,6 +12,7 @@ import {
   emptyMemoryStore,
   parseMemoryStore,
 } from "../../../lib/iris-memory";
+import { enforceRateLimit } from "../../../lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!(await enforceRateLimit(`iris-evals:${user.email}`, 20, 60 * 1000))) {
+    await logAudit(user.email, "IRIS_EVALS", "evals", "DENIED", { reason: "rate_limited" });
+    return Response.json({ error: "Demasiadas evaluaciones. Espera un momento." }, { status: 429, headers: { "Retry-After": "60" } });
+  }
 
   const body = await request.json().catch(() => ({})) as {
     action?: string;

@@ -13,6 +13,7 @@ import {
   runMission,
 } from "../../../lib/iris-mission";
 import { appendMemory, emptyMemoryStore, parseMemoryStore } from "../../../lib/iris-memory";
+import { enforceRateLimit } from "../../../lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,11 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!(await enforceRateLimit(`iris-mission:${user.email}`, 30, 60 * 1000))) {
+    await logAudit(user.email, "IRIS_MISSION", "mission", "DENIED", { reason: "rate_limited" });
+    return Response.json({ error: "Demasiadas misiones. Espera un momento." }, { status: 429, headers: { "Retry-After": "60" } });
+  }
 
   const body = await request.json().catch(() => ({})) as {
     action?: string;

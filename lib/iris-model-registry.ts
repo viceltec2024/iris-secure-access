@@ -1,9 +1,15 @@
 /**
  * Honest model / provider coordination status for IRIS.
  * Reports capability presence only — never secret values.
+ * A configured key is not a live-proven integration.
  */
 
-export type ModelProviderId = "openai" | "elevenlabs" | "cloudflare_ai" | "meta_ai" | "local_iris";
+export type ModelProviderId =
+  | "openai"
+  | "elevenlabs"
+  | "cloudflare_ai"
+  | "muse"
+  | "local_iris";
 
 export type ModelProviderStatus = {
   id: ModelProviderId;
@@ -23,6 +29,8 @@ export type ModelCoordinationReport = {
 type BindingFlags = {
   OPENAI_API_KEY?: string;
   ELEVENLABS_API_KEY?: string;
+  MODEL_API_KEY?: string;
+  MUSE_API_KEY?: string;
   AI?: unknown;
 };
 
@@ -37,6 +45,7 @@ export function buildModelCoordinationReport(
 ): ModelCoordinationReport {
   const openaiReady = hasSecret(bindings.OPENAI_API_KEY);
   const elevenReady = hasSecret(bindings.ELEVENLABS_API_KEY);
+  const museReady = hasSecret(bindings.MODEL_API_KEY) || hasSecret(bindings.MUSE_API_KEY);
   const cfAiReady = Boolean(bindings.AI);
 
   const coordinators: ModelProviderStatus[] = [
@@ -57,22 +66,36 @@ export function buildModelCoordinationReport(
       status: openaiReady ? "configured_untested" : "missing",
       detail: openaiReady
         ? (language === "es"
-          ? "Clave presente en el entorno. Ruta de código lista; no sustituye una prueba live reciente."
-          : "Key present in the environment. Code path ready; does not replace a recent live proof.")
+          ? "Clave presente. Ruta oficial https://api.openai.com/v1 lista; no sustituye una prueba live reciente."
+          : "Key present. Official https://api.openai.com/v1 path ready; does not replace a recent live proof.")
         : (language === "es"
           ? "OPENAI_API_KEY ausente. Ask IRIS usa el analista local."
           : "OPENAI_API_KEY missing. Ask IRIS uses the local analyst."),
       provenInCode: true,
     },
     {
+      id: "muse",
+      label: "Meta Muse (Model API)",
+      role: language === "es" ? "Edición / reescritura en Ask IRIS" : "Edit / rewrite in Ask IRIS",
+      status: museReady ? "configured_untested" : "missing",
+      detail: museReady
+        ? (language === "es"
+          ? "MODEL_API_KEY presente. Ruta oficial https://api.meta.ai/v1 (muse-spark-1.3); live no confirmado aquí."
+          : "MODEL_API_KEY present. Official https://api.meta.ai/v1 (muse-spark-1.3); live not confirmed here.")
+        : (language === "es"
+          ? "MODEL_API_KEY ausente. Edición usa borrador local Muse."
+          : "MODEL_API_KEY missing. Edit intents use the local Muse draft."),
+      provenInCode: true,
+    },
+    {
       id: "elevenlabs",
       label: "ElevenLabs",
       role: language === "es" ? "Voz neural Ask IRIS" : "Ask IRIS neural voice",
-      status: elevenReady ? "ready" : "missing",
+      status: elevenReady ? "configured_untested" : "missing",
       detail: elevenReady
         ? (language === "es"
-          ? "Clave local presente. /api/iris-voice habla por ElevenLabs; si falla, browser speechSynthesis."
-          : "Local key present. /api/iris-voice speaks via ElevenLabs; falls back to browser speechSynthesis.")
+          ? "Clave local presente. /api/iris-voice apunta a https://api.elevenlabs.io/v1; live no confirmado sin prueba."
+          : "Local key present. /api/iris-voice targets https://api.elevenlabs.io/v1; live not confirmed without a proof call.")
         : (language === "es"
           ? "ELEVENLABS_API_KEY ausente. Solo voz del navegador."
           : "ELEVENLABS_API_KEY missing. Browser voice only."),
@@ -92,16 +115,6 @@ export function buildModelCoordinationReport(
           : "AI binding not declared in local hosting. STT depends on OpenAI or the client."),
       provenInCode: true,
     },
-    {
-      id: "meta_ai",
-      label: "Meta AI",
-      role: language === "es" ? "Coordinación multi-modelo" : "Multi-model coordination",
-      status: "unavailable",
-      detail: language === "es"
-        ? "Sin código, sin env y sin binding. No está integrado."
-        : "No code, no env, and no binding. Not integrated.",
-      provenInCode: false,
-    },
   ];
 
   const notes = language === "es"
@@ -109,11 +122,13 @@ export function buildModelCoordinationReport(
       "Una clave configurada no equivale a una integración probada en producción.",
       "agent-orchestration simula un tablero con temporizador; no crea workers reales.",
       "IRIS Creator genera agentes supervisados; el latido aprobado no ejecuta shell ni despliega.",
+      "Muse/OpenAI/ElevenLabs usan endpoints oficiales; no se declaran operativos sin prueba live.",
     ]
     : [
       "A configured key is not the same as a production-proven integration.",
       "agent-orchestration simulates a timer board; it does not spawn real workers.",
       "IRIS Creator builds supervised agents; an approved heartbeat does not run shell or deploy.",
+      "Muse/OpenAI/ElevenLabs use official endpoints; they are not claimed live without a proof call.",
     ];
 
   return { generatedAt: now, coordinators, notes };

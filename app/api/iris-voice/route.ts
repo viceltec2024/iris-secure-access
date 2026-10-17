@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { provisionIrisUser } from "../../../lib/authz";
+import { logAudit, provisionIrisUser } from "../../../lib/authz";
+import { enforceRateLimit } from "../../../lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,11 @@ export async function POST(request: Request) {
   if (!identity) return Response.json({ error: "Your IRIS session has expired." }, { status: 401 });
   const user = await provisionIrisUser(identity);
   if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
+
+  if (!(await enforceRateLimit(`iris-voice:${user.email}`, 30, 60 * 1000))) {
+    await logAudit(user.email, "IRIS_VOICE", "voice", "DENIED", { reason: "rate_limited" });
+    return Response.json({ error: "Demasiadas solicitudes de voz. Espera un momento." }, { status: 429, headers: { "Retry-After": "60" } });
+  }
 
   let body: { text?: unknown; language?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid request." }, { status: 400 }); }

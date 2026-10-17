@@ -103,15 +103,16 @@ test("approved agents propose code/tests that still need human approval and neve
   assert.ok(approved.agent.permissions.includes("propose_tests"));
 });
 
-test("model registry reports Meta AI as unavailable and does not invent readiness", () => {
+test("model registry reports Muse/OpenAI honestly and does not invent live readiness", () => {
   const report = buildModelCoordinationReport({ ELEVENLABS_API_KEY: "sk_test" }, "es");
-  const meta = report.coordinators.find(item => item.id === "meta_ai");
+  const muse = report.coordinators.find(item => item.id === "muse");
   const eleven = report.coordinators.find(item => item.id === "elevenlabs");
   const openai = report.coordinators.find(item => item.id === "openai");
-  assert.equal(meta?.status, "unavailable");
-  assert.equal(meta?.provenInCode, false);
-  assert.equal(eleven?.status, "ready");
+  assert.equal(muse?.status, "missing");
+  assert.equal(muse?.provenInCode, true);
+  assert.equal(eleven?.status, "configured_untested");
   assert.equal(openai?.status, "missing");
+  assert.doesNotMatch(JSON.stringify(report), /meta_ai/);
   assert.ok(report.notes.some(note => /clave configurada|configured key/i.test(note)));
 });
 
