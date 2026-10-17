@@ -55,11 +55,27 @@ test("security suite: Creator/Mission/Voice/Evals POST paths enforce rate limits
     "app/api/iris-mission/route.ts",
     "app/api/iris-evals/route.ts",
     "app/api/iris-voice/route.ts",
+    "app/api/iris-orgs/route.ts",
   ]) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     assert.match(source, /enforceRateLimit/);
     assert.match(source, /429/);
   }
+});
+
+test("security suite: multi-tenant APIs scope desks by organizationId", () => {
+  for (const file of [
+    "app/api/iris-creator/route.ts",
+    "app/api/iris-mission/route.ts",
+    "app/api/iris-evals/route.ts",
+    "lib/iris-org-store.ts",
+    "lib/iris-tenant.ts",
+  ]) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    assert.match(source, /organizationId|orgDeskKey|requireOrgContext/);
+  }
+  const billing = readFileSync(new URL("../lib/iris-plans.ts", import.meta.url), "utf8");
+  assert.match(billing, /chargeEnabled:\s*false/);
 });
 
 test("security suite: Guardian still rejects dangerous creator prompts", () => {

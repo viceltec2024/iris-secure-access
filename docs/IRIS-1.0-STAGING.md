@@ -69,12 +69,22 @@ Ver `docs/IRIS-1.0-OPS.md`. Límites sugeridos pre-prod:
 3. DB: restaurar export D1 previo si la migración no es backward-compatible
 4. Documentar artifact ID + migration revision en cada promote
 
+## Multi-tenant (SaaS)
+
+- Migración `0011_saas_organizations` obligatoria antes de staging
+- Cookie `iris_org_id` + membership server-side en cada API de producto
+- Claves de desks: `iris_*:org:{organizationId}` (ver `docs/IRIS-SAAS-PROPOSAL.md`)
+- Gobernanza: `docs/IRIS-DATA-GOVERNANCE.md` (retención / export / delete)
+- Cobros: `BillingProvider.chargeEnabled = false` hasta autorización expresa
+
 ## Checklist staging (antes de pedir prod)
 
 - [ ] Secrets staging cargados (no git)
-- [ ] Migraciones aplicadas en D1 staging
+- [ ] Migraciones aplicadas en D1 staging (incluye 0011 orgs)
 - [ ] Probe providers ejecutado; integraciones live o explícitamente disabled
 - [ ] Smoke: sign-in, Ask IRIS, Creator run_task, Mission verified≠accept
+- [ ] Smoke multi-tenant: crear org B, confirmar que no lee desks de org A
+- [ ] Export org (`POST /api/iris-orgs` action=export) como OWNER
 - [ ] Backup export + restore drill
 - [ ] Rollback ensayado una vez
 - [ ] CI verde en el commit candidato

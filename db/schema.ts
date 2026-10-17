@@ -14,6 +14,7 @@ export const users = sqliteTable("users", {
 export const auditEvents = sqliteTable("audit_events", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   actorEmail: text("actor_email").notNull(),
+  organizationId: text("organization_id"),
   action: text("action").notNull(),
   resource: text("resource").notNull(),
   outcome: text("outcome", { enum: ["SUCCESS", "DENIED"] }).notNull(),
@@ -24,6 +25,62 @@ export const auditEvents = sqliteTable("audit_events", {
 }, (table) => [
   index("audit_events_actor_email_idx").on(table.actorEmail),
   index("audit_events_created_at_idx").on(table.createdAt),
+  index("audit_events_organization_id_idx").on(table.organizationId),
+]);
+
+export const organizations = sqliteTable("organizations", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull(),
+  name: text("name").notNull(),
+  plan: text("plan", { enum: ["starter", "business", "enterprise"] }).notNull().default("starter"),
+  status: text("status", { enum: ["ACTIVE", "SUSPENDED"] }).notNull().default("ACTIVE"),
+  budgetCentsMonthly: integer("budget_cents_monthly").notNull().default(2500),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [uniqueIndex("organizations_slug_unique").on(table.slug)]);
+
+export const organizationMembers = sqliteTable("organization_members", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  userEmail: text("user_email").notNull(),
+  role: text("role", { enum: ["OWNER", "ADMIN", "OPERATOR", "VIEWER"] }).notNull().default("OPERATOR"),
+  status: text("status", { enum: ["ACTIVE", "INVITED", "REMOVED"] }).notNull().default("ACTIVE"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_members_org_email_unique").on(table.organizationId, table.userEmail),
+  index("organization_members_user_email_idx").on(table.userEmail),
+]);
+
+export const organizationUsageMonthly = sqliteTable("organization_usage_monthly", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  period: text("period").notNull(),
+  requests: integer("requests").notNull().default(0),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  missions: integer("missions").notNull().default(0),
+  agentRuns: integer("agent_runs").notNull().default(0),
+  estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_usage_monthly_org_period_unique").on(table.organizationId, table.period),
+]);
+
+export const usageEvents = sqliteTable("usage_events", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  actorEmail: text("actor_email").notNull(),
+  kind: text("kind").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
+  metadata: text("metadata").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("usage_events_org_created_idx").on(table.organizationId, table.createdAt),
 ]);
 
 export const incidentStates = sqliteTable("incident_states", {

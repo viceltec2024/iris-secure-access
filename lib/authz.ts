@@ -29,15 +29,39 @@ export async function findIrisUser(identity: ChatGPTUser) {
   return existing || null;
 }
 
-export async function logAudit(actorEmail: string, action: string, resource: string, outcome: "SUCCESS" | "DENIED", metadata: Record<string, unknown> = {}) {
+export async function logAudit(
+  actorEmail: string,
+  action: string,
+  resource: string,
+  outcome: "SUCCESS" | "DENIED",
+  metadata: Record<string, unknown> = {},
+  organizationId?: string | null,
+) {
   const db = getDb();
   const normalizedMetadata = JSON.stringify(metadata);
   const [previous] = await db.select().from(auditEvents).orderBy(desc(auditEvents.id)).limit(1);
   const previousHash = previous?.eventHash || "GENESIS";
-  const material = JSON.stringify({ previousHash, actorEmail, action, resource, outcome, metadata: normalizedMetadata });
+  const material = JSON.stringify({
+    previousHash,
+    actorEmail,
+    organizationId: organizationId || null,
+    action,
+    resource,
+    outcome,
+    metadata: normalizedMetadata,
+  });
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
   const eventHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-  await db.insert(auditEvents).values({ actorEmail, action, resource, outcome, metadata: normalizedMetadata, previousHash, eventHash });
+  await db.insert(auditEvents).values({
+    actorEmail,
+    organizationId: organizationId || null,
+    action,
+    resource,
+    outcome,
+    metadata: normalizedMetadata,
+    previousHash,
+    eventHash,
+  });
 }
 
 export async function listRecentAudit(actorEmail: string, role: IrisRole, limit = 20) {

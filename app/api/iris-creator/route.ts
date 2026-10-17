@@ -23,31 +23,16 @@ import { runAuthorizedAgentTask, type AgentTaskKind } from "../../../lib/iris-ag
 import { emptyMemoryStore, parseMemoryStore } from "../../../lib/iris-memory";
 import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
 import { enforceRateLimit } from "../../../lib/rate-limit";
-import { loadSettingCas, saveSettingCas } from "../../../lib/iris-settings-cas";
+import { loadOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store";
+import type { IrisPlanId } from "../../../lib/iris-plans";
+import { requireOrgContext } from "../../../lib/iris-tenant";
+import { assertOrgWithinLimits, recordUsageEvent } from "../../../lib/iris-usage";
 
 export const dynamic = "force-dynamic";
-
-const DESK_KEY = "iris_creator_desk";
-const MEMORY_KEY = "iris_memory";
 
 async function currentUser() {
   const identity = await getChatGPTUser();
   return identity ? provisionIrisUser(identity) : null;
-}
-
-async function saveDeskCas(email: string, expectedUpdatedAt: string | null, state: CreatorDeskState) {
-  const key = `${DESK_KEY}:${email}`;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const expected = attempt === 0 ? expectedUpdatedAt : (await loadSettingCas(key)).updatedAt;
-    const saved = await saveSettingCas({
-      key,
-      value: JSON.stringify(state),
-      actorEmail: email,
-      expectedUpdatedAt: expected,
-    });
-    if (saved.ok) return;
-  }
-  throw new Error("concurrent_update");
 }
 
 function modelBindings() {
@@ -71,14 +56,20 @@ export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
   const language = new URL(request.url).searchParams.get("language") === "en" ? "en" : "es";
-  const key = `${DESK_KEY}:${user.email}`;
-  const loaded = await loadSettingCas(key);
+  const ctx = await requireOrgContext(user.email);
+  const loaded = await loadOrgDeskValue({ kind: "creator", organizationId: ctx.organization.id, email: user.email });
   const state = loaded.value ? parseCreatorDesk(loaded.value) : emptyCreatorDesk();
   const next = tickApprovedAgents(state);
   if (JSON.stringify(next) !== JSON.stringify(state)) {
-    await saveDeskCas(user.email, loaded.updatedAt, next);
+    await saveOrgDeskValue({
+      kind: "creator",
+      organizationId: ctx.organization.id,
+      email: user.email,
+      expectedUpdatedAt: loaded.updatedAt,
+      value: JSON.stringify(next),
+    });
   }
-  return Response.json(deskPayload(next, language));
+  return Response.json({ ...deskPayload(next, language), organizationId: ctx.organization.id });
 }
 
 export async function POST(request: Request) {
@@ -102,10 +93,22 @@ export async function POST(request: Request) {
     payload?: Record<string, unknown>;
   };
 
-  const key = `${DESK_KEY}:${user.email}`;
-  const loaded = await loadSettingCas(key);
+  const mutate = body.action !== undefined && body.action !== "list";
+  const ctx = await requireOrgContext(user.email, { mutate });
+  const loaded = await loadOrgDeskValue({ kind: "creator", organizationId: ctx.organization.id, email: user.email });
   const state = loaded.value ? parseCreatorDesk(loaded.value) : emptyCreatorDesk();
   const language = body.language === "en" ? "en" : "es";
+  const orgId = ctx.organization.id;
+
+  async function persist(next: CreatorDeskState) {
+    await saveOrgDeskValue({
+      kind: "creator",
+      organizationId: orgId,
+      email: user.email,
+      expectedUpdatedAt: loaded.updatedAt,
+      value: JSON.stringify(next),
+    });
+  }
 
   try {
     if (body.action === "create") {
@@ -115,6 +118,18 @@ export async function POST(request: Request) {
           error: language === "es" ? "Describe el agente en al menos 8 caracteres." : "Describe the agent in at least 8 characters.",
         }, { status: 400 });
       }
+      const limit = await assertOrgWithinLimits({
+        organizationId: orgId,
+        plan: ctx.organization.plan as IrisPlanId,
+        orgStatus: ctx.organization.status,
+        budgetCentsMonthly: ctx.organization.budgetCentsMonthly,
+        action: "agent_create",
+        agentCount: state.agents.filter(item => item.status === "approved" || item.status === "awaiting_approval").length,
+      });
+      if (!limit.allowed) {
+        await logAudit(user.email, "IRIS_CREATOR", orgId, "DENIED", { reason: limit.code }, orgId);
+        return Response.json({ error: limit.detail, code: limit.code }, { status: 402 });
+      }
       const agent = designAgentFromPrompt({
         id: crypto.randomUUID(),
         prompt,
@@ -122,50 +137,52 @@ export async function POST(request: Request) {
         schedule: body.schedule as AgentSchedule | undefined,
       });
       const next = addCreatedAgent(state, agent);
-      await saveDeskCas(user.email, loaded.updatedAt, next);
+      await persist(next);
+      await recordUsageEvent({ organizationId: orgId, actorEmail: user.email, kind: "agent_create", metadata: { agentId: agent.id } });
       await logAudit(user.email, "IRIS_CREATOR_DESIGNED", agent.id, "SUCCESS", {
         status: agent.status,
         specialty: agent.blueprint.specialty,
         sandboxPassed: agent.sandbox.passed,
-      });
-      return Response.json({ ...deskPayload(next, language), created: agent });
+        organizationId: orgId,
+      }, orgId);
+      return Response.json({ ...deskPayload(next, language), created: agent, organizationId: orgId });
     }
 
     if (body.action === "approve") {
       const result = approveCreatedAgent(state, String(body.agentId || ""), user.email);
-      await saveDeskCas(user.email, loaded.updatedAt, result.state);
+      await persist(result.state);
       await logAudit(user.email, "IRIS_CREATOR_APPROVED", result.agent.id, "SUCCESS", {
         specialty: result.agent.blueprint.specialty,
         schedule: result.agent.schedule,
       });
-      return Response.json({ ...deskPayload(result.state, language), approved: result.agent });
+      return Response.json({ ...deskPayload(result.state, language), approved: result.agent, organizationId: orgId });
     }
 
     if (body.action === "reject") {
       const result = rejectCreatedAgent(state, String(body.agentId || ""));
-      await saveDeskCas(user.email, loaded.updatedAt, result.state);
+      await persist(result.state);
       await logAudit(user.email, "IRIS_CREATOR_REJECTED", result.agent.id, "SUCCESS", {
         specialty: result.agent.blueprint.specialty,
       });
-      return Response.json({ ...deskPayload(result.state, language), rejected: result.agent });
+      return Response.json({ ...deskPayload(result.state, language), rejected: result.agent, organizationId: orgId });
     }
 
     if (body.action === "pause") {
       const result = pauseCreatedAgent(state, String(body.agentId || ""));
-      await saveDeskCas(user.email, loaded.updatedAt, result.state);
+      await persist(result.state);
       await logAudit(user.email, "IRIS_CREATOR_PAUSED", result.agent.id, "SUCCESS", {
         specialty: result.agent.blueprint.specialty,
       });
-      return Response.json({ ...deskPayload(result.state, language), paused: result.agent });
+      return Response.json({ ...deskPayload(result.state, language), paused: result.agent, organizationId: orgId });
     }
 
     if (body.action === "cancel") {
       const result = cancelCreatedAgent(state, String(body.agentId || ""));
-      await saveDeskCas(user.email, loaded.updatedAt, result.state);
+      await persist(result.state);
       await logAudit(user.email, "IRIS_CREATOR_CANCELLED", result.agent.id, "SUCCESS", {
         specialty: result.agent.blueprint.specialty,
       });
-      return Response.json({ ...deskPayload(result.state, language), cancelled: result.agent });
+      return Response.json({ ...deskPayload(result.state, language), cancelled: result.agent, organizationId: orgId });
     }
 
     if (body.action === "run_task") {
@@ -173,7 +190,7 @@ export async function POST(request: Request) {
       const agent = state.agents.find(item => item.id === agentId);
       if (!agent) throw new Error("Agent not found");
       const task = String(body.task || "") as AgentTaskKind;
-      const memoryLoaded = await loadSettingCas(`${MEMORY_KEY}:${user.email}`);
+      const memoryLoaded = await loadOrgDeskValue({ kind: "memory", organizationId: orgId, email: user.email });
       const memory = memoryLoaded.value ? parseMemoryStore(memoryLoaded.value) : emptyMemoryStore();
       const result = runAuthorizedAgentTask({
         agent,
@@ -187,7 +204,7 @@ export async function POST(request: Request) {
         const proposal = result.output.proposal as ReturnType<typeof buildImprovementProposal>;
         const queued = addAgentProposal(state, agentId, proposal);
         nextState = queued.state;
-        await saveDeskCas(user.email, loaded.updatedAt, nextState);
+        await persist(nextState);
       }
       await logAudit(user.email, "IRIS_CREATOR_TASK", agentId, result.ok ? "SUCCESS" : "DENIED", {
         task,
@@ -212,7 +229,7 @@ export async function POST(request: Request) {
         language,
       });
       const result = addAgentProposal(state, agentId, proposal);
-      await saveDeskCas(user.email, loaded.updatedAt, result.state);
+      await persist(result.state);
       await logAudit(user.email, "IRIS_CREATOR_PROPOSAL", proposal.id, "SUCCESS", {
         agentId,
         type: proposal.type,
@@ -230,7 +247,7 @@ export async function POST(request: Request) {
         decision,
         user.email,
       );
-      await saveDeskCas(user.email, loaded.updatedAt, result.state);
+      await persist(result.state);
       await logAudit(
         user.email,
         decision === "approve" ? "IRIS_CREATOR_PROPOSAL_APPROVED" : "IRIS_CREATOR_PROPOSAL_REJECTED",
