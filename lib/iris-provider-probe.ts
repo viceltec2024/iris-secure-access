@@ -5,6 +5,8 @@
  * Probes never authorize self_modify_core and never bypass human Guardian gates.
  */
 
+import { classifyProviderError, fetchWithTimeout } from "./iris-fetch.ts";
+import { IRIS_PROVIDER_CATALOG, PROVIDER_PROBE_TIMEOUT_MS, providerCatalogPublic } from "./iris-provider-catalog.ts";
 import { MUSE_BASE_URL, MUSE_EDIT_MODEL, museApiKey } from "./iris-muse.ts";
 
 export type ProviderProbeId = "openai" | "muse" | "elevenlabs" | "cloudflare_ai" | "local";
@@ -17,6 +19,7 @@ export type ProviderProbeResult = {
   httpStatus?: number;
   detail: string;
   checkedAt: string;
+  timeoutMs?: number;
 };
 
 export type ProviderProbeEnv = Record<string, string | undefined> & {
@@ -28,7 +31,7 @@ function keyOf(env: ProviderProbeEnv, name: string) {
 }
 
 export async function probeOpenAI(env: ProviderProbeEnv, now = new Date().toISOString()): Promise<ProviderProbeResult> {
-  const endpoint = "https://api.openai.com/v1/models";
+  const endpoint = IRIS_PROVIDER_CATALOG.openai.probeEndpoint;
   const apiKey = keyOf(env, "OPENAI_API_KEY");
   if (!apiKey) {
     return {
@@ -36,14 +39,15 @@ export async function probeOpenAI(env: ProviderProbeEnv, now = new Date().toISOS
       endpoint,
       configured: false,
       status: "skipped_no_key",
-      detail: "OPENAI_API_KEY ausente. Ask IRIS usa analista local.",
+      detail: "OPENAI_API_KEY ausente. Ask IRIS usa analista local. Clave configurada ≠ integración operativa.",
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   }
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       headers: { Authorization: `Bearer ${apiKey}` },
-    });
+    }, PROVIDER_PROBE_TIMEOUT_MS);
     if (!response.ok) {
       return {
         id: "openai",
@@ -53,6 +57,7 @@ export async function probeOpenAI(env: ProviderProbeEnv, now = new Date().toISOS
         httpStatus: response.status,
         detail: `OpenAI respondió HTTP ${response.status}. Integración no operativa.`,
         checkedAt: now,
+        timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
       };
     }
     return {
@@ -61,17 +66,20 @@ export async function probeOpenAI(env: ProviderProbeEnv, now = new Date().toISOS
       configured: true,
       status: "live_ok",
       httpStatus: response.status,
-      detail: "OpenAI Models API respondió OK.",
+      detail: `OpenAI Models API respondió OK (modelo chat declarado ${IRIS_PROVIDER_CATALOG.openai.defaultModel}).`,
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   } catch (error) {
+    const classified = classifyProviderError(error);
     return {
       id: "openai",
       endpoint,
       configured: true,
       status: "live_failed",
-      detail: error instanceof Error ? error.message : "OpenAI network error",
+      detail: classified.detail,
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   }
 }
@@ -85,16 +93,16 @@ export async function probeMuse(env: ProviderProbeEnv, now = new Date().toISOStr
       endpoint: MUSE_BASE_URL,
       configured: false,
       status: "skipped_no_key",
-      detail: "MODEL_API_KEY ausente. Edición usa muse-local.",
+      detail: "MODEL_API_KEY ausente. Edición usa muse-local. Clave configurada ≠ integración operativa.",
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   }
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       headers: { Authorization: `Bearer ${apiKey}` },
-    });
+    }, PROVIDER_PROBE_TIMEOUT_MS);
     if (!response.ok) {
-      // Some tenants only expose chat/completions; try a tiny dry failure path is still a probe.
       return {
         id: "muse",
         endpoint: MUSE_BASE_URL,
@@ -103,6 +111,7 @@ export async function probeMuse(env: ProviderProbeEnv, now = new Date().toISOStr
         httpStatus: response.status,
         detail: `Meta Muse ${MUSE_EDIT_MODEL} probe HTTP ${response.status}. No se declara operativo.`,
         checkedAt: now,
+        timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
       };
     }
     return {
@@ -113,36 +122,40 @@ export async function probeMuse(env: ProviderProbeEnv, now = new Date().toISOStr
       httpStatus: response.status,
       detail: `Meta Muse API OK (modelo declarado ${MUSE_EDIT_MODEL}).`,
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   } catch (error) {
+    const classified = classifyProviderError(error);
     return {
       id: "muse",
       endpoint: MUSE_BASE_URL,
       configured: true,
       status: "live_failed",
-      detail: error instanceof Error ? error.message : "Muse network error",
+      detail: classified.detail,
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   }
 }
 
 export async function probeElevenLabs(env: ProviderProbeEnv, now = new Date().toISOString()): Promise<ProviderProbeResult> {
-  const endpoint = "https://api.elevenlabs.io/v1/user";
+  const endpoint = IRIS_PROVIDER_CATALOG.elevenlabs.probeEndpoint;
   const apiKey = keyOf(env, "ELEVENLABS_API_KEY");
   if (!apiKey) {
     return {
       id: "elevenlabs",
-      endpoint: "https://api.elevenlabs.io/v1",
+      endpoint: IRIS_PROVIDER_CATALOG.elevenlabs.baseUrl,
       configured: false,
       status: "skipped_no_key",
       detail: "ELEVENLABS_API_KEY ausente. Solo speechSynthesis del navegador.",
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   }
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       headers: { "xi-api-key": apiKey },
-    });
+    }, PROVIDER_PROBE_TIMEOUT_MS);
     if (!response.ok) {
       return {
         id: "elevenlabs",
@@ -152,6 +165,7 @@ export async function probeElevenLabs(env: ProviderProbeEnv, now = new Date().to
         httpStatus: response.status,
         detail: `ElevenLabs HTTP ${response.status}. Voz neural no operativa.`,
         checkedAt: now,
+        timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
       };
     }
     return {
@@ -160,17 +174,20 @@ export async function probeElevenLabs(env: ProviderProbeEnv, now = new Date().to
       configured: true,
       status: "live_ok",
       httpStatus: response.status,
-      detail: "ElevenLabs user endpoint OK.",
+      detail: `ElevenLabs user endpoint OK (TTS model ${IRIS_PROVIDER_CATALOG.elevenlabs.defaultModel}).`,
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   } catch (error) {
+    const classified = classifyProviderError(error);
     return {
       id: "elevenlabs",
       endpoint,
       configured: true,
       status: "live_failed",
-      detail: error instanceof Error ? error.message : "ElevenLabs network error",
+      detail: classified.detail,
       checkedAt: now,
+      timeoutMs: PROVIDER_PROBE_TIMEOUT_MS,
     };
   }
 }
@@ -208,6 +225,8 @@ export async function probeAllProviders(env: ProviderProbeEnv, now = new Date().
   ]);
   return {
     checkedAt: now,
+    catalog: providerCatalogPublic(),
+    note: "configured≠live_ok. Solo live_ok prueba HTTP real sin filtrar secretos.",
     providers: [
       probeLocal(now),
       openai,

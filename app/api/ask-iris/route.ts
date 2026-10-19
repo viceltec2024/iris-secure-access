@@ -3,7 +3,9 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
+import { fetchWithTimeout } from "../../../lib/iris-fetch";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
+import { IRIS_PROVIDER_CATALOG, PROVIDER_REQUEST_TIMEOUT_MS, resolveOpenAiModel } from "../../../lib/iris-provider-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -83,22 +85,23 @@ export async function POST(request: Request) {
   const transcript = messages.map(message => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
   const input = `CURRENT IRIS CONTEXT\n${safeContext}\n\nCONVERSATION\n${transcript}`;
 
+  const openaiModel = resolveOpenAiModel(env as unknown as Record<string, string | undefined>);
   try {
-    const openaiResponse = await fetch("https://api.openai.com/v1/responses", { method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6-sol", instructions: `You are IRIS, a warm, composed and highly capable enterprise cybersecurity copilot. Speak like a thoughtful human colleague, not a status bot. Answer in the user's language (normally Spanish) with natural phrasing, varied sentence length and smooth conversational transitions.
+    const openaiResponse = await fetchWithTimeout(IRIS_PROVIDER_CATALOG.openai.chatEndpoint, { method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: openaiModel, instructions: `You are IRIS, a warm, composed and highly capable enterprise cybersecurity copilot. Speak like a thoughtful human colleague, not a status bot. Answer in the user's language (normally Spanish) with natural phrasing, varied sentence length and smooth conversational transitions.
 
 Address the user by their first name only occasionally. Lead with the direct answer. Explain technical findings in plain language before using security terminology. Ask one useful follow-up question only when it genuinely advances the investigation. Avoid canned phrases, stiff corporate language, repeated introductions, excessive headings and long bullet lists. For ordinary questions, use two to four short paragraphs. For a requested full review, give a clear prioritized summary.
 
 Analyze only the supplied IRIS context. Device telemetry marked ONLINE with a recent lastSeenAt may be described as reported telemetry; PENDING, OFFLINE, absent or empty telemetry must never be described as a live scan. Clearly distinguish demonstration incidents from verified device telemetry. Never claim access to the user's computer, network, files or external systems unless the context proves it. Cite relevant incident IDs or device names naturally. Do not invent alerts, evidence, file paths, locations or completed actions. Recommend reversible next steps and state uncertainty honestly.
 
-When the user asks by voice for the system status, answer aloud naturally and concisely in this order: device connection and report time, health/risk, protection controls, active verified findings, and recommended next action. For threat location, say the exact file or application path only when a locations or threatLocations field supplies it. Otherwise explain that IRIS knows the affected device or application but does not yet have a verified filesystem path. Never call a user-approved application malware merely because its signature could not be verified.`, input, max_output_tokens: 1100 }) });
+When the user asks by voice for the system status, answer aloud naturally and concisely in this order: device connection and report time, health/risk, protection controls, active verified findings, and recommended next action. For threat location, say the exact file or application path only when a locations or threatLocations field supplies it. Otherwise explain that IRIS knows the affected device or application but does not yet have a verified filesystem path. Never call a user-approved application malware merely because its signature could not be verified.`, input, max_output_tokens: 1100 }) }, PROVIDER_REQUEST_TIMEOUT_MS);
     const payload = await openaiResponse.json() as { error?: { message?: string }; output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }> };
     if (!openaiResponse.ok) throw new Error(payload.error?.message || "OpenAI request failed.");
     const answer = payload.output?.flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text || "").join("\n").trim();
     if (!answer) throw new Error("IRIS returned an empty analysis.");
-    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "gpt-5.6-sol" });
-    return Response.json({ answer, source: "openai" });
+    await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: openaiModel });
+    return Response.json({ answer, source: "openai", model: openaiModel });
   } catch {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: resolved.model, fallback: true });
-    return Response.json({ answer: resolved.answer, source: resolved.source });
+    return Response.json({ answer: resolved.answer, source: resolved.source, fallback: true });
   }
 }

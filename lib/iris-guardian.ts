@@ -35,6 +35,13 @@ const INJECTION_PATTERNS: Array<{ code: string; re: RegExp; messageEs: string; m
     messageEn: "Guardian blocked a request to modify IRIS core.",
   },
   {
+    // Require intent verbs so deny-lists that *mention* deploy_without_approval do not false-positive.
+    code: "UNAUTHORIZED_DEPLOY",
+    re: /\b(permite|permitir|allow|enable|autoriz[ae]|ejecuta(?:r)?|run)\b[\s\S]{0,48}\b(deploy[_-]?without[_-]?approval|auto[_-]?deploy)\b|\b(publica(?:r)?\s+(?:en|a)\s+producci[oó]n|ship\s+to\s+prod(?:uction)?|wrangler\s+deploy)\b/i,
+    messageEs: "Guardian bloqueó un despliegue no autorizado.",
+    messageEn: "Guardian blocked an unauthorized deploy request.",
+  },
+  {
     code: "SHELL_ESCAPE",
     re: /\b(rm\s+-rf|curl\s+|wget\s+|child_process|\/bin\/sh|powershell|Invoke-Expression)\b/i,
     messageEs: "Guardian bloqueó patrones de shell o escape.",

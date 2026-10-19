@@ -7,9 +7,16 @@ import { getDb } from "../db";
 import { organizationApiKeys } from "../db/schema";
 import { logAudit } from "./authz.ts";
 import { randomToken, sha256Hex } from "./iris-secret-hygiene.ts";
-import { canAdminOrg, normalizeOrgKeyScopes, type OrgKeyScope, type OrgRole } from "./iris-tenant-core.ts";
+import {
+  canAdminOrg,
+  evaluateApiKeyUsability,
+  normalizeOrgKeyScopes,
+  type OrgKeyScope,
+  type OrgRole,
+} from "./iris-tenant-core.ts";
 
 export type { OrgKeyScope };
+export { evaluateApiKeyUsability } from "./iris-tenant-core.ts";
 export const normalizeScopes = normalizeOrgKeyScopes;
 
 export async function createOrgApiKey(input: {
@@ -96,6 +103,12 @@ export async function verifyOrgApiKey(token: string) {
     .where(and(eq(organizationApiKeys.keyHash, keyHash), isNull(organizationApiKeys.revokedAt)))
     .limit(1);
   if (!row) return null;
+  const usable = evaluateApiKeyUsability({
+    revokedAt: row.revokedAt,
+    organizationId: row.organizationId,
+    expectedOrganizationId: row.organizationId,
+  });
+  if (!usable.ok) return null;
   await getDb().update(organizationApiKeys).set({ lastUsedAt: new Date().toISOString() }).where(eq(organizationApiKeys.id, row.id));
   return {
     keyId: row.id,
@@ -103,6 +116,17 @@ export async function verifyOrgApiKey(token: string) {
     scopes: normalizeScopes(JSON.parse(row.scopes || "[]")),
     name: row.name,
   };
+}
+
+/** Cross-tenant guard: key must match the active organization. */
+export function assertApiKeyBelongsToOrg(keyOrgId: string, activeOrgId: string) {
+  const decision = evaluateApiKeyUsability({
+    revokedAt: null,
+    organizationId: keyOrgId,
+    expectedOrganizationId: activeOrgId,
+  });
+  if (!decision.ok) throw new Error(decision.detail);
+  return true;
 }
 
 function publicKey(row: typeof organizationApiKeys.$inferSelect) {

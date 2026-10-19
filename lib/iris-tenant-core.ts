@@ -59,3 +59,38 @@ export function normalizeOrgKeyScopes(scopes: unknown): OrgKeyScope[] {
     .filter((item): item is OrgKeyScope => allowed.includes(item as OrgKeyScope));
   return next.length ? Array.from(new Set(next)) : ["read"];
 }
+
+export type InviteLifecycleStatus = "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+
+/** Pure invite acceptability check (expiry + status). */
+export function evaluateInviteAcceptability(input: {
+  status: InviteLifecycleStatus;
+  expiresAt: string;
+  inviteEmail: string;
+  actorEmail: string;
+  nowMs?: number;
+}): { ok: boolean; code: "ok" | "REVOKED" | "ACCEPTED" | "EXPIRED" | "EMAIL_MISMATCH" | "NOT_PENDING"; detail: string } {
+  const now = input.nowMs ?? Date.now();
+  const inviteEmail = input.inviteEmail.trim().toLowerCase();
+  const actorEmail = input.actorEmail.trim().toLowerCase();
+  if (input.status === "REVOKED") return { ok: false, code: "REVOKED", detail: "Invite revoked" };
+  if (input.status === "ACCEPTED") return { ok: false, code: "ACCEPTED", detail: "Invite already accepted" };
+  if (input.status === "EXPIRED") return { ok: false, code: "EXPIRED", detail: "Invite expired" };
+  if (input.status !== "PENDING") return { ok: false, code: "NOT_PENDING", detail: "Invite is not pending" };
+  if (Date.parse(input.expiresAt) < now) return { ok: false, code: "EXPIRED", detail: "Invite expired" };
+  if (inviteEmail !== actorEmail) return { ok: false, code: "EMAIL_MISMATCH", detail: "Invite email does not match signed-in user" };
+  return { ok: true, code: "ok", detail: "acceptable" };
+}
+
+/** Pure API key usability check. */
+export function evaluateApiKeyUsability(input: {
+  revokedAt: string | null | undefined;
+  organizationId: string;
+  expectedOrganizationId: string;
+}): { ok: boolean; code: "ok" | "REVOKED" | "ORG_MISMATCH"; detail: string } {
+  if (input.revokedAt) return { ok: false, code: "REVOKED", detail: "API key revoked" };
+  if (input.organizationId !== input.expectedOrganizationId) {
+    return { ok: false, code: "ORG_MISMATCH", detail: "API key belongs to another organization" };
+  }
+  return { ok: true, code: "ok", detail: "usable" };
+}
