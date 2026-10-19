@@ -270,10 +270,16 @@ export function localIrisAnswer(input: IrisAnalystInput) {
       : `${name}, in Live market you see the tape, the chart, and readings that refresh every 8 seconds. Ask me about NVDA, AAPL, or Bitcoin and I will teach the chart.`;
   }
 
+  if (/(liquidez|liquidity|pool|uniswap)/.test(question)) {
+    return es
+      ? `${name}, para dar liquidez a IRIS Token abre el Centro de Operaciones en IRIS Chain y pulsa «Añadir liquidez». IRIS abre Uniswap oficial en Base (IRIS + ETH). Tú eliges montos y confirmas en MetaMask; IRIS no mueve fondos sola.`
+      : `${name}, to add IRIS Token liquidity open the Operations Center on IRIS Chain and tap “Add liquidity”. IRIS opens official Uniswap on Base (IRIS + ETH). You choose amounts and confirm in MetaMask; IRIS never moves funds alone.`;
+  }
+
   if (/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy)/.test(question)) {
     return es
-      ? `${walletBlock} IRIS puede programar compras de ETH, USDC, BTC o SOL, pero nunca paga sola: cada compra espera tu aprobación y se completa en MetaMask o Robinhood.`
-      : `${walletBlock} IRIS can schedule ETH, USDC, BTC, or SOL buys, but it never pays alone: every purchase waits for your approval and finishes in MetaMask or Robinhood.`;
+      ? `${walletBlock} IRIS puede programar compras de ETH, USDC, BTC o SOL, pero nunca paga sola: cada compra espera tu aprobación y se completa en MetaMask o Robinhood. Para liquidez IRIS/ETH usa «Añadir liquidez» en Uniswap.`
+      : `${walletBlock} IRIS can schedule ETH, USDC, BTC, or SOL buys, but it never pays alone: every purchase waits for your approval and finishes in MetaMask or Robinhood. For IRIS/ETH liquidity use “Add liquidity” on Uniswap.`;
   }
 
   if (/(amenaza|threat|malware|ubicaci[oó]n|d[oó]nde|where|firewall|filevault|gatekeeper)/.test(question)) {
