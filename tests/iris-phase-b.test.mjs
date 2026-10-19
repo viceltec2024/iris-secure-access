@@ -37,11 +37,17 @@ test("billing: test mode never enables real charges; live keys blocked", () => {
 });
 
 test("secret hygiene redacts and rejects provider key material", () => {
+  // Fixtures must match lib/iris-secret-hygiene (≥16 chars after sk-) but stay
+  // under the CI secret-hygiene git-grep threshold ({20,}) to avoid false positives.
+  const fakeOpenAiStyle = "sk-abcdefghijklmnop";
+  const fakeMuseStyle = "LLM|fixture-key-xxxx";
   assert.equal(containsPossibleSecret("hello"), false);
-  assert.equal(containsPossibleSecret("sk-abcdefghijklmnopqrstuvwxyz1234"), true);
-  assert.match(redactSecrets("key sk-abcdefghijklmnopqrstuvwxyz1234 end"), /\[REDACTED\]/);
+  assert.equal(containsPossibleSecret(fakeOpenAiStyle), true);
+  assert.equal(containsPossibleSecret(fakeMuseStyle), true);
+  assert.match(redactSecrets(`key ${fakeOpenAiStyle} end`), /\[REDACTED\]/);
+  assert.match(redactSecrets(`muse ${fakeMuseStyle}`), /\[REDACTED\]/);
   assert.equal(assertNoSecretsInPayload({ ok: true, plan: "starter" }), true);
-  assert.throws(() => assertNoSecretsInPayload({ key: "sk-abcdefghijklmnopqrstuvwxyz1234" }));
+  assert.throws(() => assertNoSecretsInPayload({ key: fakeOpenAiStyle }));
   assert.equal(maskSecretPresence("").configured, false);
   assert.equal(maskSecretPresence("abcd1234xyz").configured, true);
 });
