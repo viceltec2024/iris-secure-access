@@ -86,6 +86,27 @@ export type CreatedAgent = {
     findings: GuardianFinding[];
   };
   proposals: AgentProposal[];
+  /** Append-only supervised activity (capped); populated by persistent cycles. */
+  activityLog?: Array<{
+    id: string;
+    at: string;
+    kind: string;
+    task?: string;
+    ok: boolean;
+    summary: string;
+    evidence: string[];
+    estimatedCostCents: number;
+    guardian: { passed: boolean; codes: string[] };
+    appliedToRepo: false;
+    selfModifiedCore: false;
+  }>;
+  /** Estimated metering only — never a live payment. */
+  cost?: {
+    runCount: number;
+    estimatedCostCents: number;
+    lastRunAt: string | null;
+    lastBlockReason: string | null;
+  };
   createdAt: string;
   updatedAt: string;
   approvedAt?: string;
@@ -141,9 +162,22 @@ function isStoredAgent(value: unknown): value is CreatedAgent {
 }
 
 function normalizeStoredAgent(agent: CreatedAgent): CreatedAgent {
+  const activityLog = Array.isArray(agent.activityLog)
+    ? agent.activityLog.filter(entry => entry && entry.appliedToRepo === false && entry.selfModifiedCore === false).slice(0, 50)
+    : [];
+  const cost = agent.cost && typeof agent.cost === "object"
+    ? {
+      runCount: Math.max(0, Number(agent.cost.runCount) || 0),
+      estimatedCostCents: Math.max(0, Number(agent.cost.estimatedCostCents) || 0),
+      lastRunAt: typeof agent.cost.lastRunAt === "string" ? agent.cost.lastRunAt : null,
+      lastBlockReason: typeof agent.cost.lastBlockReason === "string" ? agent.cost.lastBlockReason : null,
+    }
+    : undefined;
   return {
     ...agent,
     proposals: Array.isArray(agent.proposals) ? agent.proposals.filter(isStoredProposal) : [],
+    activityLog,
+    cost,
   };
 }
 

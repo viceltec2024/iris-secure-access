@@ -15,8 +15,11 @@ test("security suite: no autonomous core modification paths in new modules", () 
     "lib/iris-tool-acl.ts",
     "lib/iris-coordinator.ts",
     "lib/iris-provider-probe.ts",
+    "lib/iris-agent-runtime.ts",
+    "lib/iris-agent-persist.ts",
     "app/api/iris-mission/route.ts",
     "app/api/iris-evals/route.ts",
+    "app/api/iris-creator/route.ts",
   ];
   for (const file of gateFiles) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");

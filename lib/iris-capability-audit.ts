@@ -41,8 +41,8 @@ export const PRIORITY_CAPABILITIES: PriorityCapability[] = [
     name: "IRIS Creator",
     priority: 3,
     classification: "partial",
-    evidence: "Design → Guardian sandbox → approve/pause; code/test proposals with human OK.",
-    gap: "Approved agents only heartbeat; no durable worker runtime or repo apply pipeline.",
+    evidence: "Design → Guardian sandbox → approve/pause; persistent run_cycle with mandatory Guardian, activity log, and estimated cost metering (no live charge / no repo apply).",
+    gap: "No Cloudflare cron/queue worker fleet yet; proposals still never auto-apply to the repo.",
   },
   {
     id: "evals",
