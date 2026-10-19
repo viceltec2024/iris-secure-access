@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { provisionIrisUser, logAudit } from "../../../lib/authz";
+import { provisionIrisUser, logAudit, listOrgAuditEvents } from "../../../lib/authz";
 import { confirmTestCheckout, getBillingProvider, listBillingEvents, startTestCheckout } from "../../../lib/iris-billing";
 import { acceptOrgInvite, createOrgInvite, listOrgInvites, revokeOrgInvite } from "../../../lib/iris-invites";
 import { createOrgApiKey, listOrgApiKeys, revokeOrgApiKey } from "../../../lib/iris-org-keys";
@@ -118,6 +118,7 @@ export async function GET(request: Request) {
     payload.apiKeys = await listOrgApiKeys(ctx.organization.id);
     payload.billingEvents = await listBillingEvents(ctx.organization.id);
     payload.providerSecrets = providerSecretStatus(language);
+    payload.auditEvents = await listOrgAuditEvents(ctx.organization.id, 25);
   }
   assertNoSecretsInPayload(payload, "iris-orgs-get");
   return Response.json(payload);

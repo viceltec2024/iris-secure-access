@@ -42,6 +42,9 @@ test("secret hygiene redacts and rejects provider key material", () => {
   assert.match(redactSecrets("key sk-abcdefghijklmnopqrstuvwxyz1234 end"), /\[REDACTED\]/);
   assert.equal(assertNoSecretsInPayload({ ok: true, plan: "starter" }), true);
   assert.throws(() => assertNoSecretsInPayload({ key: "sk-abcdefghijklmnopqrstuvwxyz1234" }));
+  const orgKey = `iris_ak_${"ab".repeat(20)}`;
+  assert.equal(containsPossibleSecret(orgKey), true);
+  assert.throws(() => assertNoSecretsInPayload({ secret: orgKey }));
   assert.equal(maskSecretPresence("").configured, false);
   assert.equal(maskSecretPresence("abcd1234xyz").configured, true);
 });

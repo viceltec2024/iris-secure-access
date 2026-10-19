@@ -46,6 +46,7 @@ type BillingInfo = {
   stripeKeyKind?: string;
 };
 type ProviderSecret = { id: string; label: string; status: string; detail: string };
+type AuditRow = { id: number; actorEmail: string; action: string; resource: string; outcome: string; createdAt: string };
 
 type OrgsPayload = {
   activeOrganizationId?: string;
@@ -58,6 +59,7 @@ type OrgsPayload = {
   billing?: BillingInfo;
   billingEvents?: Array<{ id: string; kind: string; plan: string | null; amountCents: number; createdAt: string }>;
   providerSecrets?: { providers: ProviderSecret[]; notes: string[] };
+  auditEvents?: AuditRow[];
   error?: string;
   acceptToken?: string;
   secret?: string;
@@ -291,6 +293,17 @@ export default function IrisOrgPanel({ language }: { language: Language }) {
           ))}
         </ul>
         {(payload.providerSecrets?.notes || []).map(note => <p key={note} className="iris-org-note">{note}</p>)}
+
+        <h3>{es ? "Auditoría de la organización" : "Organization audit"}</h3>
+        <p className="iris-org-note">{es
+          ? "Eventos recientes de esta empresa (sin secretos ni hashes)."
+          : "Recent events for this company (no secrets or hashes)."}</p>
+        <ul className="creator-findings">
+          {(payload.auditEvents || []).slice(0, 8).map(event => (
+            <li key={event.id}>{event.createdAt?.slice(0, 19)} · {event.action} · {event.outcome} · {event.actorEmail}</li>
+          ))}
+          {!payload.auditEvents?.length && <li>{es ? "Sin eventos aún." : "No events yet."}</li>}
+        </ul>
 
         {oneTimeSecret && <div className="iris-org-onetime">
           <Warning weight="fill" />

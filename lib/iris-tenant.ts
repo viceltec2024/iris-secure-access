@@ -14,6 +14,7 @@ import { logAudit } from "./authz.ts";
 import {
   ORG_COOKIE,
   ORG_ROLES,
+  assertRoleChangeAllowed,
   assertTenantKeyIsolation,
   canAdminOrg,
   canMutateOrg,
@@ -25,6 +26,7 @@ import {
 export {
   ORG_COOKIE,
   ORG_ROLES,
+  assertRoleChangeAllowed,
   assertTenantKeyIsolation,
   canAdminOrg,
   canMutateOrg,
@@ -175,6 +177,18 @@ export async function addOrgMember(input: {
   if (!canAdminOrg(input.actorRole)) throw new Error("Administrator access required");
   const email = input.email.trim().toLowerCase();
   if (!email.includes("@")) throw new Error("Valid email required");
+  if (email === input.actorEmail.trim().toLowerCase()) {
+    throw new Error("Cannot add yourself as a member");
+  }
+  const assignedRole: OrgRole = input.role === "OWNER" ? "ADMIN" : input.role;
+  // Reuse privilege gate against a neutral baseline (VIEWER) for the new seat.
+  assertRoleChangeAllowed({
+    actorEmail: input.actorEmail,
+    actorRole: input.actorRole,
+    targetEmail: email,
+    currentRole: "VIEWER",
+    nextRole: assignedRole,
+  });
   const now = new Date().toISOString();
   const existing = await getMembership(input.organizationId, email);
   if (existing) throw new Error("Member already exists");
@@ -182,7 +196,7 @@ export async function addOrgMember(input: {
     id: crypto.randomUUID(),
     organizationId: input.organizationId,
     userEmail: email,
-    role: input.role === "OWNER" ? "ADMIN" : input.role,
+    role: assignedRole,
     status: "ACTIVE",
     createdAt: now,
     updatedAt: now,
@@ -218,16 +232,19 @@ export async function updateOrgMemberRole(input: {
   email: string;
   role: OrgRole;
 }) {
-  if (!canAdminOrg(input.actorRole)) throw new Error("Administrator access required");
   const email = input.email.trim().toLowerCase();
   const member = await getMembership(input.organizationId, email);
   if (!member) throw new Error("Member not found");
+  assertRoleChangeAllowed({
+    actorEmail: input.actorEmail,
+    actorRole: input.actorRole,
+    targetEmail: email,
+    currentRole: member.role as OrgRole,
+    nextRole: input.role,
+  });
   if (member.role === "OWNER" && input.role !== "OWNER") {
     const owners = await countActiveOwners(input.organizationId);
     if (owners <= 1) throw new Error("Cannot demote the last OWNER");
-  }
-  if (input.role === "OWNER" && input.actorRole !== "OWNER") {
-    throw new Error("Only an OWNER can promote another OWNER");
   }
   const now = new Date().toISOString();
   const [row] = await getDb().update(organizationMembers).set({

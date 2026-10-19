@@ -7,9 +7,21 @@ import { getDb } from "../db";
 import { organizationInvites, organizationMembers } from "../db/schema";
 import { logAudit } from "./authz.ts";
 import { randomToken, sha256Hex } from "./iris-secret-hygiene.ts";
-import { canAdminOrg, sanitizeInviteRole, type OrgRole } from "./iris-tenant-core.ts";
+import {
+  assertPublicOrgSecretShape,
+  canAdminOrg,
+  inviteIsExpired,
+  isValidInviteTokenFormat,
+  sanitizeInviteRole,
+  type OrgRole,
+} from "./iris-tenant-core.ts";
 
-export { inviteRoleAllowed, sanitizeInviteRole } from "./iris-tenant-core.ts";
+export {
+  inviteIsExpired,
+  inviteRoleAllowed,
+  isValidInviteTokenFormat,
+  sanitizeInviteRole,
+} from "./iris-tenant-core.ts";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -45,7 +57,7 @@ export async function createOrgInvite(input: {
       eq(organizationInvites.status, "PENDING"),
     ))
     .limit(1);
-  if (pending && new Date(pending.expiresAt).getTime() > Date.now()) {
+  if (pending && !inviteIsExpired(pending.expiresAt)) {
     throw new Error("Invite already pending for this email");
   }
 
@@ -117,7 +129,7 @@ export async function acceptOrgInvite(input: {
 }) {
   const email = input.actorEmail.trim().toLowerCase();
   const token = String(input.token || "").trim();
-  if (!token.startsWith("iris_inv_")) throw new Error("Invalid invite token");
+  if (!isValidInviteTokenFormat(token)) throw new Error("Invalid invite token");
   const tokenHash = await sha256Hex(token);
   const [row] = await getDb()
     .select()
@@ -126,7 +138,7 @@ export async function acceptOrgInvite(input: {
     .limit(1);
   if (!row) throw new Error("Invite not found");
   if (row.status !== "PENDING") throw new Error("Invite is no longer pending");
-  if (new Date(row.expiresAt).getTime() < Date.now()) {
+  if (inviteIsExpired(row.expiresAt)) {
     await getDb().update(organizationInvites).set({ status: "EXPIRED" }).where(eq(organizationInvites.id, row.id));
     throw new Error("Invite expired");
   }
@@ -177,7 +189,7 @@ export async function acceptOrgInvite(input: {
 }
 
 function publicInvite(row: typeof organizationInvites.$inferSelect) {
-  return {
+  const shape = {
     id: row.id,
     organizationId: row.organizationId,
     email: row.email,
@@ -189,4 +201,6 @@ function publicInvite(row: typeof organizationInvites.$inferSelect) {
     acceptedAt: row.acceptedAt,
     createdAt: row.createdAt,
   };
+  assertPublicOrgSecretShape(shape, "invite");
+  return shape;
 }
