@@ -37,11 +37,12 @@ test("billing: test mode never enables real charges; live keys blocked", () => {
 });
 
 test("secret hygiene redacts and rejects provider key material", () => {
+  const fixtureKey = `sk-${"abcdefghijklmnopqrstuvwxyz1234"}`;
   assert.equal(containsPossibleSecret("hello"), false);
-  assert.equal(containsPossibleSecret("sk-abcdefghijklmnopqrstuvwxyz1234"), true);
-  assert.match(redactSecrets("key sk-abcdefghijklmnopqrstuvwxyz1234 end"), /\[REDACTED\]/);
+  assert.equal(containsPossibleSecret(fixtureKey), true);
+  assert.match(redactSecrets(`key ${fixtureKey} end`), /\[REDACTED\]/);
   assert.equal(assertNoSecretsInPayload({ ok: true, plan: "starter" }), true);
-  assert.throws(() => assertNoSecretsInPayload({ key: "sk-abcdefghijklmnopqrstuvwxyz1234" }));
+  assert.throws(() => assertNoSecretsInPayload({ key: fixtureKey }));
   assert.equal(maskSecretPresence("").configured, false);
   assert.equal(maskSecretPresence("abcd1234xyz").configured, true);
 });
