@@ -269,8 +269,8 @@ export function executeMissionJob(input: {
   const agent = designAgentFromPrompt({
     id: `${input.mission.id}-agent`,
     prompt: language === "es"
-      ? `Crea una inteligencia artificial especializada en: ${input.mission.objective}`
-      : `Create an AI specialized in: ${input.mission.objective}`,
+      ? `Crea una inteligencia artificial especializada en ${input.mission.objective}`
+      : `Create an AI specialized in ${input.mission.objective}`,
     language,
     now,
   });

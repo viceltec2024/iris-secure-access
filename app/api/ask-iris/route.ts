@@ -21,9 +21,15 @@ export async function POST(request: Request) {
   }
 
   let body: { messages?: IncomingMessage[]; context?: unknown };
-  try { body = await request.json(); } catch { return Response.json({ error: "Invalid request." }, { status: 400 }); }
+  try { body = await request.json(); } catch { return Response.json({ error: "Solicitud inválida." }, { status: 400 }); }
+  const preferencesEarly = body.context && typeof body.context === "object" ? body.context as { language?: unknown } : {};
+  const languageHint = preferencesEarly.language === "en" ? "en" : "es";
   const messages = Array.isArray(body.messages) ? body.messages.slice(-12).filter(message => (message.role === "user" || message.role === "assistant") && typeof message.content === "string").map(message => ({ role: message.role, content: message.content.slice(0, 2400) })) : [];
-  if (!messages.some(message => message.role === "user")) return Response.json({ error: "Write a question for IRIS." }, { status: 400 });
+  if (!messages.some(message => message.role === "user")) {
+    return Response.json({
+      error: languageHint === "en" ? "Write a question for IRIS." : "Escribe una pregunta para IRIS.",
+    }, { status: 400 });
+  }
 
   const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
   const language = preferences.language === "en" ? "en" : "es";
