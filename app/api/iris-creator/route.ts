@@ -20,6 +20,7 @@ import {
   type ProposalType,
 } from "../../../lib/iris-creator";
 import { runAuthorizedAgentTask, type AgentTaskKind } from "../../../lib/iris-agent-runtime";
+import { runPersistentAgentCycle } from "../../../lib/iris-agent-persist";
 import { emptyMemoryStore, parseMemoryStore } from "../../../lib/iris-memory";
 import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
 import { enforceRateLimit } from "../../../lib/rate-limit";
@@ -185,11 +186,77 @@ export async function POST(request: Request) {
       return Response.json({ ...deskPayload(result.state, language), cancelled: result.agent, organizationId: orgId });
     }
 
+    if (body.action === "run_cycle") {
+      const limit = await assertOrgWithinLimits({
+        organizationId: orgId,
+        plan: ctx.organization.plan as IrisPlanId,
+        orgStatus: ctx.organization.status,
+        budgetCentsMonthly: ctx.organization.budgetCentsMonthly,
+        action: "agent_run",
+        agentCount: state.agents.filter(item => item.status === "approved").length,
+      });
+      const memoryLoaded = await loadOrgDeskValue({ kind: "memory", organizationId: orgId, email: user.email });
+      const memory = memoryLoaded.value ? parseMemoryStore(memoryLoaded.value) : emptyMemoryStore();
+      const cycle = runPersistentAgentCycle({
+        state,
+        limits: { allowed: limit.allowed, code: limit.code, detail: limit.detail },
+        language,
+        memory,
+      });
+      await persist(cycle.state);
+      if (cycle.ran > 0) {
+        await recordUsageEvent({
+          organizationId: orgId,
+          actorEmail: user.email,
+          kind: "agent_run",
+          quantity: cycle.ran,
+          estimatedCostCents: cycle.estimatedCostCents,
+          metadata: { action: "run_cycle", blocked: cycle.blocked, skipped: cycle.skipped, chargeEnabled: false },
+        });
+      }
+      await logAudit(user.email, "IRIS_CREATOR_CYCLE", orgId, limit.allowed ? "SUCCESS" : "DENIED", {
+        ran: cycle.ran,
+        blocked: cycle.blocked,
+        skipped: cycle.skipped,
+        estimatedCostCents: cycle.estimatedCostCents,
+        appliedToRepo: false,
+        selfModifiedCore: false,
+        limitCode: limit.code,
+      }, orgId);
+      return Response.json({
+        ...deskPayload(cycle.state, language),
+        cycle: {
+          ranAt: cycle.ranAt,
+          ran: cycle.ran,
+          blocked: cycle.blocked,
+          skipped: cycle.skipped,
+          estimatedCostCents: cycle.estimatedCostCents,
+          activity: cycle.activity,
+          appliedToRepo: false,
+          selfModifiedCore: false,
+          limits: limit,
+        },
+        organizationId: orgId,
+      });
+    }
+
     if (body.action === "run_task") {
       const agentId = String(body.agentId || "");
       const agent = state.agents.find(item => item.id === agentId);
       if (!agent) throw new Error("Agent not found");
       const task = String(body.task || "") as AgentTaskKind;
+      const limit = await assertOrgWithinLimits({
+        organizationId: orgId,
+        plan: ctx.organization.plan as IrisPlanId,
+        orgStatus: ctx.organization.status,
+        budgetCentsMonthly: ctx.organization.budgetCentsMonthly,
+        action: "agent_run",
+        agentCount: state.agents.filter(item => item.status === "approved").length,
+      });
+      if (!limit.allowed) {
+        await logAudit(user.email, "IRIS_CREATOR_TASK", agentId, "DENIED", { reason: limit.code, task }, orgId);
+        return Response.json({ error: limit.detail, code: limit.code }, { status: 402 });
+      }
       const memoryLoaded = await loadOrgDeskValue({ kind: "memory", organizationId: orgId, email: user.email });
       const memory = memoryLoaded.value ? parseMemoryStore(memoryLoaded.value) : emptyMemoryStore();
       const result = runAuthorizedAgentTask({
@@ -206,15 +273,26 @@ export async function POST(request: Request) {
         nextState = queued.state;
         await persist(nextState);
       }
+      if (result.ok) {
+        await recordUsageEvent({
+          organizationId: orgId,
+          actorEmail: user.email,
+          kind: "agent_run",
+          quantity: 1,
+          estimatedCostCents: 1,
+          metadata: { action: "run_task", task, agentId, chargeEnabled: false },
+        });
+      }
       await logAudit(user.email, "IRIS_CREATOR_TASK", agentId, result.ok ? "SUCCESS" : "DENIED", {
         task,
         appliedToRepo: false,
         requiresHumanApproval: result.requiresHumanApproval,
         error: result.error || null,
-      });
+      }, orgId);
       return Response.json({
         ...deskPayload(nextState, language),
         taskResult: result,
+        organizationId: orgId,
       });
     }
 
