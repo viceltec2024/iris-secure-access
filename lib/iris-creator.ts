@@ -171,16 +171,22 @@ export function extractSpecialty(prompt: string, language: "es" | "en" = "es") {
     .replace(/^iris[,:]?\s+/i, "")
     .trim();
 
-  const storeMatch = cleaned.match(/(?:tienda|store|negocio|business|shop)\s+([^.!?,]{3,80})/i);
-  if (storeMatch?.[1]) return titleCase(storeMatch[1].trim());
+  // Optional colon after "en"/"in"/"para" (mission prompts use "especializada en: …").
+  const storeMatch = cleaned.match(/(?:tienda|store|negocio|business|shop)\s*:?\s*([^.!?,:]{3,80})/i);
+  if (storeMatch?.[1]) return titleCase(sanitizeSpecialtyFragment(storeMatch[1]));
 
-  const specialized = cleaned.match(/(?:especializada? en|specialized in|para)\s+([^.!?,]{3,80})/i);
-  if (specialized?.[1]) return titleCase(specialized[1].trim());
+  const specialized = cleaned.match(/(?:especializada? en|specialized in|para)\s*:?\s*([^.!?,:]{3,80})/i);
+  if (specialized?.[1]) return titleCase(sanitizeSpecialtyFragment(specialized[1]));
 
-  const createMatch = cleaned.match(/(?:crea(?:r)?|create|genera(?:r)?|build)\s+(?:una?\s+)?(?:inteligencia artificial|ia|ai|agente)(?:\s+especializada?)?\s*(?:en|para|for)?\s*([^.!?,]{0,80})/i);
-  if (createMatch?.[1]?.trim()) return titleCase(createMatch[1].trim());
+  const createMatch = cleaned.match(/(?:crea(?:r)?|create|genera(?:r)?|build)\s+(?:una?\s+)?(?:inteligencia artificial|ia|ai|agente)(?:\s+especializada?)?\s*(?:en|para|for)?\s*:?\s*([^.!?,:]{0,80})/i);
+  if (createMatch?.[1]?.trim()) return titleCase(sanitizeSpecialtyFragment(createMatch[1]));
 
   return language === "es" ? "Agente personalizado" : "Custom agent";
+}
+
+/** Strip leading punctuation left by "en:" / "in:" specialty prompts. */
+function sanitizeSpecialtyFragment(value: string) {
+  return value.replace(/^[\s:;,\-–—]+/, "").trim();
 }
 
 function titleCase(value: string) {

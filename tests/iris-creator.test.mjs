@@ -24,6 +24,18 @@ test("extracts specialty from a Pet Grooming Store prompt", () => {
   assert.equal(isCreatorRequest("cómo está el firewall"), false);
 });
 
+test("extractSpecialty strips colon after en/in from mission-style prompts", () => {
+  const withColon = extractSpecialty(
+    "Crea una inteligencia artificial especializada en: Auditar estado SOC y listar huecos de integración",
+  );
+  assert.equal(withColon.startsWith(":"), false);
+  assert.match(withColon, /Auditar Estado SOC/i);
+
+  const englishColon = extractSpecialty("Create an AI specialized in: inventory reconciliation", "en");
+  assert.equal(englishColon.startsWith(":"), false);
+  assert.match(englishColon, /Inventory Reconciliation/i);
+});
+
 test("Creator designs an agent, Guardian sandboxes it, and deployment waits for approval", () => {
   const agent = designAgentFromPrompt({
     id: "agent-1",
