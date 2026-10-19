@@ -45,3 +45,9 @@ Refuerzos post-validación:
 - Higiene de secretos para `iris_ak_*` / `iris_inv_*`
 - Auditoría por organización en panel admin
 - Suite `tests/iris-phase-b-integration.test.mjs`
+
+## Cierre / revisión final
+
+- Revisión final: `docs/IRIS-PHASE-B-FINAL-REVIEW-2026-10-19.md`
+- PR #23 listo para revisión humana — **no auto-merge / no deploy** sin OK del owner
+- Diseño Fase C (Creator multi-agente): `docs/IRIS-PHASE-C-DESIGN.md` (solo diseño hasta autorización)
