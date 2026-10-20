@@ -7,6 +7,9 @@ const SECRET_PATTERNS = [
   /\bsk_(?:live|test)_[a-zA-Z0-9]{16,}\b/g,
   /\bLLM\|[^\s"']{8,}\b/g,
   /\b(OPENAI|ELEVENLABS|MODEL|MUSE|STRIPE)_API_KEY\s*[:=]\s*["']?[^"'\s]+/gi,
+  // Organization invite / API key secrets (full tokens only; prefixes like iris_ak_abcd are shorter).
+  /\biris_inv_[a-f0-9]{32,}\b/gi,
+  /\biris_ak_[a-f0-9]{32,}\b/gi,
 ];
 
 export function containsPossibleSecret(value: string) {

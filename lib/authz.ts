@@ -71,6 +71,25 @@ export async function listRecentAudit(actorEmail: string, role: IrisRole, limit 
   return db.select().from(auditEvents).where(and(eq(auditEvents.actorEmail, actorEmail))).orderBy(desc(auditEvents.createdAt)).limit(cap);
 }
 
+/** Organization-scoped audit trail for SaaS admin panel (Phase B). */
+export async function listOrgAuditEvents(organizationId: string, limit = 30) {
+  const cap = Math.min(Math.max(1, limit), 100);
+  return getDb()
+    .select({
+      id: auditEvents.id,
+      actorEmail: auditEvents.actorEmail,
+      action: auditEvents.action,
+      resource: auditEvents.resource,
+      outcome: auditEvents.outcome,
+      createdAt: auditEvents.createdAt,
+      organizationId: auditEvents.organizationId,
+    })
+    .from(auditEvents)
+    .where(eq(auditEvents.organizationId, organizationId))
+    .orderBy(desc(auditEvents.createdAt))
+    .limit(cap);
+}
+
 export async function listUsersForAdmin(actorEmail: string, role: IrisRole, limit = 50, offset = 0) {
   if (role !== "ADMIN") {
     await logAudit(actorEmail, "USER_LIST_VIEWED", "user_directory", "DENIED");

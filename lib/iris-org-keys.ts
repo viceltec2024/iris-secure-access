@@ -7,10 +7,18 @@ import { getDb } from "../db";
 import { organizationApiKeys } from "../db/schema";
 import { logAudit } from "./authz.ts";
 import { randomToken, sha256Hex } from "./iris-secret-hygiene.ts";
-import { canAdminOrg, normalizeOrgKeyScopes, type OrgKeyScope, type OrgRole } from "./iris-tenant-core.ts";
+import {
+  assertPublicOrgSecretShape,
+  canAdminOrg,
+  isValidOrgApiKeyFormat,
+  normalizeOrgKeyScopes,
+  type OrgKeyScope,
+  type OrgRole,
+} from "./iris-tenant-core.ts";
 
 export type { OrgKeyScope };
 export const normalizeScopes = normalizeOrgKeyScopes;
+export { isValidOrgApiKeyFormat } from "./iris-tenant-core.ts";
 
 export async function createOrgApiKey(input: {
   organizationId: string;
@@ -88,7 +96,7 @@ export async function revokeOrgApiKey(input: {
 
 export async function verifyOrgApiKey(token: string) {
   const value = String(token || "").trim();
-  if (!value.startsWith("iris_ak_")) return null;
+  if (!isValidOrgApiKeyFormat(value)) return null;
   const keyHash = await sha256Hex(value);
   const [row] = await getDb()
     .select()
@@ -106,7 +114,7 @@ export async function verifyOrgApiKey(token: string) {
 }
 
 function publicKey(row: typeof organizationApiKeys.$inferSelect) {
-  return {
+  const shape = {
     id: row.id,
     organizationId: row.organizationId,
     name: row.name,
@@ -117,4 +125,6 @@ function publicKey(row: typeof organizationApiKeys.$inferSelect) {
     lastUsedAt: row.lastUsedAt,
     revokedAt: row.revokedAt,
   };
+  assertPublicOrgSecretShape(shape, "api_key");
+  return shape;
 }
