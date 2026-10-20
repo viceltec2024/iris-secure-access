@@ -576,15 +576,16 @@ a { color: inherit; }
 .btc-signal-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .btc-signal{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;gap:2px 8px;align-items:center;padding:8px 10px;border:1px solid #2a5533;border-radius:6px;background:#04110a;color:inherit;text-align:left;cursor:pointer}
 .btc-signal b{color:#8fbf7a;font-size:10px}
-.btc-signal strong{grid-column:2;font-size:13px;letter-spacing:.04em}
+.btc-signal strong{grid-column:2;font-size:13px;letter-spacing:.04em;font-weight:800}
 .btc-signal em{grid-column:3;grid-row:1/span 2;color:#5ee0a6;font-size:18px;font-style:normal;font-variant-numeric:tabular-nums}
 .btc-signal small{grid-column:2;color:#7f96a8;font-size:8px;text-transform:uppercase}
 .btc-signal .chg{grid-column:1;font-size:10px}
-.btc-signal.buy{border-color:#2f8a62}
-.btc-signal.sell{border-color:#8a3a46}
-.btc-signal.sell em{color:#ff8f99}
-.btc-signal.hold{border-color:#67512f}
-.btc-signal.hold em{color:#e9b55d}
+.btc-signal.buy{border-color:#2f8a62;background:rgba(46,138,98,.12)}
+.btc-signal.buy strong,.btc-signal.buy em{color:#5ee0a6}
+.btc-signal.sell{border-color:#8a3a46;background:rgba(138,58,70,.14)}
+.btc-signal.sell strong,.btc-signal.sell em{color:#ff8f99}
+.btc-signal.hold{border-color:#67512f;background:rgba(103,81,47,.12)}
+.btc-signal.hold strong,.btc-signal.hold em{color:#e9b55d}
 .btc-signal-empty,.btc-signal-note{margin:0;color:#b7d7a6;font-size:10px;line-height:1.45}
 .btc-signal-note{color:#8fbf7a}
 @media(max-width:760px){.btc-signal-grid{grid-template-columns:1fr}.btc-signal-head button{margin-left:0;width:100%}}

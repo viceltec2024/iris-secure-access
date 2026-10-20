@@ -103,6 +103,10 @@ test("live market desk is a dense trading watchlist, not stacked cards", () => {
   assert.match(panel, /btc-signal-rail/);
   assert.match(panel, /view=btc-signals/);
   assert.match(css, /\.btc-signal-rail\{/);
+  assert.match(css, /\.btc-signal\.buy strong/);
+  assert.match(css, /\.btc-signal\.sell strong/);
+  assert.match(css, /#5ee0a6/);
+  assert.match(css, /#ff8f99/);
 });
 
 test("BTC horizon signals stay probabilistic and never claim certainty", () => {
