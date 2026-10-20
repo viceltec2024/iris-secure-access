@@ -23,10 +23,10 @@ type RecognitionConstructor = new () => RecognitionInstance;
 
 const welcomeMessage = (language: Language, userName: string, section = "operations"): ChatMessage => ({ role: "assistant", content: language === "es"
   ? section === "market"
-    ? `Hola, ${userName}. Soy IRIS. Estoy conectada a la bolsa en vivo: veo precios, te enseño el gráfico y te digo las lecturas más limpias. Pregúntame por un ticker o por las mejores opciones.`
+    ? `Hola, ${userName}. Soy IRIS. Estoy conectada a la bolsa en vivo: veo precios, el gráfico y señales BTC a 5, 15 y 30 minutos con confianza modelo. Pregúntame por un ticker o por Bitcoin.`
     : `Hola, ${userName}. Soy IRIS. Puedes pedirme el estado del Mac o decirme “edita” / “reescribe” para que Muse te ayude con el texto. Pregúntame con tus propias palabras.`
   : section === "market"
-    ? `Hi, ${userName}. I'm IRIS. I am connected to the live market: I see prices, teach the chart, and give you the cleanest readings. Ask me for a ticker or the best options.`
+    ? `Hi, ${userName}. I'm IRIS. I am connected to the live market: prices, the chart, and BTC signals at 5, 15 and 30 minutes with model confidence. Ask me for a ticker or Bitcoin.`
     : `Hi, ${userName}. I'm IRIS. Ask about your Mac, or say “edit” / “rewrite” so Muse can help with the wording. Ask me in your own words.` });
 
 export default function AskIrisPanel({ section, selectedIncident, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {

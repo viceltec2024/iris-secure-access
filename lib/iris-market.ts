@@ -63,6 +63,30 @@ export const LIVE_REFRESH_MS = 8_000;
 export const LIVE_CHART_TTL_MS = 5_000;
 export const LIVE_BOARD_TTL_MS = 8_000;
 export const LIVE_CORE_SYMBOLS = ["^GSPC", "^DJI", "^IXIC", "^VIX", "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "BTC-USD", "ETH-USD", "SOL-USD", "AMXL.MX"];
+export const BTC_SIGNAL_SYMBOL = "BTC-USD";
+export const BTC_HORIZONS_MIN = [5, 15, 30] as const;
+export type BtcHorizonMinutes = (typeof BTC_HORIZONS_MIN)[number];
+export type BtcSignalAction = "BUY" | "SELL" | "HOLD";
+
+export type BtcHorizonSignal = {
+  horizonMin: BtcHorizonMinutes;
+  action: BtcSignalAction;
+  confidence: number;
+  momentumPercent: number;
+  rsi: number | null;
+  price: number;
+  rationale: { es: string; en: string };
+};
+
+export type BtcSignalBoard = {
+  symbol: typeof BTC_SIGNAL_SYMBOL;
+  updatedAt: string;
+  live: boolean;
+  price: number;
+  currency: string;
+  signals: BtcHorizonSignal[];
+  disclaimer: { es: string; en: string };
+};
 
 export const MARKET_UNIVERSE: MarketInstrument[] = [
   { symbol: "^GSPC", name: "S&P 500", kind: "index", group: "indices" },
@@ -109,7 +133,8 @@ export const MARKET_RANGES = {
 export type MarketRange = keyof typeof MARKET_RANGES;
 
 const SYMBOL_PATTERN = /^[A-Z0-9.^%=-]{1,24}$/;
-const MARKET_QUESTION = /\b(bolsa|mercado|acci[oó]n|acciones|stock|stocks|nasdaq|s&p|dow|vix|ticker|gr[aá]fico|grafico|cotiz|opci[oó]n|opciones|invertir|inversi[oó]n|crypto|bitcoin|ethereum|nvda|apple|tesla|robinhood)\b/i;
+const MARKET_QUESTION = /\b(bolsa|mercado|acci[oó]n|acciones|stock|stocks|nasdaq|s&p|dow|vix|ticker|gr[aá]fico|grafico|cotiz|opci[oó]n|opciones|invertir|inversi[oó]n|crypto|bitcoin|btc|ethereum|nvda|apple|tesla|robinhood|se[nñ]al|predicci[oó]n|compra|venta)\b/i;
+const BTC_SIGNAL_QUESTION = /\b(bitcoin|btc)\b.*\b(5|15|30|minut|se[nñ]al|predic|compra|venta|confianz)|(\b(5|15|30)\s*min).*\b(bitcoin|btc)\b|\bse[nñ]ales?\b.*\b(bitcoin|btc)\b/i;
 
 export function isMarketSymbol(value: string) {
   return SYMBOL_PATTERN.test(value.trim().toUpperCase());
@@ -124,7 +149,11 @@ export function isMarketRange(value: string): value is MarketRange {
 }
 
 export function isMarketQuestion(question: string) {
-  return MARKET_QUESTION.test(question) || Boolean(extractTicker(question));
+  return MARKET_QUESTION.test(question) || BTC_SIGNAL_QUESTION.test(question) || Boolean(extractTicker(question));
+}
+
+export function isBtcSignalQuestion(question: string) {
+  return BTC_SIGNAL_QUESTION.test(question) || (/\b(bitcoin|btc)\b/i.test(question) && /\b(5|15|30|minut|se[nñ]al|predic|compra|venta)\b/i.test(question));
 }
 
 export function extractTicker(question: string) {
@@ -423,8 +452,103 @@ export async function searchMarket(query: string) {
   });
 }
 
-export function marketAnswer(question: string, language: "es" | "en", board: MarketBoard, chart?: { quote: MarketQuote; analysis: MarketAnalysis } | null) {
+export function horizonSignalFromBars(bars: MarketBar[], horizonMin: BtcHorizonMinutes): BtcHorizonSignal {
+  const closes = bars.map(bar => bar.close).filter(value => Number.isFinite(value) && value > 0);
+  const volumes = bars.map(bar => bar.volume).filter(value => Number.isFinite(value));
+  const price = closes.at(-1) || 0;
+  const lookback = Math.min(horizonMin, Math.max(closes.length - 1, 1));
+  const past = closes[closes.length - 1 - lookback] || price;
+  const momentumPercent = past > 0 ? round(((price - past) / past) * 100, 4) : 0;
+  const rsiWindow = closes.slice(-(Math.max(15, horizonMin + 1)));
+  const rsiValue = rsi(rsiWindow, Math.min(14, Math.max(5, rsiWindow.length - 1)));
+  const fast = sma(closes, Math.min(3, closes.length));
+  const slow = sma(closes, Math.min(Math.max(6, Math.floor(horizonMin / 2)), closes.length));
+  const avgVolume = volumes.length ? volumes.reduce((sum, value) => sum + value, 0) / volumes.length : 0;
+  const lastVolume = volumes.at(-1) || 0;
+  const volumeHot = avgVolume > 0 && lastVolume > avgVolume * 1.25;
+
+  let buy = 0;
+  let sell = 0;
+  if (momentumPercent >= 0.08) buy += 2;
+  else if (momentumPercent <= -0.08) sell += 2;
+  else if (momentumPercent >= 0.03) buy += 1;
+  else if (momentumPercent <= -0.03) sell += 1;
+
+  if (rsiValue != null && rsiValue <= 32) buy += 2;
+  else if (rsiValue != null && rsiValue >= 68) sell += 2;
+  else if (rsiValue != null && rsiValue <= 42) buy += 1;
+  else if (rsiValue != null && rsiValue >= 58) sell += 1;
+
+  if (fast != null && slow != null) {
+    if (fast > slow * 1.0004) buy += 1;
+    if (fast < slow * 0.9996) sell += 1;
+  }
+  if (volumeHot && momentumPercent > 0) buy += 1;
+  if (volumeHot && momentumPercent < 0) sell += 1;
+
+  let action: BtcSignalAction = "HOLD";
+  if (buy >= 3 && buy > sell + 1) action = "BUY";
+  else if (sell >= 3 && sell > buy + 1) action = "SELL";
+
+  const agreement = Math.abs(buy - sell);
+  let confidence = 38 + agreement * 9 + (volumeHot ? 6 : 0) + Math.min(12, Math.abs(momentumPercent) * 40);
+  if (action === "HOLD") confidence = Math.min(confidence, 52);
+  // Cap confidence: short-horizon crypto is noisy; IRIS never claims certainty.
+  confidence = Math.max(22, Math.min(78, Math.round(confidence)));
+
+  const actionEs = action === "BUY" ? "COMPRA" : action === "SELL" ? "VENTA" : "ESPERAR";
+  const actionEn = action === "BUY" ? "BUY" : action === "SELL" ? "SELL" : "HOLD";
+  const mom = `${momentumPercent >= 0 ? "+" : ""}${momentumPercent.toFixed(2)}%`;
+  return {
+    horizonMin,
+    action,
+    confidence,
+    momentumPercent,
+    rsi: rsiValue,
+    price,
+    rationale: {
+      es: `${horizonMin} min · ${actionEs} (${confidence}% confianza modelo). Momentum ${mom}, RSI ${rsiValue ?? "—"}. Lectura de cinta 1m, no una garantía.`,
+      en: `${horizonMin} min · ${actionEn} (${confidence}% model confidence). Momentum ${mom}, RSI ${rsiValue ?? "—"}. 1m tape reading, not a guarantee.`,
+    },
+  };
+}
+
+export function buildBtcSignalBoard(bars: MarketBar[], quote: Pick<MarketQuote, "price" | "currency" | "live" | "asOf">): BtcSignalBoard {
+  const signals = BTC_HORIZONS_MIN.map(horizon => horizonSignalFromBars(bars, horizon));
+  return {
+    symbol: BTC_SIGNAL_SYMBOL,
+    updatedAt: new Date(quote.asOf || Date.now()).toISOString(),
+    live: quote.live,
+    price: quote.price,
+    currency: quote.currency || "USD",
+    signals,
+    disclaimer: {
+      es: "Señales probabilísticas sobre cinta Yahoo 1m. No son consejo financiero ni predicción segura. IRIS no compra ni vende hasta que tú apruebes.",
+      en: "Probabilistic signals on Yahoo 1m tape. Not financial advice and not a sure prediction. IRIS does not buy or sell until you approve.",
+    },
+  };
+}
+
+export async function fetchBtcHorizonSignals(): Promise<BtcSignalBoard> {
+  return cached("btc-horizon-signals", LIVE_CHART_TTL_MS, async () => {
+    const chart = await fetchMarketChart(BTC_SIGNAL_SYMBOL, "1d");
+    return buildBtcSignalBoard(chart.bars, chart.quote);
+  });
+}
+
+export function formatBtcSignalsAnswer(board: BtcSignalBoard, language: "es" | "en") {
   const es = language === "es";
+  const lines = board.signals.map(signal => es ? signal.rationale.es : signal.rationale.en);
+  return es
+    ? `IRIS BTC en vivo · ${formatMoney(board.price, board.currency)}. ${lines.join(" ")} ${board.disclaimer.es}`
+    : `IRIS live BTC · ${formatMoney(board.price, board.currency)}. ${lines.join(" ")} ${board.disclaimer.en}`;
+}
+
+export function marketAnswer(question: string, language: "es" | "en", board: MarketBoard, chart?: { quote: MarketQuote; analysis: MarketAnalysis } | null, btcSignals?: BtcSignalBoard | null) {
+  const es = language === "es";
+  if (btcSignals && (isBtcSignalQuestion(question) || extractTicker(question) === BTC_SIGNAL_SYMBOL)) {
+    return formatBtcSignalsAnswer(btcSignals, language);
+  }
   if (chart) {
     return `${es ? "IRIS en la bolsa." : "IRIS on the market."} ${teachChart(chart.quote, chart.analysis, language)} ${ideaCopy(chart.quote, chart.analysis, language).reason}`;
   }

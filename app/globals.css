@@ -568,6 +568,26 @@ a { color: inherit; }
 .market-index.up .chg,.market-tick.up .chg,.market-row.up .chg,.chg.up,.market-idea .chg.up{color:#5ee0a6}
 .market-index.down .chg,.market-tick.down .chg,.market-row.down .chg,.chg.down,.market-idea .chg.down{color:#ff8f99}
 .market-index.active,.market-tick.active,.market-row.active,.market-idea.active{background:#0c3144;box-shadow:inset 0 -2px 0 #16bde7}
+.btc-signal-rail{display:flex;flex-direction:column;gap:8px;margin:0;padding:10px 12px;border:1px solid #2a5533;border-radius:8px;background:#07180f}
+.btc-signal-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.btc-signal-head strong{color:#d5f0c6;font-size:12px;letter-spacing:.04em}
+.btc-signal-head span{color:#9ee08b;font-size:11px;font-variant-numeric:tabular-nums}
+.btc-signal-head button{margin-left:auto;min-height:28px;padding:0 10px;border:1px solid #3a6a2d;border-radius:6px;background:#0d2638;color:#9be7ff;font-size:9px;font-weight:800}
+.btc-signal-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.btc-signal{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;gap:2px 8px;align-items:center;padding:8px 10px;border:1px solid #2a5533;border-radius:6px;background:#04110a;color:inherit;text-align:left;cursor:pointer}
+.btc-signal b{color:#8fbf7a;font-size:10px}
+.btc-signal strong{grid-column:2;font-size:13px;letter-spacing:.04em}
+.btc-signal em{grid-column:3;grid-row:1/span 2;color:#5ee0a6;font-size:18px;font-style:normal;font-variant-numeric:tabular-nums}
+.btc-signal small{grid-column:2;color:#7f96a8;font-size:8px;text-transform:uppercase}
+.btc-signal .chg{grid-column:1;font-size:10px}
+.btc-signal.buy{border-color:#2f8a62}
+.btc-signal.sell{border-color:#8a3a46}
+.btc-signal.sell em{color:#ff8f99}
+.btc-signal.hold{border-color:#67512f}
+.btc-signal.hold em{color:#e9b55d}
+.btc-signal-empty,.btc-signal-note{margin:0;color:#b7d7a6;font-size:10px;line-height:1.45}
+.btc-signal-note{color:#8fbf7a}
+@media(max-width:760px){.btc-signal-grid{grid-template-columns:1fr}.btc-signal-head button{margin-left:0;width:100%}}
 .market-tape{display:flex;overflow-x:auto;margin:0;border:1px solid #1d3b50;border-radius:6px;background:#06141f;scrollbar-width:thin}
 .market-tick{flex:0 0 auto;display:flex;flex-direction:row;align-items:center;gap:8px;min-height:32px;padding:0 12px;border:0;border-right:1px solid #163246;border-radius:0;background:transparent;color:inherit;font:inherit;text-align:left;white-space:nowrap;cursor:pointer}
 .market-tick b{color:#8aa0b2;font-size:10px;letter-spacing:.06em}

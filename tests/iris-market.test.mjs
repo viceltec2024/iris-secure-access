@@ -4,8 +4,12 @@ import test from "node:test";
 import {
   analyzeSeries,
   briefingFromBoard,
+  buildBtcSignalBoard,
   chartUrl,
   extractTicker,
+  formatBtcSignalsAnswer,
+  horizonSignalFromBars,
+  isBtcSignalQuestion,
   isMarketQuestion,
   parseChartPayload,
   rsi,
@@ -96,4 +100,36 @@ test("live market desk is a dense trading watchlist, not stacked cards", () => {
   assert.doesNotMatch(css, /\.market-chart-card svg\{width:100%;height:168px\}/);
   assert.doesNotMatch(panel, /Live reading of /);
   assert.match(panel, /El gráfico se mueve solo/);
+  assert.match(panel, /btc-signal-rail/);
+  assert.match(panel, /view=btc-signals/);
+  assert.match(css, /\.btc-signal-rail\{/);
+});
+
+test("BTC horizon signals stay probabilistic and never claim certainty", () => {
+  assert.equal(isBtcSignalQuestion("predice bitcoin a 15 minutos"), true);
+  assert.equal(isBtcSignalQuestion("señales de compra btc"), true);
+  assert.equal(isMarketQuestion("señales bitcoin 5 15 30"), true);
+  const rising = Array.from({ length: 40 }, (_, index) => {
+    const close = 100 + index * 0.4;
+    return { time: index * 60_000, open: close - 0.1, high: close + 0.2, low: close - 0.2, close, volume: 1000 + index * 50 };
+  });
+  const buyish = horizonSignalFromBars(rising, 15);
+  assert.equal(buyish.horizonMin, 15);
+  assert.ok(buyish.confidence <= 78);
+  assert.ok(buyish.confidence >= 22);
+  assert.match(buyish.rationale.es, /no una garantía/i);
+  const falling = Array.from({ length: 40 }, (_, index) => {
+    const close = 120 - index * 0.45;
+    return { time: index * 60_000, open: close + 0.1, high: close + 0.2, low: close - 0.2, close, volume: 2000 + index * 40 };
+  });
+  const sellish = horizonSignalFromBars(falling, 5);
+  assert.ok(["SELL", "HOLD"].includes(sellish.action));
+  const board = buildBtcSignalBoard(rising, { price: rising.at(-1).close, currency: "USD", live: true, asOf: Date.now() });
+  assert.equal(board.signals.length, 3);
+  assert.deepEqual(board.signals.map(item => item.horizonMin), [5, 15, 30]);
+  assert.match(board.disclaimer.es, /No son consejo financiero/);
+  assert.match(formatBtcSignalsAnswer(board, "es"), /IRIS BTC en vivo/);
+  const route = readFileSync(new URL("../app/api/iris-market/route.ts", import.meta.url), "utf8");
+  assert.match(route, /btc-signals/);
+  assert.match(route, /fetchBtcHorizonSignals/);
 });

@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MagnifyingGlass, Pulse, Wallet } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
-import { LIVE_REFRESH_MS, type MarketAnalysis, type MarketBar, type MarketBoard, type MarketQuote, type MarketRange } from "../../lib/iris-market";
+import { LIVE_REFRESH_MS, type BtcSignalBoard, type MarketAnalysis, type MarketBar, type MarketBoard, type MarketQuote, type MarketRange } from "../../lib/iris-market";
 
 type LiveTape = { updatedAt: string; live: boolean; quotes: MarketQuote[] };
 type LiveChart = { quote: MarketQuote; bars: MarketBar[]; analysis: MarketAnalysis; live?: boolean };
@@ -80,6 +80,7 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Array<{ symbol: string; name: string }>>([]);
   const [flashes, setFlashes] = useState<Record<string, "flash-up" | "flash-down">>({});
+  const [btcSignals, setBtcSignals] = useState<BtcSignalBoard | null>(null);
   const previous = useRef<Record<string, number>>({});
 
   useEffect(() => {
@@ -89,11 +90,16 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
       setTape(data as LiveTape);
     }).catch(() => undefined);
     const loadBoard = () => void fetch(`/api/iris-market?view=board&language=${language}`, { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => { if (active && data?.quotes) setBoard(data as MarketBoard); }).catch(() => undefined);
+    const loadBtc = () => void fetch("/api/iris-market?view=btc-signals", { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => {
+      if (active && data?.signals) setBtcSignals(data as BtcSignalBoard);
+    }).catch(() => undefined);
     loadTape();
     loadBoard();
+    loadBtc();
     const tapeTimer = window.setInterval(loadTape, LIVE_REFRESH_MS);
     const boardTimer = window.setInterval(loadBoard, LIVE_REFRESH_MS);
-    return () => { active = false; window.clearInterval(tapeTimer); window.clearInterval(boardTimer); };
+    const btcTimer = window.setInterval(loadBtc, LIVE_REFRESH_MS);
+    return () => { active = false; window.clearInterval(tapeTimer); window.clearInterval(boardTimer); window.clearInterval(btcTimer); };
   }, [language]);
 
   useEffect(() => {
@@ -147,6 +153,27 @@ export default function IrisMarketPanel({ language, onOpenPurchases }: { languag
       </div>
     </header>
     <p className="market-briefing">{board?.briefing[language] || tape && (es ? "IRIS está leyendo la cinta en vivo." : "IRIS is reading the live tape.") || (es ? "Conectando IRIS a la bolsa…" : "Connecting IRIS to the market…")}</p>
+
+    <div className="btc-signal-rail" aria-label={es ? "Señales Bitcoin 5 15 30 minutos" : "Bitcoin signals 5 15 30 minutes"}>
+      <div className="btc-signal-head">
+        <strong>{es ? "BTC · señales 5 / 15 / 30 min" : "BTC · 5 / 15 / 30 min signals"}</strong>
+        <span>{btcSignals ? `${btcSignals.price.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${btcSignals.currency}` : "…"}{btcSignals?.live ? " · LIVE" : ""}</span>
+        <button type="button" onClick={() => setSymbol("BTC-USD")}>{es ? "Ver gráfico BTC" : "Open BTC chart"}</button>
+      </div>
+      <div className="btc-signal-grid">
+        {(btcSignals?.signals || []).map(signal => (
+          <button key={signal.horizonMin} type="button" className={`btc-signal ${signal.action.toLowerCase()}`} onClick={() => setSymbol("BTC-USD")}>
+            <b>{signal.horizonMin}m</b>
+            <strong>{es ? (signal.action === "BUY" ? "COMPRA" : signal.action === "SELL" ? "VENTA" : "ESPERAR") : signal.action}</strong>
+            <em>{signal.confidence}%</em>
+            <small>{es ? "confianza modelo" : "model confidence"}</small>
+            <span className={`chg ${signal.momentumPercent >= 0 ? "up" : "down"}`}>{signed(signal.momentumPercent)}</span>
+          </button>
+        ))}
+        {!btcSignals && <p className="btc-signal-empty">{es ? "Calculando señales BTC en vivo…" : "Computing live BTC signals…"}</p>}
+      </div>
+      <p className="btc-signal-note">{btcSignals ? (es ? btcSignals.disclaimer.es : btcSignals.disclaimer.en) : (es ? "Lectura probabilística sobre cinta 1m. Sin orden automática." : "Probabilistic 1m-tape reading. No automatic order.")}</p>
+    </div>
 
     <div className="market-tape" role="list" aria-label={es ? "Cinta de precios" : "Price tape"}>
       {(tape?.quotes || []).map(quote => <button key={quote.symbol} type="button" role="listitem" className={`market-tick ${tone(quote.changePercent)} ${symbol === quote.symbol ? "active" : ""} ${flashes[quote.symbol] || ""}`} onClick={() => setSymbol(quote.symbol)}>
