@@ -1,7 +1,7 @@
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
-import { fetchLiveTape, fetchMarketBoard, fetchMarketChart, isMarketRange, isMarketSymbol, normalizeMarketSymbol, searchMarket } from "../../../lib/iris-market";
+import { fetchBtcHorizonSignals, fetchLiveTape, fetchMarketBoard, fetchMarketChart, isMarketRange, isMarketSymbol, normalizeMarketSymbol, searchMarket } from "../../../lib/iris-market";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +40,9 @@ export async function GET(request: Request) {
     if (view === "search") {
       const query = (url.searchParams.get("q") || "").trim();
       return Response.json({ results: await searchMarket(query) }, { headers: liveHeaders });
+    }
+    if (view === "btc-signals") {
+      return Response.json(await fetchBtcHorizonSignals(), { headers: liveHeaders });
     }
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Live market feed unavailable" }, { status: 502 });

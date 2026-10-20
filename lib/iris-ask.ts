@@ -6,7 +6,7 @@ import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
 import { liveWorkers } from "./iris-live-soc.ts";
 import { irisMindAnswer } from "./iris-mind.ts";
 import { isMuseConfigured } from "./iris-muse.ts";
-import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "./iris-market.ts";
+import { briefingFromBoard, extractTicker, fetchBtcHorizonSignals, fetchLiveTape, fetchMarketChart, isBtcSignalQuestion, isMarketQuestion, marketAnswer } from "./iris-market.ts";
 import { parsePurchaseDesk } from "./iris-purchases.ts";
 import type { IrisIncidentContext } from "./iris-local-analyst.ts";
 
@@ -84,9 +84,11 @@ export async function resolveIrisAsk(input: {
   if (isMarketQuestion(question)) {
     try {
       const ticker = extractTicker(question);
-      const [tape, chart] = await Promise.all([
+      const wantBtcSignals = isBtcSignalQuestion(question) || ticker === "BTC-USD";
+      const [tape, chart, btcSignals] = await Promise.all([
         fetchLiveTape(),
         ticker ? fetchMarketChart(ticker, "1d").catch(() => null) : Promise.resolve(null),
+        wantBtcSignals ? fetchBtcHorizonSignals().catch(() => null) : Promise.resolve(null),
       ]);
       const board = {
         updatedAt: tape.updatedAt,
@@ -95,7 +97,7 @@ export async function resolveIrisAsk(input: {
         ideas: [],
         briefing: briefingFromBoard(tape.quotes, []),
       };
-      return { answer: marketAnswer(question, input.language, board, chart), source: "live-market" as const, model: "iris-jar-live", ticker: ticker || "" };
+      return { answer: marketAnswer(question, input.language, board, chart, btcSignals), source: "live-market" as const, model: "iris-jar-live", ticker: ticker || (wantBtcSignals ? "BTC-USD" : "") };
     } catch {
       const tape = await fetchLiveTape().catch(() => null);
       if (tape?.quotes.length) {
