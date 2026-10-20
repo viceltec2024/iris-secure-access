@@ -3,7 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { agentRequestNonces, appSettings, devices, incidentStates, remediationPlans, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
 import { queueAgentCommands } from "../../../lib/iris-agent-commands";
-import { type AgentTelemetry, deviceView } from "../../../lib/iris-device-view";
+import { type AgentTelemetry, deviceView, normalizeDevicePlatform } from "../../../lib/iris-device-view";
 import { commandsForAlert } from "../../../lib/iris-live-soc";
 import { irisReconnectOrigin } from "../../../lib/iris-origin";
 import { listRecentAudit, logAudit, provisionIrisUser } from "../../../lib/authz";
@@ -76,8 +76,9 @@ export async function POST(request: Request) {
     return Response.json({ device: deviceView(updated) });
   }
   if (body.type !== "device_enrollment") return Response.json({ error: "Unsupported request" }, { status: 400 });
-  const name = String(body.name || "My Mac").trim().slice(0, 80);
-  const platform = String(body.platform || "macOS").trim().slice(0, 40);
+  const platform = normalizeDevicePlatform(body.platform);
+  const defaultName = platform === "Windows" ? "My Windows PC" : "My Mac";
+  const name = String(body.name || defaultName).trim().slice(0, 80) || defaultName;
   const id = crypto.randomUUID();
   const enrollmentCode = crypto.randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase();
   const [created] = await getDb().insert(devices).values({ id, ownerEmail: user.email, name, platform, enrollmentCode }).returning();

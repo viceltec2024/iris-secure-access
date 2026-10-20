@@ -95,14 +95,17 @@ test("offline Macs show a reconnect command for this IRIS instance", () => {
   const sidebar = readFileSync(new URL("../app/dashboard/security-operations.tsx", import.meta.url), "utf8");
   const page = readFileSync(new URL("../app/dashboard/page.tsx", import.meta.url), "utf8");
   assert.match(sidebar, /Reconectar Mac/);
+  assert.match(sidebar, /Reconectar Windows/);
+  assert.match(sidebar, /Registrar Windows/);
   assert.match(sidebar, /ops-reconnect/);
-  assert.match(sidebar, /irisAgentShellCommand/);
+  assert.match(sidebar, /irisAgentInstallCommand/);
   assert.match(sidebar, /irisReconnectOrigin/);
   assert.match(sidebar, /liveSocMetrics/);
   assert.match(sidebar, /stale-telemetry/);
-  assert.match(sidebar, /IRIS_AGENT_SCRIPT_VERSION/);
+  assert.match(sidebar, /irisAgentDownloadPath/);
   assert.match(page, /initialDevices=\{bootstrap\.devices\}/);
   assert.match(page, /dashboardDeviceBootstrap/);
+  assert.doesNotMatch(sidebar, /irisAgentInstallCommand\(pageOrigin/);
   assert.doesNotMatch(sidebar, /irisAgentShellCommand\(pageOrigin/);
 });
 

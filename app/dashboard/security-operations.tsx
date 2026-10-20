@@ -11,8 +11,8 @@ import IrisMissionPanel from "./iris-mission-panel";
 import IrisOrgPanel from "./iris-org-panel";
 import { Language, severityLabel, text } from "./dashboard-i18n";
 import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase } from "../../lib/iris-live-soc";
-import { IRIS_AGENT_SCRIPT_VERSION, irisAgentShellCommand } from "../../lib/iris-device-view";
-import { macAgentPrepSteps } from "../../lib/iris-mac-prep";
+import { irisAgentDownloadPath, irisAgentInstallCommand, isWindowsPlatform } from "../../lib/iris-device-view";
+import { deviceAgentPrepSteps } from "../../lib/iris-device-prep";
 import { irisReconnectOrigin } from "../../lib/iris-origin";
 import { formatUtcClock } from "../../lib/iris-time";
 
@@ -196,7 +196,9 @@ export default function SecurityOperations({
   const newAlerts = alerts.filter(alert => alert.status === "NEW" && onlineDevices.some(device => device.id === alert.deviceId));
   const reconnectOrigin = irisReconnectOrigin(pageOrigin, agentOrigin || process.env.IRIS_PUBLIC_ORIGIN || "");
   const waitingDevice = devices.find(device => device.status !== "ONLINE");
-  const reconnectCommand = waitingDevice ? irisAgentShellCommand(reconnectOrigin, waitingDevice.status !== "PENDING") : "";
+  const reconnectCommand = waitingDevice
+    ? irisAgentInstallCommand(reconnectOrigin, waitingDevice.platform, waitingDevice.status !== "PENDING")
+    : "";
   const t = (key: Parameters<typeof text>[0]) => text(key, language);
   const localized = (incident: Incident): Incident => incident;
   const connectionLine = liveConnectionLine({ online: metrics.onlineCount, devices: metrics.deviceCount, openAlerts: activeAlerts.length, wallet: wallet.connected, language });
@@ -232,19 +234,38 @@ export default function SecurityOperations({
   }
 
   async function copyReconnectCommand(device: Device) {
-    const command = irisAgentShellCommand(reconnectOrigin, device.status !== "PENDING");
+    const command = irisAgentInstallCommand(reconnectOrigin, device.platform, device.status !== "PENDING");
+    const win = isWindowsPlatform(device.platform);
     try {
       await navigator.clipboard.writeText(command);
       setCopiedDeviceId(device.id);
       window.setTimeout(() => setCopiedDeviceId(current => current === device.id ? null : current), 5000);
     } catch {
-      window.prompt(language === "es" ? "Copia este comando y pégalo en Terminal en tu Mac:" : "Copy this command and paste it in Terminal on your Mac:", command);
+      window.prompt(
+        language === "es"
+          ? (win ? "Copia este comando y pégalo en PowerShell en tu Windows:" : "Copia este comando y pégalo en Terminal en tu Mac:")
+          : (win ? "Copy this command and paste it in PowerShell on Windows:" : "Copy this command and paste it in Terminal on your Mac:"),
+        command,
+      );
     }
   }
 
-  async function createDeviceEnrollment() {
+  async function createDeviceEnrollment(platform: "macOS" | "Windows") {
     setCreatingDevice(true);
-    try { const response = await fetch("/api/security-state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "device_enrollment", name: "My Mac", platform: "macOS" }) }); const data = await response.json() as { device?: Device }; if (response.ok && data.device) setDevices(current => [data.device!, ...current]); } finally { setCreatingDevice(false); }
+    try {
+      const name = platform === "Windows"
+        ? (language === "es" ? "Mi PC Windows" : "My Windows PC")
+        : (language === "es" ? "Mi Mac" : "My Mac");
+      const response = await fetch("/api/security-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "device_enrollment", name, platform }),
+      });
+      const data = await response.json() as { device?: Device };
+      if (response.ok && data.device) setDevices(current => [data.device!, ...current]);
+    } finally {
+      setCreatingDevice(false);
+    }
   }
 
   async function rotateEnrollmentCode(deviceId: string) {
@@ -340,8 +361,20 @@ export default function SecurityOperations({
 
       {waitingDevice && reconnectCommand && <section className="ops-reconnect">
         <div>
-          <strong>{waitingDevice.status === "OFFLINE" ? (language === "es" ? "Mac inscrito, sin reporte fresco" : "Mac enrolled, no fresh report") : (language === "es" ? "Instala el agente en tu Mac" : "Install the agent on your Mac")}</strong>
-          <p>{language === "es" ? "Pega este comando en Terminal en tu Mac. IRIS no puede encender el agente desde el navegador. El comando apunta a esta IRIS pública, no a 127.0.0.1." : "Paste this command in Terminal on your Mac. IRIS cannot start the agent from the browser. The command points at this public IRIS, not 127.0.0.1."}</p>
+          <strong>{waitingDevice.status === "OFFLINE"
+            ? (language === "es"
+              ? (isWindowsPlatform(waitingDevice.platform) ? "Windows inscrito, sin reporte fresco" : "Mac inscrito, sin reporte fresco")
+              : (isWindowsPlatform(waitingDevice.platform) ? "Windows enrolled, no fresh report" : "Mac enrolled, no fresh report"))
+            : (language === "es"
+              ? (isWindowsPlatform(waitingDevice.platform) ? "Instala el agente en tu Windows" : "Instala el agente en tu Mac")
+              : (isWindowsPlatform(waitingDevice.platform) ? "Install the agent on Windows" : "Install the agent on your Mac"))}</strong>
+          <p>{language === "es"
+            ? (isWindowsPlatform(waitingDevice.platform)
+              ? "Pega este comando en PowerShell. IRIS no puede encender el agente desde el navegador. El comando apunta a esta IRIS pública, no a 127.0.0.1."
+              : "Pega este comando en Terminal en tu Mac. IRIS no puede encender el agente desde el navegador. El comando apunta a esta IRIS pública, no a 127.0.0.1.")
+            : (isWindowsPlatform(waitingDevice.platform)
+              ? "Paste this command in PowerShell. IRIS cannot start the agent from the browser. The command points at this public IRIS, not 127.0.0.1."
+              : "Paste this command in Terminal on your Mac. IRIS cannot start the agent from the browser. The command points at this public IRIS, not 127.0.0.1.")}</p>
         </div>
         <code className="reconnect-command">{reconnectCommand}</code>
         <div className="ops-reconnect-actions">
@@ -429,24 +462,36 @@ export default function SecurityOperations({
       {section === "approvals" && <section className="module-panel approvals-view"><div className="module-toolbar"><div><h2>{t("pendingApprovals")}</h2><p>{t("approvalExplain")}</p></div><span className="audit-total">{open}</span></div><div className="approval-queue">{incidents.filter(i => i.status !== "Contained").map(i => { const v=localized(i); return <article key={i.id}><span className={`severity ${i.severity.toLowerCase()}`}><Warning weight="fill" /></span><div><strong>{v.title}</strong><p>{i.id} · {i.subject}</p><small>{v.actions.length} {language === "es" ? "acciones propuestas" : "proposed actions"}</small></div><button onClick={() => { selectIncident(i); setApprovalOpen(true); }}>{t("review")}</button></article>})}{open === 0 && <p className="empty-approvals"><CheckCircle weight="fill" />{t("noPending")}</p>}</div></section>}
 
       {section === "devices" && <section className="module-panel devices-view">
-        <div className="module-toolbar"><div><h2>{language === "es" ? "Protección real de dispositivos" : "Real device protection"}</h2><p>{language === "es" ? "IRIS verifica controles, aplicaciones y cambios mediante el agente autorizado." : "IRIS verifies controls, applications, and changes through the authorized agent."}</p></div><button className="add-device" onClick={createDeviceEnrollment} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar mi Mac" : "Register my Mac")}</button></div>
-        {devices.length === 0 && <div className="mac-prep-checklist" aria-label={language === "es" ? "Preparación del agente Mac" : "Mac agent preparation"}>
-          <h3>{language === "es" ? "Preparación del agente Mac (telemetría real)" : "Mac agent preparation (real telemetry)"}</h3>
+        <div className="module-toolbar">
+          <div>
+            <h2>{language === "es" ? "Protección real de dispositivos" : "Real device protection"}</h2>
+            <p>{language === "es" ? "IRIS verifica controles mediante agentes autorizados en Mac y Windows. Sin check-in real no hay ONLINE." : "IRIS verifies controls through authorized Mac and Windows agents. No real check-in means no ONLINE."}</p>
+          </div>
+          <div className="device-enroll-actions">
+            <button className="add-device" onClick={() => void createDeviceEnrollment("macOS")} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar Mac" : "Register Mac")}</button>
+            <button className="add-device" onClick={() => void createDeviceEnrollment("Windows")} disabled={creatingDevice}><Plus />{creatingDevice ? (language === "es" ? "Creando…" : "Creating…") : (language === "es" ? "Registrar Windows" : "Register Windows")}</button>
+          </div>
+        </div>
+        {devices.length === 0 && <div className="mac-prep-checklist" aria-label={language === "es" ? "Preparación del agente" : "Agent preparation"}>
+          <h3>{language === "es" ? "Preparación del agente (Mac o Windows)" : "Agent preparation (Mac or Windows)"}</h3>
           <p>{language === "es" ? "Sin check-in real el dispositivo no aparece ONLINE. IRIS no inventa agentes conectados." : "Without a real check-in the device will not show ONLINE. IRIS does not invent connected agents."}</p>
-          <ol>{macAgentPrepSteps(language).map(step => <li key={step.id}><strong>{step.title}</strong><span>{step.detail}</span><em>{language === "es" ? "Listo cuando: " : "Done when: "}{step.doneWhen}</em></li>)}</ol>
+          <ol>{deviceAgentPrepSteps("any", language).map(step => <li key={step.id}><strong>{step.title}</strong><span>{step.detail}</span><em>{language === "es" ? "Listo cuando: " : "Done when: "}{step.doneWhen}</em></li>)}</ol>
         </div>}
-        <div className="device-grid">{devices.map(device => <article key={device.id}>
+        <div className="device-grid">{devices.map(device => {
+          const win = isWindowsPlatform(device.platform);
+          const installCmd = irisAgentInstallCommand(reconnectOrigin, device.platform, device.status !== "PENDING");
+          return <article key={device.id}>
           <div className="device-card-head"><div className="device-icon"><Desktop weight="duotone" /></div><div><strong>{device.name}</strong><span>{device.telemetry?.hostname || device.platform}</span></div><b className={`provenance-badge ${device.provenance.toLowerCase()}`}>{device.provenance === "REAL" ? "REAL" : (language === "es" ? "NO VERIFICADO" : "UNVERIFIED")}</b></div>
           <div className="device-status-line"><b className={`device-state ${device.status.toLowerCase()}`}>{device.status === "PENDING" ? (language === "es" ? "PENDIENTE" : "PENDING") : device.status}</b><strong>{language === "es" ? "Salud" : "Health"}: {device.status === "ONLINE" ? `${device.healthScore ?? "—"}${device.healthScore !== null ? "/100" : ""}` : (language === "es" ? "sin reporte fresco" : "no fresh report")}</strong></div>
           {device.status !== "ONLINE" && device.telemetry && <p className="stale-telemetry"><Warning weight="fill" />{language === "es" ? "Los controles de abajo son del último reporte. No son el estado actual hasta que el agente vuelva a conectar." : "The controls below are from the last report. They are not current until the agent reports again."}</p>}
           <dl className={`security-controls${device.status === "ONLINE" ? "" : " stale"}`}>
             <div><dt>Firewall</dt><dd>{controlMark(device.telemetry?.firewallEnabled)}</dd></div>
-            <div><dt>Gatekeeper</dt><dd>{controlMark(device.telemetry?.gatekeeperEnabled)}</dd></div>
-            <div><dt>FileVault</dt><dd>{controlMark(device.telemetry?.fileVaultEnabled)}</dd></div>
-            <div><dt>SIP</dt><dd>{controlMark(device.telemetry?.sipEnabled)}</dd></div>
+            <div><dt>{win ? "SmartScreen / Defender RT" : "Gatekeeper"}</dt><dd>{controlMark(device.telemetry?.gatekeeperEnabled)}</dd></div>
+            <div><dt>{win ? "BitLocker" : "FileVault"}</dt><dd>{controlMark(device.telemetry?.fileVaultEnabled)}</dd></div>
+            {!win && <div><dt>SIP</dt><dd>{controlMark(device.telemetry?.sipEnabled)}</dd></div>}
             <div><dt>{language === "es" ? "Actualizaciones" : "Updates"}</dt><dd>{controlMark(device.telemetry?.automaticUpdatesEnabled)}</dd></div>
             <div><dt>{language === "es" ? "Aplicaciones" : "Applications"}</dt><dd>{device.telemetry?.installedApplicationCount ?? "—"}</dd></div>
-            <div><dt>XProtect</dt><dd>{controlMark(device.telemetry?.xProtectPresent)} {device.telemetry?.xProtectVersion && device.telemetry.xProtectVersion !== "unknown" ? device.telemetry.xProtectVersion : ""}</dd></div>
+            <div><dt>{win ? "Defender" : "XProtect"}</dt><dd>{controlMark(device.telemetry?.xProtectPresent)} {device.telemetry?.xProtectVersion && device.telemetry.xProtectVersion !== "unknown" ? device.telemetry.xProtectVersion : ""}</dd></div>
             <div><dt>{language === "es" ? "Eliminación malware" : "Malware removal"}</dt><dd>{controlMark(device.telemetry?.malwareRemovalToolPresent)}</dd></div>
             <div><dt>{language === "es" ? "Ítems de inicio" : "Startup items"}</dt><dd>{device.telemetry?.persistenceItemCount ?? "—"}</dd></div>
             <div><dt>{language === "es" ? "Último reporte" : "Last report"}</dt><dd>{device.lastSeenAt ? formatUtcClock(device.lastSeenAt) : (language === "es" ? "Nunca" : "Never")}</dd></div>
@@ -458,10 +503,25 @@ export default function SecurityOperations({
           {!!device.telemetry?.unsignedPersistenceItems?.length && <div className="security-findings"><strong>{language === "es" ? "PROGRAMAS DE INICIO SIN FIRMA" : "UNSIGNED STARTUP PROGRAMS"}</strong>{device.telemetry.unsignedPersistenceItems.map(item => <span key={item}><Warning weight="fill" />{item}</span>)}</div>}
           {!!device.telemetry?.trustedApplications?.length && <div className="trusted-apps"><strong>{language === "es" ? "APLICACIONES APROBADAS" : "APPROVED APPLICATIONS"}</strong><span><CheckCircle weight="fill" />{device.telemetry.trustedApplications.join(", ")}</span></div>}
           <div className="enrollment-code"><span>{language === "es" ? "Código de inscripción" : "Enrollment code"}</span><code>{device.enrollmentCode}</code></div>
-          {device.status !== "ONLINE" && reconnectCommand && <div className="reconnect-box"><p>{device.status === "OFFLINE" ? (language === "es" ? "El agente está inscrito, pero no reporta. Pega este comando en Terminal en tu Mac para reconectar a esta IRIS:" : "The agent is enrolled, but it is not reporting. Paste this command in Terminal on your Mac to reconnect to this IRIS:") : (language === "es" ? "Pega este comando en Terminal en tu Mac e introduce el código de inscripción:" : "Paste this command in Terminal on your Mac and enter the enrollment code:")}</p><code className="reconnect-command">{irisAgentShellCommand(reconnectOrigin, device.status !== "PENDING")}</code></div>}
-          <div className="device-actions">{device.status !== "ONLINE" && <button type="button" className="reconnect-device" onClick={() => void copyReconnectCommand(device)}>{copiedDeviceId === device.id ? <CheckCircle weight="fill" /> : device.status === "OFFLINE" ? <ArrowClockwise weight="bold" /> : <CopySimple weight="bold" />}{copiedDeviceId === device.id ? (language === "es" ? "Comando copiado" : "Command copied") : device.status === "OFFLINE" ? (language === "es" ? "Reconectar Mac" : "Reconnect Mac") : (language === "es" ? "Copiar instalación" : "Copy install command")}</button>}<a href={`/iris-agent-macos.sh?v=${IRIS_AGENT_SCRIPT_VERSION}`} download>{language === "es" ? "Descargar agente cifrado" : "Download encrypted agent"}</a><button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button><button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button></div>
+          {device.status !== "ONLINE" && <div className="reconnect-box">
+            <p>{device.status === "OFFLINE"
+              ? (language === "es"
+                ? (win ? "El agente está inscrito, pero no reporta. Pega este comando en PowerShell para reconectar:" : "El agente está inscrito, pero no reporta. Pega este comando en Terminal en tu Mac:")
+                : (win ? "The agent is enrolled, but it is not reporting. Paste this PowerShell command to reconnect:" : "The agent is enrolled, but it is not reporting. Paste this command in Terminal on your Mac:"))
+              : (language === "es"
+                ? (win ? "Pega este comando en PowerShell e introduce el código de inscripción:" : "Pega este comando en Terminal en tu Mac e introduce el código:")
+                : (win ? "Paste this PowerShell command and enter the enrollment code:" : "Paste this command in Terminal on your Mac and enter the enrollment code:"))}</p>
+            <code className="reconnect-command">{installCmd}</code>
+          </div>}
+          <div className="device-actions">
+            {device.status !== "ONLINE" && <button type="button" className="reconnect-device" onClick={() => void copyReconnectCommand(device)}>{copiedDeviceId === device.id ? <CheckCircle weight="fill" /> : device.status === "OFFLINE" ? <ArrowClockwise weight="bold" /> : <CopySimple weight="bold" />}{copiedDeviceId === device.id ? (language === "es" ? "Comando copiado" : "Command copied") : device.status === "OFFLINE" ? (language === "es" ? (win ? "Reconectar Windows" : "Reconectar Mac") : (win ? "Reconnect Windows" : "Reconnect Mac")) : (language === "es" ? "Copiar instalación" : "Copy install command")}</button>}
+            <a href={irisAgentDownloadPath(device.platform)} download>{language === "es" ? (win ? "Descargar agente Windows" : "Descargar agente Mac") : (win ? "Download Windows agent" : "Download Mac agent")}</a>
+            <button onClick={() => void rotateEnrollmentCode(device.id)}>{language === "es" ? "Generar código nuevo" : "Generate new code"}</button>
+            <button className="delete-device" disabled={deletingDeviceId === device.id} onClick={() => void deleteDevice(device)}><Trash weight="bold" />{deletingDeviceId === device.id ? (language === "es" ? "Eliminando…" : "Deleting…") : (language === "es" ? "Eliminar dispositivo" : "Delete device")}</button>
+          </div>
           <p><Warning weight="fill" />{device.status === "ONLINE" ? (language === "es" ? "Protección real activa. El agente revisa cada 2 minutos." : "Real protection active. The agent checks every 2 minutes.") : device.status === "OFFLINE" ? (language === "es" ? "Alerta: el agente dejó de reportar hace más de 5 minutos. IRIS no puede encenderlo desde el navegador." : "Alert: the agent stopped reporting more than 5 minutes ago. IRIS cannot start it from the browser.") : (language === "es" ? "Instala el agente nuevo para comenzar la protección real." : "Install the new agent to start real protection.")}</p>
-        </article>)}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra tu Mac e instala el agente para comenzar la protección real." : "Register your Mac and install the agent to begin real protection."}</p></div>}</div>
+        </article>;
+        })}{devices.length === 0 && <div className="empty-devices"><Desktop weight="duotone" /><h3>{language === "es" ? "No hay dispositivos conectados" : "No connected devices"}</h3><p>{language === "es" ? "Registra un Mac o un PC Windows e instala el agente para comenzar la protección real." : "Register a Mac or Windows PC and install the agent to begin real protection."}</p></div>}</div>
       </section>}
 
       {section === "intelligence" && <section className="module-panel intelligence-view">

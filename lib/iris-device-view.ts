@@ -1,5 +1,17 @@
 export const ONLINE_WINDOW_MS = 5 * 60 * 1000;
-export const IRIS_AGENT_SCRIPT_VERSION = 36;
+export const IRIS_AGENT_SCRIPT_VERSION = 37;
+
+export type IrisDevicePlatform = "macOS" | "Windows";
+
+export function normalizeDevicePlatform(value: unknown): IrisDevicePlatform {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "windows" || raw === "win32" || raw === "win") return "Windows";
+  return "macOS";
+}
+
+export function isWindowsPlatform(platform: string | null | undefined) {
+  return normalizeDevicePlatform(platform) === "Windows";
+}
 
 export type AgentTelemetry = {
   hostname?: string;
@@ -59,12 +71,28 @@ export function parseJsonRecord(value: string | null | undefined): Record<string
   }
 }
 
+/** @deprecated Prefer irisAgentInstallCommand(origin, platform, enrolled) */
 export function irisAgentShellCommand(origin: string, enrolled: boolean) {
+  return irisAgentInstallCommand(origin, "macOS", enrolled);
+}
+
+export function irisAgentInstallCommand(origin: string, platform: string, enrolled: boolean) {
   const base = origin.replace(/\/$/, "");
-  const script = `${base}/iris-agent-macos.sh?v=${IRIS_AGENT_SCRIPT_VERSION}`;
   const api = `${base}/api/agent/check-in`;
   const action = enrolled ? "reconnect" : "install";
+  if (isWindowsPlatform(platform)) {
+    const script = `${base}/iris-agent-windows.ps1?v=${IRIS_AGENT_SCRIPT_VERSION}`;
+    // PowerShell one-liner: download, unblock, run install/reconnect with IRIS_API_URL.
+    return `$env:IRIS_API_URL=${JSON.stringify(api)}; Invoke-WebRequest -UseBasicParsing ${JSON.stringify(script)} -OutFile "$env:TEMP\\iris-agent-windows.ps1"; Unblock-File "$env:TEMP\\iris-agent-windows.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\iris-agent-windows.ps1" ${action}`;
+  }
+  const script = `${base}/iris-agent-macos.sh?v=${IRIS_AGENT_SCRIPT_VERSION}`;
   return `curl -fsSL ${JSON.stringify(script)} -o /tmp/iris-agent.sh && chmod +x /tmp/iris-agent.sh && IRIS_API_URL=${JSON.stringify(api)} /tmp/iris-agent.sh ${action}`;
+}
+
+export function irisAgentDownloadPath(platform: string) {
+  return isWindowsPlatform(platform)
+    ? `/iris-agent-windows.ps1?v=${IRIS_AGENT_SCRIPT_VERSION}`
+    : `/iris-agent-macos.sh?v=${IRIS_AGENT_SCRIPT_VERSION}`;
 }
 
 export function deviceView(device: DeviceRecord, trustedNames: string[] = [], now = Date.now()) {
