@@ -9,7 +9,7 @@ import IrisCreatorPanel from "./iris-creator-panel";
 import IrisMarketPanel from "./iris-market-panel";
 import IrisMissionPanel from "./iris-mission-panel";
 import IrisOrgPanel from "./iris-org-panel";
-import { Language, text } from "./dashboard-i18n";
+import { Language, severityLabel, text } from "./dashboard-i18n";
 import { buildLiveIncidents, emptyLiveIncident, liveConnectionLine, liveIntelligence, liveSocMetrics, liveWorkers, relativeTime, type LiveIncident, type LivePurchase } from "../../lib/iris-live-soc";
 import { IRIS_AGENT_SCRIPT_VERSION, irisAgentShellCommand } from "../../lib/iris-device-view";
 import { macAgentPrepSteps } from "../../lib/iris-mac-prep";
@@ -412,7 +412,7 @@ export default function SecurityOperations({
       {section === "incidents" && <section className="module-panel">
         <div className="module-toolbar"><div><h2>{t("allIncidents")}</h2><p>{t("selectIncident")}</p></div><div className="filters">{["All","Critical","High","Medium"].map(f => <button className={filter === f ? "active" : ""} onClick={() => setFilter(f)} key={f}>{t((`filter${f}`) as "filterAll")}</button>)}</div></div>
         <div className="module-split"><div className="incident-list expanded">{visible.map(i => { const v=localized(i); return <button key={i.id} className={`incident-row ${selected.id === i.id ? "selected" : ""}`} onClick={() => selectIncident(i)}><span className={`severity ${i.severity.toLowerCase()}`}><Warning weight="fill" /></span><span className="incident-copy"><strong>{v.title}</strong><small>{i.subject} · {v.source}</small></span><span className={`status ${i.status.toLowerCase()}`}>{statusLabel(i.status)}</span><time>{relativeTime(i.time, language)}</time></button>})}{visible.length === 0 && <div className="empty-alerts"><CheckCircle weight="fill" /><h3>{language === "es" ? "Sin incidentes reales" : "No live incidents"}</h3></div>}</div><aside className="module-detail">
-          <div className="detail-heading"><span className={`module-severity ${selected.severity.toLowerCase()}`}>{t((`filter${selected.severity}`) as "filterAll")}</span><span className={`status ${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
+          <div className="detail-heading"><span className={`module-severity ${selected.severity.toLowerCase()}`}>{severityLabel(selected.severity, language)}</span><span className={`status ${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
           <h2>{selectedView.title}</h2><p>{selected.id} · {selected.subject} · {selectedView.source}</p>
           <div className="incident-summary"><strong>{t("whatHappened")}</strong><p>{selectedView.summary}</p></div>
           <div className="detail-facts"><article><span>{t("probableCause")}</span><p>{selectedView.cause}</p></article><article><span>{t("impact")}</span><p>{selectedView.impact}</p></article><article><span>{t("confidence")}</span><b>{selected.confidence}%</b></article></div>

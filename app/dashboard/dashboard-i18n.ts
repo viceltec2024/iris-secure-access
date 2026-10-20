@@ -11,10 +11,23 @@ const copy = {
   pendingApprovals: ["Pending approvals", "Aprobaciones pendientes"], approvalExplain: ["IRIS waits for your authorization before every response action.", "IRIS espera tu autorización antes de cada acción de respuesta."], noPending: ["No actions require approval.", "No hay acciones que requieran aprobación."], review: ["Review", "Revisar"],
   malicious: ["Malicious indicators", "Indicadores maliciosos"], campaigns: ["Active campaigns", "Campañas activas"], blocked: ["Blocked connections", "Conexiones bloqueadas"], hours: ["in 24 hours", "en 24 horas"], sector: ["target your sector", "dirigidas a tu sector"], pastWeek: ["Past 7 days", "Últimos 7 días"], trend: ["Threat activity trend", "Tendencia de amenazas"], techniques: ["Top observed techniques", "Técnicas principales"], latestIndicators: ["Latest indicators", "Indicadores recientes"], liveFeed: ["LIVE FEED", "FUENTE ACTIVA"],
   immutableAudit: ["Immutable audit trail", "Registro de auditoría inmutable"], auditExplain: ["Authentication, investigation, and response actions recorded by IRIS.", "Acciones de autenticación, investigación y respuesta registradas por IRIS."], records: ["records", "registros"], time: ["Time", "Hora"], actor: ["Actor", "Actor"], action: ["Action", "Acción"], resource: ["Resource", "Recurso"], outcome: ["Outcome", "Resultado"],
-  filterAll: ["All", "Todos"], filterCritical: ["Critical", "Crítico"], filterHigh: ["High", "Alto"], filterMedium: ["Medium", "Medio"], statusOpen: ["OPEN", "ABIERTO"], statusInvestigating: ["INVESTIGATING", "EN INVESTIGACIÓN"], statusContained: ["CONTAINED", "CONTENIDO"],
+  filterAll: ["All", "Todos"], filterCritical: ["Critical", "Crítico"], filterHigh: ["High", "Alto"], filterMedium: ["Medium", "Medio"], filterLow: ["Low", "Bajo"], statusOpen: ["OPEN", "ABIERTO"], statusInvestigating: ["INVESTIGATING", "EN INVESTIGACIÓN"], statusContained: ["CONTAINED", "CONTENIDO"],
 } as const;
 
 export type CopyKey = keyof typeof copy;
-export const text = (key: CopyKey, language: Language) => copy[key][language === "en" ? 0 : 1];
+
+/** Safe lookup — never throw if a key is missing (avoids blanking the dashboard overlay). */
+export const text = (key: CopyKey | string, language: Language) => {
+  const entry = (copy as Record<string, readonly [string, string]>)[key];
+  if (!entry) return String(key);
+  return entry[language === "en" ? 0 : 1];
+};
+
+export function severityLabel(severity: string, language: Language) {
+  const normalized = severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase();
+  const key = `filter${normalized}`;
+  const mapped = text(key, language);
+  return mapped === key ? normalized || (language === "es" ? "Desconocida" : "Unknown") : mapped;
+}
 
 export const incidentSpanish: Record<string, { title: string; source: string; summary: string; cause: string; impact: string; evidence: string[]; actions: string[]; recommendation: string }> = {};
