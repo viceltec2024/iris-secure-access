@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { deviceView, irisAgentShellCommand, parseJsonRecord, reportedDeviceStatus } from "../lib/iris-device-view.ts";
+import {
+  deviceView,
+  irisAgentInstallCommand,
+  irisAgentShellCommand,
+  normalizeDevicePlatform,
+  parseJsonRecord,
+  reportedDeviceStatus,
+} from "../lib/iris-device-view.ts";
+import { isPublicAgentPath } from "../lib/iris-origin.ts";
 
 test("broken telemetry JSON does not crash device views", () => {
   assert.deepEqual(parseJsonRecord("{not-json"), {});
@@ -17,10 +25,20 @@ test("stale enrolled Macs are OFFLINE even if the database still says ONLINE", (
 
 test("reconnect command targets this IRIS origin", () => {
   const command = irisAgentShellCommand("https://iris.example", true);
-  assert.match(command, /iris-agent-macos\.sh\?v=36/);
+  assert.match(command, /iris-agent-macos\.sh\?v=37/);
   assert.match(command, /IRIS_API_URL="https:\/\/iris\.example\/api\/agent\/check-in"/);
   assert.match(command, /reconnect$/);
   assert.doesNotMatch(irisAgentShellCommand("https://iris.example", false), /reconnect/);
+});
+
+test("Windows install command uses PowerShell agent", () => {
+  assert.equal(normalizeDevicePlatform("windows"), "Windows");
+  const command = irisAgentInstallCommand("https://iris.example", "Windows", false);
+  assert.match(command, /iris-agent-windows\.ps1\?v=37/);
+  assert.match(command, /IRIS_API_URL/);
+  assert.match(command, /install$/);
+  assert.match(irisAgentInstallCommand("https://iris.example", "Windows", true), /reconnect$/);
+  assert.equal(isPublicAgentPath("/iris-agent-windows.ps1"), true);
 });
 
 test("device health drops when the report is stale", () => {
@@ -42,7 +60,17 @@ test("device health drops when the report is stale", () => {
 test("macOS agent can reconnect to a chosen IRIS URL", () => {
   const source = readFileSync(new URL("../public/iris-agent-macos.sh", import.meta.url), "utf8");
   assert.match(source, /reconnect\) reconnect_agent/);
-  assert.match(source, /IRIS_API_URL/);
+  assert.match(source, /IRIS_API_KEY|IRIS_API_URL/);
   assert.match(source, /api-url/);
   assert.match(source, /kickstart/);
+});
+
+test("Windows agent script supports install reconnect and encrypted check-in", () => {
+  const source = readFileSync(new URL("../public/iris-agent-windows.ps1", import.meta.url), "utf8");
+  assert.match(source, /ValidateSet\("install", "reconnect", "run"/);
+  assert.match(source, /encryptedTelemetry/);
+  assert.match(source, /AES-256-CBC\+HMAC-SHA256/);
+  assert.match(source, /Get-MpComputerStatus|Windows Defender/);
+  assert.match(source, /BitLocker|manage-bde/);
+  assert.doesNotMatch(source, /sipEnabled\s*=\s*\$false/);
 });

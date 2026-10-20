@@ -69,8 +69,8 @@ function cleanTelemetry(input: Telemetry): Telemetry {
   const percent = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : undefined;
   const flag = (value: unknown) => typeof value === "boolean" ? value : undefined;
   return {
-    hostname: String(input.hostname || "Mac").slice(0, 80),
-    osVersion: String(input.osVersion || "macOS").slice(0, 80),
+    hostname: String(input.hostname || "device").slice(0, 80),
+    osVersion: String(input.osVersion || "unknown").slice(0, 80),
     architecture: String(input.architecture || "unknown").slice(0, 20),
     diskUsedPercent: percent(input.diskUsedPercent),
     memoryUsedPercent: percent(input.memoryUsedPercent),
@@ -88,7 +88,12 @@ function cleanTelemetry(input: Telemetry): Telemetry {
     persistenceItemCount: typeof input.persistenceItemCount === "number" ? Math.max(0, Math.min(1000, Math.round(input.persistenceItemCount))) : undefined,
     persistenceInventoryHash: String(input.persistenceInventoryHash || "").replace(/[^a-f0-9]/gi, "").slice(0, 64) || undefined,
     unsignedPersistenceItems: Array.isArray(input.unsignedPersistenceItems) ? input.unsignedPersistenceItems.slice(0, 20).map(name => String(name).slice(0, 120)) : [],
-    threatLocations: Array.isArray(input.threatLocations) ? input.threatLocations.slice(0, 30).map(path => String(path).slice(0, 300)).filter(path => path.startsWith("/")) : [],
+    threatLocations: Array.isArray(input.threatLocations)
+      ? input.threatLocations
+        .slice(0, 30)
+        .map(path => String(path).slice(0, 300))
+        .filter(path => path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\"))
+      : [],
     collectedAt: new Date().toISOString(),
   };
 }

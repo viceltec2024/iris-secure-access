@@ -37,5 +37,7 @@ export function passkeyRelyingParty(requestUrl: string) {
 }
 
 export function isPublicAgentPath(pathname: string) {
-  return pathname === "/api/agent/check-in" || pathname.startsWith("/iris-agent-macos.sh");
+  return pathname === "/api/agent/check-in"
+    || pathname.startsWith("/iris-agent-macos.sh")
+    || pathname.startsWith("/iris-agent-windows.ps1");
 }
