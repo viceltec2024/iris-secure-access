@@ -9,7 +9,7 @@ import type { ModelCoordinationReport } from "../../lib/iris-model-registry";
 
 type CreatorDeskResponse = CreatorDeskState & { models?: ModelCoordinationReport };
 
-const emptyDesk: CreatorDeskState = { agents: [] };
+const emptyDesk: CreatorDeskState = { agents: [], queue: { jobs: [] } };
 const emptyModels: ModelCoordinationReport = { generatedAt: "", coordinators: [], notes: [] };
 
 function statusLabel(status: CreatedAgent["status"], es: boolean) {
@@ -44,7 +44,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
   const [pending, setPending] = useState<CreatedAgent | null>(null);
 
   function applyDesk(payload: CreatorDeskResponse) {
-    setDesk({ agents: payload.agents || [] });
+    setDesk({ agents: payload.agents || [], queue: payload.queue || { jobs: [] } });
     if (payload.models) setModels(payload.models);
   }
 
@@ -258,6 +258,9 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
                 if (result?.taskResult?.ok) setNotice(es ? "Latido real ejecutado (sin cambios al repo)." : "Real heartbeat ran (no repo changes).");
                 else if (result?.taskResult?.error) setNotice(result.taskResult.error);
               })}>{es ? "Latido" : "Heartbeat"}</button>
+              <button disabled={busy} onClick={() => void post({ action: "process_ticks" }).then(result => {
+                if (result) setNotice(es ? "Cola de latidos procesada (sin apply al repo)." : "Tick queue processed (no repo apply).");
+              })}>{es ? "Procesar cola" : "Process queue"}</button>
               <button disabled={busy} onClick={() => void post({ action: "pause", agentId: item.id })}>{es ? "Pausar" : "Pause"}</button>
             </div>
             {(item.proposals || []).filter(proposal => proposal.status === "awaiting_approval").slice(0, 3).map(proposal => <div className="creator-proposal" key={proposal.id}>

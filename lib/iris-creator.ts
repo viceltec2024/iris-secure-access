@@ -1,4 +1,5 @@
 import { detectPromptInjection } from "./iris-guardian.ts";
+import { emptyJobQueue, parseJobQueue, type JobQueueState } from "./iris-job-queue.ts";
 
 export const CREATED_AGENT_STATUSES = [
   "draft",
@@ -96,6 +97,8 @@ export type CreatedAgent = {
 
 export type CreatorDeskState = {
   agents: CreatedAgent[];
+  /** Request-scoped durable-shape queue for agent_tick jobs. */
+  queue: JobQueueState;
 };
 
 export const BLOCKED_CAPABILITIES = [
@@ -111,7 +114,7 @@ const MAX_AGENTS = 24;
 const MAX_PROMPT = 500;
 
 export function emptyCreatorDesk(): CreatorDeskState {
-  return { agents: [] };
+  return { agents: [], queue: emptyJobQueue() };
 }
 
 export function parseCreatorDesk(value: string): CreatorDeskState {
@@ -121,6 +124,7 @@ export function parseCreatorDesk(value: string): CreatorDeskState {
       agents: Array.isArray(parsed.agents)
         ? parsed.agents.filter(isStoredAgent).map(normalizeStoredAgent)
         : [],
+      queue: parsed.queue ? parseJobQueue(JSON.stringify(parsed.queue)) : emptyJobQueue(),
     };
   } catch {
     return emptyCreatorDesk();
@@ -479,9 +483,12 @@ export function runCreatorPipeline(agent: CreatedAgent, language: "es" | "en" = 
   };
 }
 
+function withAgents(state: CreatorDeskState, agents: CreatedAgent[]): CreatorDeskState {
+  return { ...state, agents, queue: state.queue || emptyJobQueue() };
+}
+
 export function addCreatedAgent(state: CreatorDeskState, agent: CreatedAgent): CreatorDeskState {
-  const agents = [agent, ...state.agents].slice(0, MAX_AGENTS);
-  return { agents };
+  return withAgents(state, [agent, ...state.agents].slice(0, MAX_AGENTS));
 }
 
 export function approveCreatedAgent(state: CreatorDeskState, agentId: string, actorEmail: string, now = new Date().toISOString()) {
@@ -502,7 +509,7 @@ export function approveCreatedAgent(state: CreatorDeskState, agentId: string, ac
     lastTickAt: now,
   };
   return {
-    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    state: withAgents(state, state.agents.map(item => item.id === agentId ? next : item)),
     agent: next,
   };
 }
@@ -518,7 +525,7 @@ export function rejectCreatedAgent(state: CreatorDeskState, agentId: string, now
     updatedAt: now,
   };
   return {
-    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    state: withAgents(state, state.agents.map(item => item.id === agentId ? next : item)),
     agent: next,
   };
 }
@@ -533,7 +540,7 @@ export function pauseCreatedAgent(state: CreatorDeskState, agentId: string, now 
     updatedAt: now,
   };
   return {
-    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    state: withAgents(state, state.agents.map(item => item.id === agentId ? next : item)),
     agent: next,
   };
 }
@@ -550,19 +557,17 @@ export function cancelCreatedAgent(state: CreatorDeskState, agentId: string, now
     updatedAt: now,
   };
   return {
-    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    state: withAgents(state, state.agents.map(item => item.id === agentId ? next : item)),
     agent: next,
   };
 }
 
 export function tickApprovedAgents(state: CreatorDeskState, now = new Date().toISOString()): CreatorDeskState {
-  return {
-    agents: state.agents.map(agent => {
-      if (agent.status !== "approved") return agent;
-      if (agent.schedule === "on_demand") return agent;
-      return { ...agent, lastTickAt: now, updatedAt: now };
-    }),
-  };
+  return withAgents(state, state.agents.map(agent => {
+    if (agent.status !== "approved") return agent;
+    if (agent.schedule === "on_demand") return agent;
+    return { ...agent, lastTickAt: now, updatedAt: now };
+  }));
 }
 
 export function buildImprovementProposal(input: {
@@ -648,7 +653,7 @@ export function addAgentProposal(state: CreatorDeskState, agentId: string, propo
     updatedAt: proposal.createdAt,
   };
   return {
-    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    state: withAgents(state, state.agents.map(item => item.id === agentId ? next : item)),
     agent: next,
     proposal,
   };
@@ -679,7 +684,7 @@ export function decideAgentProposal(
     updatedAt: now,
   };
   return {
-    state: { agents: state.agents.map(item => item.id === agentId ? next : item) },
+    state: withAgents(state, state.agents.map(item => item.id === agentId ? next : item)),
     agent: next,
     proposal: nextProposal,
   };

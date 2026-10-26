@@ -25,8 +25,8 @@ export const PRIORITY_CAPABILITIES: PriorityCapability[] = [
     name: "IRIS Guardian",
     priority: 1,
     classification: "functional_proven",
-    evidence: "Sandbox + blocked capabilities + human approval gates in Creator; Ask IRIS and /api/agent/run also run detectPromptInjection before routing.",
-    gap: "Does not yet wrap every Muse/OpenAI tool-call loop mid-stream; first-message gate is proven.",
+    evidence: "Sandbox + Creator gates; Ask IRIS first-message Guardian; agent/run mid-stream on model output, tool args, and tool results.",
+    gap: "Muse edit path still relies on first-message gate + local fallback rather than per-token streaming filters.",
   },
   {
     id: "core",
@@ -41,8 +41,8 @@ export const PRIORITY_CAPABILITIES: PriorityCapability[] = [
     name: "IRIS Creator",
     priority: 3,
     classification: "partial",
-    evidence: "Design → Guardian sandbox → approve/pause; approved scheduled agents run real heartbeat tasks via runApprovedAgentTicks (request-scoped).",
-    gap: "No Cloudflare cron durable worker fleet; repo apply remains intentionally human-gated and off.",
+    evidence: "Design → sandbox → approve; agent_tick jobs enqueue/lease via Creator desk queue; process_ticks drains without repo apply.",
+    gap: "No Sites cron yet; drain is request-scoped (GET Creator / process_ticks). Repo apply stays human-gated and off.",
   },
   {
     id: "evals",
@@ -65,8 +65,8 @@ export const PRIORITY_CAPABILITIES: PriorityCapability[] = [
     name: "Persistent memory + eval-based learning",
     priority: 6,
     classification: "partial",
-    evidence: "Append-only memory + human promote/reject UI/API; Ask IRIS injects approved lessons as read-only context.",
-    gap: "No vector/pgvector retrieval; lessons never auto-mutate IRIS core (by design).",
+    evidence: "Append-only memory + human promote UI; local TF-IDF retrieval; Ask IRIS injects approved lessons read-only.",
+    gap: "No external vector DB; lessons never auto-mutate IRIS core (by design).",
   },
   {
     id: "mac_telemetry",
@@ -81,8 +81,8 @@ export const PRIORITY_CAPABILITIES: PriorityCapability[] = [
     name: "Multi-model coordination",
     priority: 8,
     classification: "partial",
-    evidence: "Coordinator + router + provider probes (OpenAI/Muse/ElevenLabs/CF AI/local). Probes never invent live_ok.",
-    gap: "Live provider OK requires real keys + successful HTTP probe in the target environment.",
+    evidence: "Coordinator + router + GET /api/iris-providers/status?probe=1 + Org UI probe chips. Probes never invent live_ok.",
+    gap: "Live provider OK still requires real keys + successful HTTP probe in the target environment.",
   },
   {
     id: "voice",

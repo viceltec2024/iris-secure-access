@@ -10,6 +10,7 @@ import {
   parseMemoryStore,
 } from "../../../lib/iris-memory";
 import { loadOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store";
+import { readOrgObsSummary, recordOrgObs } from "../../../lib/iris-obs-store";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { requireOrgContext } from "../../../lib/iris-tenant";
 
@@ -27,10 +28,12 @@ export async function GET(request: Request) {
   const ctx = await requireOrgContext(user.email);
   const loaded = await loadOrgDeskValue({ kind: "memory", organizationId: ctx.organization.id, email: user.email });
   const store = loaded.value ? parseMemoryStore(loaded.value) : emptyMemoryStore();
+  const obs = await readOrgObsSummary(ctx.organization.id);
   return Response.json({
     scorecard: capabilityScorecard(PRIORITY_CAPABILITIES),
     capabilities: PRIORITY_CAPABILITIES,
     memory: store,
+    observability: obs.summary,
     language,
     organizationId: ctx.organization.id,
   });
@@ -101,6 +104,13 @@ export async function POST(request: Request) {
         passRate: report.summary.passRate,
         failed: report.summary.failed,
       }, orgId);
+      await recordOrgObs({
+        organizationId: orgId,
+        actorEmail: user.email,
+        kind: "eval_run",
+        value: report.summary.passRate,
+        label: report.id,
+      }).catch(() => null);
       return Response.json({
         report,
         scorecard: capabilityScorecard(PRIORITY_CAPABILITIES),

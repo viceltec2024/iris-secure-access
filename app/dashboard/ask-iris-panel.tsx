@@ -16,6 +16,7 @@ const AGENT_STEP_LABELS: Record<string, { es: string; en: string }> = {
 
 type ChatMessage = { role: "user" | "assistant"; content: string; steps?: Array<{ tool: string; ok: boolean }> };
 type IncidentContext = { id: string; title: string; subject: string; severity: string; status: string; source: string; evidence: string[]; recommendation: string };
+type AskAttachment = { name: string; mime: string; dataUrl: string };
 type DeviceContext = { id: string; name: string; platform: string; status: string; risk: string; lastSeenAt: string | null; telemetry?: string };
 type SpeechResultEvent = { resultIndex?: number; results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }> };
 type RecognitionInstance = { lang: string; continuous?: boolean; interimResults?: boolean; maxAlternatives?: number; start(): void; stop(): void; abort(): void; onend: (() => void) | null; onerror: ((event: { error?: string }) => void) | null; onresult: ((event: SpeechResultEvent) => void) | null };
@@ -53,6 +54,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const [voiceEnergy, setVoiceEnergy] = useState(0);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [fullScreen, setFullScreen] = useState(false);
+  const [attachment, setAttachment] = useState<AskAttachment | null>(null);
   const speakingRef = useRef(false);
   const loadingRef = useRef(false);
   const voiceStageRef = useRef(false);
@@ -462,7 +464,18 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
               source: selectedIncident.source,
               evidence: selectedIncident.evidence.slice(0, 8),
               recommendation: selectedIncident.recommendation,
-            } : null,
+              attachments: attachment ? [attachment] : [],
+            } : (attachment ? {
+              id: "attachment-only",
+              title: language === "es" ? "Evidencia adjunta" : "Attached evidence",
+              subject: attachment.name,
+              severity: "INFO",
+              status: "OPEN",
+              source: "ask-iris",
+              evidence: [attachment.name],
+              recommendation: "",
+              attachments: [attachment],
+            } : null),
           },
         }),
         signal: controller.signal,
@@ -717,6 +730,24 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     {voiceStage ? <IrisVoiceStage language={language} mode={voiceMode} transcript={liveTranscript} answer={spokenAnswer} hearing={hearing} level={voiceEnergy} expanded={fullScreen} /> : null}
     <div className="iris-chat-messages" ref={listRef} aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p>{message.role === "assistant" && message.steps?.length ? <ul className="iris-chat-steps">{message.steps.map((step, stepIndex) => <li className={step.ok ? "ok" : "fail"} key={`${step.tool}-${stepIndex}`}>{AGENT_STEP_LABELS[step.tool]?.[language === "en" ? "en" : "es"] || step.tool}</li>)}</ul> : null}</article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>
     <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong>{selectedIncident.id ? ` · ${selectedIncident.title || selectedIncident.id}` : ""}{voiceHint ? ` · ${voiceHint}` : ""}</div>
-    <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Habla o escribe tu pregunta para IRIS…" : "Speak or type your question for IRIS…"} rows={2} /><button type="button" className={`iris-voice-command ${listening || voiceStage ? "listening" : ""}`} onClick={() => void startListening()} aria-label={language === "es" ? "Comando de voz" : "Voice command"} title={language === "es" ? "Comando de voz" : "Voice command"}><Microphone weight="fill" /></button><button type="submit" disabled={!input.trim()} aria-label="Send question"><ArrowUp weight="bold" /></button></form>
+    {attachment && <div className="iris-ask-attachment"><span>{attachment.name}</span><button type="button" onClick={() => setAttachment(null)}>{language === "es" ? "Quitar" : "Remove"}</button></div>}
+    <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Habla o escribe tu pregunta para IRIS…" : "Speak or type your question for IRIS…"} rows={2} /><label className="iris-attach-file" title={language === "es" ? "Adjuntar evidencia (imagen)" : "Attach evidence (image)"}><input type="file" accept="image/*" onChange={event => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file || !file.type.startsWith("image/") || file.size > 180_000) {
+        setVoiceHint(language === "es" ? "Usa una imagen menor a 180 KB." : "Use an image under 180 KB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result || "");
+        if (dataUrl.length > 220_000) {
+          setVoiceHint(language === "es" ? "La imagen es demasiado grande." : "The image is too large.");
+          return;
+        }
+        setAttachment({ name: file.name.slice(0, 80), mime: file.type, dataUrl });
+      };
+      reader.readAsDataURL(file);
+    }} /><span>+</span></label><button type="button" className={`iris-voice-command ${listening || voiceStage ? "listening" : ""}`} onClick={() => void startListening()} aria-label={language === "es" ? "Comando de voz" : "Voice command"} title={language === "es" ? "Comando de voz" : "Voice command"}><Microphone weight="fill" /></button><button type="submit" disabled={!input.trim()} aria-label="Send question"><ArrowUp weight="bold" /></button></form>
   </aside>;
 }

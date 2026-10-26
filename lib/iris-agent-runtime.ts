@@ -12,6 +12,13 @@ import {
 import { authorizeTool, defaultToolsForAgent } from "./iris-tool-acl.ts";
 import { searchMemory, type MemoryStore } from "./iris-memory.ts";
 import { detectPromptInjection } from "./iris-guardian.ts";
+import {
+  completeJob,
+  enqueueJob,
+  failJob,
+  leaseNextJob,
+  type IrisJob,
+} from "./iris-job-queue.ts";
 
 export const AGENT_TASK_KINDS = [
   "heartbeat",
@@ -254,5 +261,78 @@ export function runApprovedAgentTicks(input: {
     if (!result.ok) return agent;
     return { ...agent, lastTickAt: now, updatedAt: now };
   });
-  return { state: { agents }, ticks };
+  return { state: { ...input.state, agents }, ticks };
+}
+
+/** Enqueue agent_tick jobs for approved scheduled agents (deduped by queue). */
+export function enqueueApprovedAgentTicks(input: {
+  state: CreatorDeskState;
+  ownerEmail: string;
+  now?: string;
+}): CreatorDeskState {
+  const now = input.now || new Date().toISOString();
+  let queue = input.state.queue;
+  for (const agent of input.state.agents) {
+    if (agent.status !== "approved") continue;
+    if (agent.schedule === "on_demand") continue;
+    try {
+      const enqueued = enqueueJob(queue, {
+        id: crypto.randomUUID(),
+        kind: "agent_tick",
+        subjectId: agent.id,
+        ownerEmail: input.ownerEmail,
+        timeoutMs: 10_000,
+        maxAttempts: 2,
+        now,
+      });
+      queue = enqueued.queue;
+    } catch {
+      // duplicate_active_job — already queued/running
+    }
+  }
+  return { ...input.state, queue };
+}
+
+/**
+ * Lease and run at most one agent_tick job.
+ * Never applies repo changes; proposals still require human approval.
+ */
+export function processAgentTickQueue(input: {
+  state: CreatorDeskState;
+  language?: "es" | "en";
+  memory?: MemoryStore;
+  ownerEmail: string;
+  now?: string;
+}): { state: CreatorDeskState; job: IrisJob | null; tick: AgentTaskResult | null } {
+  const language = input.language || "es";
+  const now = input.now || new Date().toISOString();
+  const leased = leaseNextJob(input.state.queue, input.ownerEmail, now);
+  if (!leased.job || leased.job.kind !== "agent_tick") {
+    return { state: { ...input.state, queue: leased.queue }, job: null, tick: null };
+  }
+  const agent = input.state.agents.find(item => item.id === leased.job!.subjectId);
+  if (!agent || agent.status !== "approved") {
+    const failed = failJob(leased.queue, leased.job.id, "agent_missing_or_not_approved", now);
+    return { state: { ...input.state, queue: failed.queue }, job: failed.job, tick: null };
+  }
+  const tick = runAuthorizedAgentTask({
+    agent,
+    task: "heartbeat",
+    memory: input.memory,
+    language,
+    now,
+  });
+  if (!tick.ok) {
+    const failed = failJob(leased.queue, leased.job.id, tick.error || "tick_failed", now);
+    return { state: { ...input.state, queue: failed.queue }, job: failed.job, tick };
+  }
+  const done = completeJob(leased.queue, leased.job.id, tick.evidence.join("; "), now);
+  const agents = input.state.agents.map(item => item.id === agent.id
+    ? { ...item, lastTickAt: now, updatedAt: now }
+    : item);
+  return {
+    state: { ...input.state, agents, queue: done.queue },
+    job: done.job,
+    tick,
+  };
 }

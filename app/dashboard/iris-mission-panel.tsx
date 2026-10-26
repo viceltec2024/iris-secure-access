@@ -49,6 +49,8 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
 
   useEffect(() => {
     void refresh();
+    const timer = window.setInterval(() => void refresh(), 45_000);
+    return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
 
@@ -143,6 +145,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
   const waiting = desk.missions.filter(item => ["executed", "awaiting_approval", "verified"].includes(item.status));
   const pendingLessons = memory.records.filter(item => item.kind === "lesson" && (item.promotion === "pending" || item.promotion === "none"));
   const approvedLessons = memory.records.filter(item => item.kind === "lesson" && item.promotion === "approved");
+  const evalHistory = memory.records.filter(item => item.kind === "eval_result").slice(0, 8);
 
   return <section className="module-panel iris-mission-panel">
     <div className="module-toolbar">
@@ -226,6 +229,14 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
         </li>)}
       </ul>
     </div>}
+
+    <div className="mission-eval-report">
+      <strong>{es ? "Board continuo de evaluaciones" : "Continuous evaluation board"}</strong>
+      <p>{es ? "Historial append-only desde memoria (auto-refresh 45s)." : "Append-only history from memory (45s auto-refresh)."}</p>
+      {evalHistory.length === 0 ? <p>{es ? "Aún no hay corridas guardadas." : "No saved runs yet."}</p> : <ul className="mission-eval-history">
+        {evalHistory.map(item => <li key={item.id}><b>{item.title}</b><span>{item.score ?? "—"}%</span></li>)}
+      </ul>}
+    </div>
 
     <div className="mission-memory">
       <h4>{es ? "Memoria y lecciones" : "Memory and lessons"}</h4>

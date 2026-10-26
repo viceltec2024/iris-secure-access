@@ -531,6 +531,21 @@ a { color: inherit; }
 .agent-command-chip.status-delivered,.agent-command-chip.status-acked{border-color:#916c2f;background:#2a210f;color:#efbd63}
 .agent-command-chip.status-executed{border-color:#287255;background:#102d24;color:#69d8a6}
 .agent-command-chip.status-failed{border-color:#713b45;background:#2b151b;color:#ff9ba4}
+.iris-ask-attachment{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 12px 8px;padding:8px 10px;border:1px solid #29465b;border-radius:7px;background:#071522;color:#9eb3c2;font-size:10px}
+.iris-ask-attachment button{border:0;background:transparent;color:#7fe0ff;font-size:10px;cursor:pointer}
+.iris-attach-file{position:relative;width:36px;height:36px;display:grid;place-items:center;border:1px solid #29465b;border-radius:8px;background:#071522;color:#7fe0ff;cursor:pointer;flex:0 0 auto}
+.iris-attach-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.iris-attach-file span{font-size:18px;line-height:1;font-weight:700}
+.mission-eval-history{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:6px}
+.mission-eval-history li{display:flex;justify-content:space-between;gap:8px;color:#9eb3c2;font-size:10px}
+.mission-eval-history b{color:#7fe0ff}
+.iris-obs-board,.iris-readiness-board{margin:0 0 12px;padding:12px;border:1px solid #1d3b50;border-radius:8px;background:#071522}
+.iris-obs-board strong,.iris-readiness-board strong{display:block;margin-bottom:8px;color:#7fe0ff;font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+.iris-obs-board ul,.iris-readiness-board ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.iris-obs-board li,.iris-readiness-board li{display:flex;justify-content:space-between;gap:8px;color:#9eb3c2;font-size:10px}
+.iris-readiness-board em[data-live="ok"]{color:#55dca7;font-style:normal}
+.iris-readiness-board em[data-live="partial"]{color:#f1bd5c;font-style:normal}
+.iris-readiness-board em[data-live="missing"]{color:#f08a98;font-style:normal}
 .mission-history article{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #163246}
 .mission-history b{display:block;font-size:11px;color:#7fe0ff}
 .mission-history small,.mission-history p{display:block;color:#9eb3c2;font-size:11px;line-height:1.4}

@@ -7,7 +7,34 @@ import {
   emptyMemoryStore,
   memoryAllowsSelfModify,
   activeLessons,
+  searchMemory,
 } from "../lib/iris-memory.ts";
+
+test("TF-IDF searchMemory ranks relevant lessons above unrelated noise", () => {
+  let store = emptyMemoryStore();
+  store = appendMemory(store, buildLessonFromEval({
+    id: "lesson-fw",
+    evalId: "eval-fw",
+    title: "Firewall del Mac",
+    body: "Cuando FIREWALL_DISABLED aparece, aprobar la remediación y esperar el reporte del agente.",
+    score: 90,
+    actorEmail: "owner@iris.local",
+  }));
+  store = appendMemory(store, {
+    id: "noise-1",
+    kind: "operator_note",
+    title: "Wallet Base",
+    body: "MetaMask y Robinhood solo abren checkout oficial",
+    tags: ["wallet"],
+    createdAt: new Date().toISOString(),
+    createdBy: "owner@iris.local",
+    promotion: "none",
+  });
+  const approved = decideLessonPromotion(store, "lesson-fw", "approve", "owner@iris.local").store;
+  const hits = searchMemory(approved, "firewall mac agente remediacion", 3);
+  assert.ok(hits.length >= 1);
+  assert.equal(hits[0].id, "lesson-fw");
+});
 
 test("memory is append-only and lessons require human promotion", () => {
   assert.equal(memoryAllowsSelfModify(), false);

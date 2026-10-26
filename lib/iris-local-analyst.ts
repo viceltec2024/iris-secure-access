@@ -27,6 +27,13 @@ type AgentContext = {
   task?: string;
 };
 
+export type IrisAskAttachment = {
+  name: string;
+  mime: string;
+  /** data URL or https URL — capped by parseAskIncident */
+  dataUrl: string;
+};
+
 export type IrisIncidentContext = {
   id: string;
   title: string;
@@ -36,6 +43,8 @@ export type IrisIncidentContext = {
   source: string;
   evidence: string[];
   recommendation: string;
+  /** Optional screenshot / evidence images for multimodal Ask (read-only). */
+  attachments?: IrisAskAttachment[];
 };
 
 export type IrisLessonSnippet = {
@@ -226,9 +235,10 @@ export function localIrisAnswer(input: IrisAnalystInput) {
         : `${name}, there is no incident selected on the board. Pick one and ask me again.`;
     }
     const evidence = input.incident.evidence.filter(Boolean).slice(0, 4).join(es ? "; " : "; ");
+    const attachments = (input.incident.attachments || []).map(item => item.name).join(", ");
     return es
-      ? `${name}, el incidente abierto es ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severidad ${input.incident.severity}, estado ${input.incident.status}. ${evidence ? `Evidencia: ${evidence}. ` : ""}${input.incident.recommendation || "Revisa el plan en el tablero antes de aprobar."}`
-      : `${name}, the open incident is ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severity ${input.incident.severity}, status ${input.incident.status}. ${evidence ? `Evidence: ${evidence}. ` : ""}${input.incident.recommendation || "Review the plan on the board before you approve."}`;
+      ? `${name}, el incidente abierto es ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severidad ${input.incident.severity}, estado ${input.incident.status}. ${evidence ? `Evidencia: ${evidence}. ` : ""}${attachments ? `Adjuntos: ${attachments}. ` : ""}${input.incident.recommendation || "Revisa el plan en el tablero antes de aprobar."}`
+      : `${name}, the open incident is ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severity ${input.incident.severity}, status ${input.incident.status}. ${evidence ? `Evidence: ${evidence}. ` : ""}${attachments ? `Attachments: ${attachments}. ` : ""}${input.incident.recommendation || "Review the plan on the board before you approve."}`;
   }
 
   if (/(alerta|alert|hallazgo)/.test(question) && !/(firewall|filevault|gatekeeper)/.test(question)) {

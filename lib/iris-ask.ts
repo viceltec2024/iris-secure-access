@@ -16,10 +16,26 @@ import type { IrisIncidentContext } from "./iris-local-analyst.ts";
 export type IrisAskMessage = { role: "user" | "assistant"; content: string };
 export type IrisAskUser = { email: string; role: string; displayName: string };
 
+function parseAskAttachments(value: unknown) {
+  if (!Array.isArray(value)) return [] as Array<{ name: string; mime: string; dataUrl: string }>;
+  return value
+    .filter(item => item && typeof item === "object")
+    .map(item => item as Record<string, unknown>)
+    .filter(item => typeof item.dataUrl === "string" && typeof item.mime === "string")
+    .filter(item => String(item.mime).startsWith("image/") && String(item.dataUrl).length <= 220_000)
+    .slice(0, 2)
+    .map(item => ({
+      name: String(item.name || "evidence").slice(0, 80),
+      mime: String(item.mime).slice(0, 80),
+      dataUrl: String(item.dataUrl),
+    }));
+}
+
 export function parseAskIncident(value: unknown): IrisIncidentContext | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   if (typeof item.id !== "string" || !item.id.trim()) return null;
+  const attachments = parseAskAttachments(item.attachments);
   return {
     id: item.id.slice(0, 80),
     title: typeof item.title === "string" ? item.title.slice(0, 200) : "",
@@ -29,6 +45,7 @@ export function parseAskIncident(value: unknown): IrisIncidentContext | null {
     source: typeof item.source === "string" ? item.source.slice(0, 80) : "",
     evidence: Array.isArray(item.evidence) ? item.evidence.filter((entry): entry is string => typeof entry === "string").slice(0, 8).map(entry => entry.slice(0, 240)) : [],
     recommendation: typeof item.recommendation === "string" ? item.recommendation.slice(0, 400) : "",
+    attachments: attachments.length ? attachments : undefined,
   };
 }
 
