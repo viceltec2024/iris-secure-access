@@ -1,59 +1,29 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { appSettings } from "../db/schema";
-import { AGENT_COMMAND_CODES, type AgentCommandCode } from "./iris-live-soc";
+import {
+  applyCommandResults,
+  parseAgentCommands,
+  type AgentCommand,
+  type AgentCommandResultInput,
+} from "./iris-agent-command-state.ts";
+import { type AgentCommandCode } from "./iris-live-soc";
 
 export type { AgentCommandCode };
+export {
+  AGENT_COMMAND_STATUSES,
+  applyCommandResults,
+  commandStatusLabel,
+  parseAgentCommands,
+  type AgentCommand,
+  type AgentCommandResultInput,
+  type AgentCommandStatus,
+} from "./iris-agent-command-state.ts";
+
 type CommandDraft = { code: AgentCommandCode; title: string; message: string };
-
-export const AGENT_COMMAND_STATUSES = [
-  "PENDING",
-  "DELIVERED",
-  "ACKED",
-  "EXECUTED",
-  "FAILED",
-] as const;
-
-export type AgentCommandStatus = (typeof AGENT_COMMAND_STATUSES)[number];
-
-export type AgentCommand = {
-  id: string;
-  code: AgentCommandCode;
-  title: string;
-  message: string;
-  status: AgentCommandStatus;
-  alertId?: string;
-  createdAt: string;
-  approvedBy: string;
-  deliveredAt?: string;
-  acknowledgedAt?: string;
-  resultDetail?: string;
-};
-
-export type AgentCommandResultInput = {
-  id: string;
-  status: "ACKED" | "EXECUTED" | "FAILED";
-  detail?: string;
-};
 
 function commandsKey(deviceId: string) {
   return `iris_agent_commands:${deviceId}`;
-}
-
-function isCommandStatus(value: unknown): value is AgentCommandStatus {
-  return typeof value === "string" && (AGENT_COMMAND_STATUSES as readonly string[]).includes(value);
-}
-
-function parseCommands(value: string | null | undefined): AgentCommand[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value) as AgentCommand[];
-    return Array.isArray(parsed)
-      ? parsed.filter(item => item && AGENT_COMMAND_CODES.includes(item.code) && item.id && isCommandStatus(item.status))
-      : [];
-  } catch {
-    return [];
-  }
 }
 
 async function saveCommands(deviceId: string, commands: AgentCommand[], actorEmail: string) {
@@ -76,7 +46,7 @@ export async function listAgentCommands(deviceId: string) {
   const key = commandsKey(deviceId);
   const db = getDb();
   const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
-  return parseCommands(row?.value);
+  return parseAgentCommands(row?.value);
 }
 
 export async function listAgentCommandsForDevices(deviceIds: string[]) {
@@ -120,33 +90,6 @@ export async function takePendingAgentCommands(deviceId: string) {
   return pending.map(({ id, code, title, message }) => ({ id, code, title, message }));
 }
 
-/** Apply Mac agent ACK/EXECUTED/FAILED results for previously delivered commands. */
-export function applyCommandResults(
-  commands: AgentCommand[],
-  results: AgentCommandResultInput[],
-  now = new Date().toISOString(),
-) {
-  if (!results.length) return { commands, updated: [] as AgentCommand[] };
-  const byId = new Map(results.map(item => [item.id, item]));
-  const updated: AgentCommand[] = [];
-  const next = commands.map(command => {
-    const result = byId.get(command.id);
-    if (!result) return command;
-    if (command.status === "PENDING") return command;
-    if (command.status === "EXECUTED" || command.status === "FAILED") return command;
-    const status = result.status;
-    const patched: AgentCommand = {
-      ...command,
-      status,
-      acknowledgedAt: now,
-      resultDetail: String(result.detail || "").slice(0, 240) || undefined,
-    };
-    updated.push(patched);
-    return patched;
-  });
-  return { commands: next, updated };
-}
-
 export async function acknowledgeAgentCommands(deviceId: string, results: AgentCommandResultInput[]) {
   const cleaned = (Array.isArray(results) ? results : [])
     .filter(item => item && typeof item.id === "string" && ["ACKED", "EXECUTED", "FAILED"].includes(item.status))
@@ -162,15 +105,4 @@ export async function acknowledgeAgentCommands(deviceId: string, results: AgentC
   if (!applied.updated.length) return [];
   await saveCommands(deviceId, applied.commands, "iris.agent");
   return applied.updated;
-}
-
-export function commandStatusLabel(status: AgentCommandStatus, language: "es" | "en" = "es") {
-  const map = {
-    PENDING: { es: "Pendiente", en: "Pending" },
-    DELIVERED: { es: "Entregado", en: "Delivered" },
-    ACKED: { es: "Recibido", en: "Acknowledged" },
-    EXECUTED: { es: "Ejecutado", en: "Executed" },
-    FAILED: { es: "Falló", en: "Failed" },
-  } as const;
-  return map[status][language];
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCommandResults, commandStatusLabel } from "../lib/iris-agent-commands.ts";
+import { applyCommandResults, commandStatusLabel } from "../lib/iris-agent-command-state.ts";
 
 test("command ACK lifecycle advances delivered commands without touching pending", () => {
   const commands = [
