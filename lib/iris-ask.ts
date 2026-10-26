@@ -4,10 +4,13 @@ import { appSettings, devices, securityAlerts } from "../db/schema";
 import { parseWalletSessionValue } from "./iris-chain.ts";
 import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
 import { liveWorkers } from "./iris-live-soc.ts";
+import { activeLessons, emptyMemoryStore, parseMemoryStore, searchMemory, type MemoryRecord } from "./iris-memory.ts";
 import { irisMindAnswer } from "./iris-mind.ts";
 import { isMuseConfigured } from "./iris-muse.ts";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "./iris-market.ts";
+import { loadOrgDeskValue } from "./iris-org-store.ts";
 import { parsePurchaseDesk } from "./iris-purchases.ts";
+import { requireOrgContext } from "./iris-tenant.ts";
 import type { IrisIncidentContext } from "./iris-local-analyst.ts";
 
 export type IrisAskMessage = { role: "user" | "assistant"; content: string };
@@ -29,6 +32,15 @@ export function parseAskIncident(value: unknown): IrisIncidentContext | null {
   };
 }
 
+function lessonSnippets(records: MemoryRecord[]) {
+  return records.slice(0, 5).map(item => ({
+    id: item.id,
+    title: item.title,
+    body: item.body.slice(0, 280),
+    promotion: item.promotion,
+  }));
+}
+
 export async function resolveIrisAsk(input: {
   user: IrisAskUser;
   messages: IrisAskMessage[];
@@ -48,6 +60,14 @@ export async function resolveIrisAsk(input: {
   const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, `iris_purchase_desk:${input.user.email}`)).limit(1);
   const wallet = parseWalletSessionValue(walletRow?.value || "");
   const pendingPurchases = parsePurchaseDesk(deskRow?.value || "").proposals.filter(item => item.status === "awaiting_approval").length;
+  let memoryStore = emptyMemoryStore();
+  try {
+    const ctx = await requireOrgContext(input.user.email);
+    const loaded = await loadOrgDeskValue({ kind: "memory", organizationId: ctx.organization.id, email: input.user.email });
+    memoryStore = loaded.value ? parseMemoryStore(loaded.value) : emptyMemoryStore();
+  } catch {
+    memoryStore = emptyMemoryStore();
+  }
   const mappedDevices = deviceRows.map(device => ({
     id: device.id,
     name: device.name,
@@ -68,6 +88,8 @@ export async function resolveIrisAsk(input: {
     language: input.language,
   });
   const question = [...input.messages].reverse().find(message => message.role === "user")?.content || "";
+  const approvedLessons = activeLessons(memoryStore);
+  const relatedMemory = searchMemory(memoryStore, question, 4);
   const analystInput = {
     language: input.language,
     question,
@@ -79,6 +101,8 @@ export async function resolveIrisAsk(input: {
     agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),
     wallet: { connected: Boolean(wallet), address: wallet?.address || "" },
     incident: input.incident,
+    lessons: lessonSnippets(approvedLessons),
+    memoryHits: lessonSnippets(relatedMemory),
   };
 
   if (isMarketQuestion(question)) {

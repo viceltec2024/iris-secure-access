@@ -30,6 +30,7 @@ type Device = { id: string; name: string; platform: string; status: "PENDING" | 
 type ResponseAction = { id: number; incidentId: string; actorEmail: string; action: string; mode: string; outcome: string; createdAt: string };
 type SecurityAlert = { id: string; deviceId: string; ownerEmail: string; fingerprint: string; code: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; status: "NEW" | "ACKNOWLEDGED" | "RESOLVED"; evidence: string; firstSeenAt: string; lastSeenAt: string; resolvedAt: string | null; updatedBy: string | null };
 type RemediationPlan = { id: string; alertId: string; deviceId: string; ownerEmail: string; actionCode: string; status: "VERIFYING" | "VERIFIED" | "CANCELLED"; approvedBy: string; approvedAt: string; lastCheckedAt: string | null; verifiedAt: string | null };
+type AgentCommandRow = { id: string; deviceId: string; code: string; title: string; status: "PENDING" | "DELIVERED" | "ACKED" | "EXECUTED" | "FAILED"; createdAt: string; alertId?: string; resultDetail?: string };
 
 function remediationGuide(code: string, language: Language) {
   const es = language === "es";
@@ -83,6 +84,7 @@ export default function SecurityOperations({
   const [devices, setDevices] = useState<Device[]>(initialDevices);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [remediations, setRemediations] = useState<RemediationPlan[]>([]);
+  const [agentCommands, setAgentCommands] = useState<AgentCommandRow[]>([]);
   const [remediationAlert, setRemediationAlert] = useState<SecurityAlert | null>(null);
   const [startingRemediation, setStartingRemediation] = useState(false);
   const [responseHistory, setResponseHistory] = useState<ResponseAction[]>([]);
@@ -123,6 +125,7 @@ export default function SecurityOperations({
       actions?: ResponseAction[];
       alerts?: SecurityAlert[];
       remediations?: RemediationPlan[];
+      agentCommands?: AgentCommandRow[];
       audit?: AuditEvent[];
       purchases?: LivePurchase[];
       wallet?: WalletState;
@@ -135,6 +138,7 @@ export default function SecurityOperations({
       if (data.actions) setResponseHistory(data.actions);
       if (data.alerts) setAlerts(nextAlerts);
       if (data.remediations) setRemediations(data.remediations);
+      if (data.agentCommands) setAgentCommands(data.agentCommands);
       if (data.audit) {
         setAuditEvents(data.audit);
         setLiveAuditCount(data.audit.length);
@@ -401,8 +405,11 @@ export default function SecurityOperations({
       {section === "alerts" && <section className="module-panel real-alert-center">
         <div className="module-toolbar"><div><h2>{language === "es" ? "Alertas y respuesta segura" : "Alerts and safe response"}</h2><p>{language === "es" ? "IRIS te guía, solicita aprobación y espera un nuevo reporte del agente antes de confirmar la corrección." : "IRIS guides you, requests approval, and waits for a new agent report before confirming the fix."}</p></div><span className="provenance-badge real">REAL</span></div>
         <div className="alert-summary"><span><b>{newAlerts.length}</b>{language === "es" ? "Nuevas" : "New"}</span><span><b>{alerts.filter(alert => alert.status === "ACKNOWLEDGED").length}</b>{language === "es" ? "Reconocidas" : "Acknowledged"}</span><span><b>{alerts.filter(alert => alert.status === "RESOLVED").length}</b>{language === "es" ? "Resueltas" : "Resolved"}</span></div>
-        <div className="real-alert-list">{alerts.map(alert => { const evidence = evidenceFor(alert); const device = devices.find(item => item.id === alert.deviceId); const remediation = remediations.find(item => item.alertId === alert.id); return <article className={`real-alert-item severity-${alert.severity.toLowerCase()}`} key={alert.id}>
-          <span className="alert-icon"><Warning weight="fill" /></span><div className="alert-copy"><div><strong>{alert.code.replaceAll("_", " ")}</strong><span className={`alert-status ${alert.status.toLowerCase()}`}>{alert.status === "NEW" ? (language === "es" ? "NUEVA" : "NEW") : alert.status === "ACKNOWLEDGED" ? (language === "es" ? "RECONOCIDA" : "ACKNOWLEDGED") : (language === "es" ? "RESUELTA" : "RESOLVED")}</span></div><p>{device?.name || evidence.hostname || (language === "es" ? "Dispositivo" : "Device")} · {alert.severity}</p>{!!evidence.applications?.length && <small>{language === "es" ? "Aplicaciones: " : "Applications: "}{evidence.applications.join(", ")}</small>}{!!evidence.startupItems?.length && <small>{language === "es" ? "Inicio automático: " : "Startup: "}{evidence.startupItems.join(", ")}</small>}<time>{language === "es" ? "Última detección" : "Last detected"}: {formatUtcClock(alert.lastSeenAt)}</time></div>
+        <div className="real-alert-list">{alerts.map(alert => { const evidence = evidenceFor(alert); const device = devices.find(item => item.id === alert.deviceId); const remediation = remediations.find(item => item.alertId === alert.id); const linkedCommands = (agentCommands.filter(item => item.alertId === alert.id).length
+          ? agentCommands.filter(item => item.alertId === alert.id)
+          : agentCommands.filter(item => item.deviceId === alert.deviceId)
+        ).slice(0, 3); return <article className={`real-alert-item severity-${alert.severity.toLowerCase()}`} key={alert.id}>
+          <span className="alert-icon"><Warning weight="fill" /></span><div className="alert-copy"><div><strong>{alert.code.replaceAll("_", " ")}</strong><span className={`alert-status ${alert.status.toLowerCase()}`}>{alert.status === "NEW" ? (language === "es" ? "NUEVA" : "NEW") : alert.status === "ACKNOWLEDGED" ? (language === "es" ? "RECONOCIDA" : "ACKNOWLEDGED") : (language === "es" ? "RESUELTA" : "RESOLVED")}</span></div><p>{device?.name || evidence.hostname || (language === "es" ? "Dispositivo" : "Device")} · {alert.severity}</p>{!!evidence.applications?.length && <small>{language === "es" ? "Aplicaciones: " : "Applications: "}{evidence.applications.join(", ")}</small>}{!!evidence.startupItems?.length && <small>{language === "es" ? "Inicio automático: " : "Startup: "}{evidence.startupItems.join(", ")}</small>}{linkedCommands.length > 0 && <div className="agent-command-chips">{linkedCommands.map(command => <span key={command.id} className={`agent-command-chip status-${command.status.toLowerCase()}`}>{command.code.replaceAll("_", " ")} · {command.status === "PENDING" ? (language === "es" ? "Pendiente" : "Pending") : command.status === "DELIVERED" ? (language === "es" ? "Entregado" : "Delivered") : command.status === "ACKED" ? (language === "es" ? "Recibido" : "Acked") : command.status === "EXECUTED" ? (language === "es" ? "Ejecutado" : "Executed") : (language === "es" ? "Falló" : "Failed")}</span>)}</div>}<time>{language === "es" ? "Última detección" : "Last detected"}: {formatUtcClock(alert.lastSeenAt)}</time></div>
           <div className="real-alert-actions">{remediation?.status === "VERIFIED" ? <span className="remediation-state verified"><CheckCircle weight="fill" />{language === "es" ? "VERIFICADA POR EL AGENTE" : "AGENT VERIFIED"}</span> : remediation?.status === "VERIFYING" ? <span className="remediation-state verifying"><Pulse />{language === "es" ? "ESPERANDO REPORTE" : "AWAITING REPORT"}</span> : alert.status !== "RESOLVED" ? <button className="safe-fix" onClick={() => setRemediationAlert(alert)}><Wrench />{language === "es" ? "Corregir con IRIS" : "Fix with IRIS"}</button> : null}{alert.status === "NEW" && <button onClick={() => void updateAlert(alert.id, "ACKNOWLEDGED")}>{language === "es" ? "Reconocer" : "Acknowledge"}</button>}</div>
         </article>})}{alerts.length === 0 && <div className="empty-alerts"><CheckCircle weight="fill" /><h3>{language === "es" ? "No hay alertas reales" : "No real alerts"}</h3><p>{language === "es" ? "IRIS mostrará aquí cualquier cambio o amenaza comprobada por el agente." : "IRIS will show any agent-verified change or threat here."}</p></div>}</div>
       </section>}

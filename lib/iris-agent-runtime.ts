@@ -6,6 +6,7 @@
 import {
   buildImprovementProposal,
   type CreatedAgent,
+  type CreatorDeskState,
   type ProposalType,
 } from "./iris-creator.ts";
 import { authorizeTool, defaultToolsForAgent } from "./iris-tool-acl.ts";
@@ -224,4 +225,34 @@ export function runAuthorizedAgentTask(input: {
       error: error instanceof Error ? error.message : "task_failed",
     };
   }
+}
+
+/**
+ * Request-scoped drain for approved scheduled agents.
+ * Runs a real heartbeat task (Guardian + ACL). Never applies repo changes.
+ */
+export function runApprovedAgentTicks(input: {
+  state: CreatorDeskState;
+  language?: "es" | "en";
+  memory?: MemoryStore;
+  now?: string;
+}): { state: CreatorDeskState; ticks: AgentTaskResult[] } {
+  const language = input.language || "es";
+  const now = input.now || new Date().toISOString();
+  const ticks: AgentTaskResult[] = [];
+  const agents = input.state.agents.map(agent => {
+    if (agent.status !== "approved") return agent;
+    if (agent.schedule === "on_demand") return agent;
+    const result = runAuthorizedAgentTask({
+      agent,
+      task: "heartbeat",
+      memory: input.memory,
+      language,
+      now,
+    });
+    ticks.push(result);
+    if (!result.ok) return agent;
+    return { ...agent, lastTickAt: now, updatedAt: now };
+  });
+  return { state: { agents }, ticks };
 }

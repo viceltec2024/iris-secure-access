@@ -519,15 +519,25 @@ a { color: inherit; }
 .mission-capabilities em[data-class="functional_proven"]{color:#55dca7}
 .mission-capabilities em[data-class="partial"]{color:#f1bd5c}
 .mission-capabilities em[data-class="not_implemented"]{color:#f08a98}
-.mission-history,.mission-eval-report{margin:0 22px 18px;padding:14px;border:1px solid #1d3b50;border-radius:8px;background:#071522}
-.mission-history h4,.mission-eval-report strong{margin:0 0 10px;color:#9eb3c2;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.mission-history,.mission-eval-report,.mission-memory{margin:0 22px 18px;padding:14px;border:1px solid #1d3b50;border-radius:8px;background:#071522}
+.mission-history h4,.mission-eval-report strong,.mission-memory h4{margin:0 0 10px;color:#9eb3c2;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.mission-memory>p,.mission-memory-empty{margin:0 0 10px;color:#9eb3c2;font-size:11px;line-height:1.45}
+.mission-memory-active{margin:12px 0 0;padding:0;list-style:none;display:grid;gap:8px}
+.mission-memory-active li{display:flex;justify-content:space-between;gap:10px;padding-top:8px;border-top:1px solid #163246}
+.mission-memory-active b{color:#ecf8ff;font-size:11px}
+.mission-memory-active small{color:#55dca7;font-size:9px}
+.agent-command-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.agent-command-chip{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border:1px solid #29465b;border-radius:5px;background:#0a1c2a;color:#9eb3c2;font-size:8px;font-weight:700;letter-spacing:.03em}
+.agent-command-chip.status-delivered,.agent-command-chip.status-acked{border-color:#916c2f;background:#2a210f;color:#efbd63}
+.agent-command-chip.status-executed{border-color:#287255;background:#102d24;color:#69d8a6}
+.agent-command-chip.status-failed{border-color:#713b45;background:#2b151b;color:#ff9ba4}
 .mission-history article{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #163246}
 .mission-history b{display:block;font-size:11px;color:#7fe0ff}
 .mission-history small,.mission-history p{display:block;color:#9eb3c2;font-size:11px;line-height:1.4}
 .mission-history code{display:block;margin-top:4px;color:#71889a;font-size:9px}
 .mission-eval-report li{margin:4px 0;color:#c5d3dd;font-size:11px}
 .mission-eval-report li[data-status="fail"]{color:#f08a98}
-@media(max-width:900px){.mission-scorecard,.mission-grid{grid-template-columns:1fr;margin:0 14px}.mission-history,.mission-eval-report{margin:0 14px 14px}}
+@media(max-width:900px){.mission-scorecard,.mission-grid{grid-template-columns:1fr;margin:0 14px}.mission-history,.mission-eval-report,.mission-memory{margin:0 14px 14px}}
 .creator-history{justify-content:flex-start}
 .creator-history svg{width:16px;color:#55dca7;flex:0 0 16px}
 .creator-history.rejected svg,.creator-history.sandbox_failed svg{color:#f08a98}

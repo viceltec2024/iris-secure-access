@@ -115,26 +115,50 @@ apply_commands() {
   local response_file="$1"
   [ -f "$response_file" ] || return 0
   command -v /usr/bin/python3 >/dev/null 2>&1 || return 0
+  local result_file="$AGENT_DIR/last-command-results.json"
   local result
-  result="$(/usr/bin/python3 - "$response_file" <<'PY'
+  result="$(/usr/bin/python3 - "$response_file" "$result_file" <<'PY'
 import json, subprocess, sys
 path = sys.argv[1]
+out_path = sys.argv[2]
 try:
     data = json.load(open(path))
 except Exception:
     raise SystemExit(0)
 need_reverify = False
+results = []
 for cmd in data.get("commands") or []:
+    cmd_id = str(cmd.get("id") or "")
     code = str(cmd.get("code") or "")
     title = str(cmd.get("title") or "IRIS")
     message = str(cmd.get("message") or "")
-    if code in ("NOTIFY", "ENABLE_FIREWALL", "REVERIFY") and message:
-        subprocess.run(["/usr/bin/osascript", "-e", f"display notification {json.dumps(message)} with title {json.dumps(title)}"], check=False)
-    if code == "ENABLE_FIREWALL":
-        script = '/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on'
-        subprocess.run(["/usr/bin/osascript", "-e", f"do shell script {json.dumps(script)} with administrator privileges"], check=False)
-    if code == "REVERIFY":
-        need_reverify = True
+    status = "EXECUTED"
+    detail = ""
+    try:
+        if code in ("NOTIFY", "ENABLE_FIREWALL", "REVERIFY") and message:
+            subprocess.run(["/usr/bin/osascript", "-e", f"display notification {json.dumps(message)} with title {json.dumps(title)}"], check=False)
+        if code == "ENABLE_FIREWALL":
+            script = '/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on'
+            completed = subprocess.run(["/usr/bin/osascript", "-e", f"do shell script {json.dumps(script)} with administrator privileges"], check=False)
+            if completed.returncode != 0:
+                status = "FAILED"
+                detail = "firewall_privilege_or_shell_failed"
+        if code == "REVERIFY":
+            need_reverify = True
+        if code == "NOTIFY":
+            status = "ACKED"
+            detail = "notification_shown"
+    except Exception as exc:
+        status = "FAILED"
+        detail = str(exc)[:200]
+    if cmd_id:
+        results.append({"id": cmd_id, "status": status, "detail": detail})
+if results:
+    try:
+        with open(out_path, "w", encoding="utf-8") as handle:
+            json.dump(results, handle)
+    except Exception:
+        pass
 print("REVERIFY" if need_reverify else "OK")
 PY
 )"
@@ -154,7 +178,13 @@ check_in() {
   iv="$(/usr/bin/openssl rand -hex 16)"
   ciphertext="$(printf '%s' "$payload" | /usr/bin/openssl enc -aes-256-cbc -K "$encryption_key" -iv "$iv" -base64 -A)"
   encrypted_tag="$(printf '%s' "${iv}.${ciphertext}" | /usr/bin/openssl dgst -sha256 -hmac "$authentication_key" | /usr/bin/awk '{print $NF}')"
-  request_body="{\"encryptedTelemetry\":{\"version\":1,\"algorithm\":\"AES-256-CBC+HMAC-SHA256\",\"iv\":\"$iv\",\"ciphertext\":\"$ciphertext\",\"tag\":\"$encrypted_tag\"}}"
+  results_file="$AGENT_DIR/last-command-results.json"
+  command_results="[]"
+  if [ -f "$results_file" ]; then
+    command_results="$(/bin/cat "$results_file" 2>/dev/null || echo '[]')"
+    /bin/rm -f "$results_file"
+  fi
+  request_body="{\"encryptedTelemetry\":{\"version\":1,\"algorithm\":\"AES-256-CBC+HMAC-SHA256\",\"iv\":\"$iv\",\"ciphertext\":\"$ciphertext\",\"tag\":\"$encrypted_tag\"},\"commandResults\":${command_results}}"
   timestamp="$(/bin/date +%s)"
   nonce="$(/usr/bin/uuidgen | /usr/bin/tr -d '-' | /usr/bin/tr '[:upper:]' '[:lower:]')"
   signing_input="${timestamp}.${nonce}.${request_body}"

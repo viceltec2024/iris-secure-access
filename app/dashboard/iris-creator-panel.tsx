@@ -75,6 +75,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
         created?: CreatedAgent;
         approved?: CreatedAgent;
         proposal?: { id: string; title: string; status: string };
+        taskResult?: { ok: boolean; error?: string };
       };
       if (!response.ok) throw new Error(payload.error || "creator");
       applyDesk(payload);
@@ -151,7 +152,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
         </div>
         <div className="approval-actions">
           <button type="button" className="creator-approve-primary" disabled={busy} autoFocus onClick={() => void confirmApproval()}>
-            <CheckCircle />{busy ? (es ? "Activando…" : "Activating…") : (es ? "Aprobar e implementar" : "Approve and deploy")}
+            <CheckCircle />{busy ? (es ? "Activando…" : "Activating…") : (es ? "Aprobar y activar (supervisado)" : "Approve and activate (supervised)")}
           </button>
           <button type="button" disabled={busy} onClick={() => void post({ action: "reject", agentId: pending.id }).then(result => { if (result) setPending(null); })}>
             {es ? "Rechazar" : "Reject"}
@@ -253,6 +254,10 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
               <button disabled={busy} onClick={() => void post({ action: "propose_improvement", agentId: item.id, proposalType: "test_plan" }).then(result => {
                 if (result?.proposal) setNotice(es ? `Plan de pruebas propuesto. Aún no se ejecutó CI.` : `Test plan proposed. CI was not run.`);
               })}>{es ? "Proponer tests" : "Propose tests"}</button>
+              <button disabled={busy} onClick={() => void post({ action: "run_task", agentId: item.id, task: "heartbeat" }).then(result => {
+                if (result?.taskResult?.ok) setNotice(es ? "Latido real ejecutado (sin cambios al repo)." : "Real heartbeat ran (no repo changes).");
+                else if (result?.taskResult?.error) setNotice(result.taskResult.error);
+              })}>{es ? "Latido" : "Heartbeat"}</button>
               <button disabled={busy} onClick={() => void post({ action: "pause", agentId: item.id })}>{es ? "Pausar" : "Pause"}</button>
             </div>
             {(item.proposals || []).filter(proposal => proposal.status === "awaiting_approval").slice(0, 3).map(proposal => <div className="creator-proposal" key={proposal.id}>

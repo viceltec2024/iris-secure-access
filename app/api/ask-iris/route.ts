@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
+import { detectPromptInjection } from "../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +12,15 @@ type IncomingMessage = { role: "user" | "assistant"; content: string };
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
-  if (!identity) return Response.json({ error: "Your IRIS session has expired. Sign in again." }, { status: 401 });
+  if (!identity) {
+    return Response.json({
+      error: "Tu sesión de IRIS expiró. Vuelve a iniciar sesión.",
+    }, { status: 401 });
+  }
   const user = await provisionIrisUser(identity);
-  if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
+  if (user.status !== "ACTIVE") {
+    return Response.json({ error: "El acceso a IRIS está suspendido." }, { status: 403 });
+  }
 
   if (!(await enforceRateLimit(`ask-iris:${user.email}`, 60, 60 * 1000))) {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "DENIED", { reason: "rate_limited" });
@@ -34,6 +41,17 @@ export async function POST(request: Request) {
   const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
   const language = preferences.language === "en" ? "en" : "es";
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  const guardian = detectPromptInjection(lastUser, language);
+  if (guardian.blocked) {
+    await logAudit(user.email, "ASK_IRIS_GUARDIAN_BLOCKED", "security_context", "DENIED", { code: guardian.code });
+    return Response.json({
+      error: guardian.message,
+      answer: guardian.message,
+      source: "guardian",
+      blocked: true,
+      code: guardian.code,
+    }, { status: 400 });
+  }
   const bindings = env as unknown as Record<string, string | undefined>;
   const wantsEdit = isEditAssistRequest(lastUser);
   const museKey = museApiKey(bindings);

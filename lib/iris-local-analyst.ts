@@ -38,6 +38,13 @@ export type IrisIncidentContext = {
   recommendation: string;
 };
 
+export type IrisLessonSnippet = {
+  id: string;
+  title: string;
+  body: string;
+  promotion?: string;
+};
+
 export type IrisAnalystInput = {
   language: "es" | "en";
   question: string;
@@ -49,6 +56,9 @@ export type IrisAnalystInput = {
   agents: AgentContext[];
   wallet?: { address?: string; connected?: boolean };
   incident?: IrisIncidentContext | null;
+  /** Human-approved lessons only — never authorize core mutation. */
+  lessons?: IrisLessonSnippet[];
+  memoryHits?: IrisLessonSnippet[];
 };
 
 function firstName(value: string) {
@@ -255,6 +265,19 @@ export function localIrisAnswer(input: IrisAnalystInput) {
     return es
       ? `${name}, ${label || "tu Mac"} está inscrito pero OFFLINE: el agente no envió telemetría en los últimos 5 minutos. No puedo arrancar el LaunchAgent desde aquí. En Dispositivos pulsa Reconectar, o pega esto en Terminal (el Mac debe estar encendido y en red): ${command} Cuando el reporte llegue, pasa a ONLINE solo. El firewall apagado se arregla después, aprobando la alerta.`
       : `${name}, ${label || "your Mac"} is enrolled but OFFLINE: the agent did not send telemetry in the last 5 minutes. I cannot start the LaunchAgent from here. In Devices tap Reconnect, or paste this in Terminal (the Mac must be awake and on the network): ${command} When the report arrives, the status flips to ONLINE by itself. A disabled firewall is fixed after that by approving the alert.`;
+  }
+
+  if (/(lecc(?:i[oó]n|iones)|lesson|memoria|aprendizaje|learning)/.test(question)) {
+    const lessons = input.lessons || [];
+    if (!lessons.length) {
+      return es
+        ? `${name}, no hay lecciones aprobadas todavía. Corre evaluaciones en Misiones y aprueba las lecciones pendientes; IRIS no las aplica sola al núcleo.`
+        : `${name}, there are no approved lessons yet. Run evaluations in Missions and approve pending lessons; IRIS never applies them to the core alone.`;
+    }
+    const titles = lessons.slice(0, 3).map(item => item.title).join("; ");
+    return es
+      ? `${name}, lecciones activas (aprobadas por un humano): ${titles}. Las uso solo como contexto de lectura; no modifican el núcleo de IRIS.`
+      : `${name}, active lessons (human-approved): ${titles}. I use them as read-only context; they do not modify IRIS core.`;
   }
 
   if (/(agente|agent|orquest)/.test(question)) {

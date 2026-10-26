@@ -2,7 +2,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { agentRequestNonces, appSettings, devices, incidentStates, remediationPlans, responseActions, securityAlerts, trustedApplications } from "../../../db/schema";
-import { queueAgentCommands } from "../../../lib/iris-agent-commands";
+import { listAgentCommandsForDevices, queueAgentCommands } from "../../../lib/iris-agent-commands";
 import { type AgentTelemetry, deviceView } from "../../../lib/iris-device-view";
 import { commandsForAlert } from "../../../lib/iris-live-soc";
 import { irisReconnectOrigin } from "../../../lib/iris-origin";
@@ -29,6 +29,9 @@ export async function GET(request: Request) {
   const trustedRows = deviceRows.length ? await db.select().from(trustedApplications).where(inArray(trustedApplications.deviceId, deviceRows.map(device => device.id))) : [];
   const alerts = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(100) : [];
   const remediations = deviceRows.length ? await db.select().from(remediationPlans).where(inArray(remediationPlans.deviceId, deviceRows.map(device => device.id))).orderBy(desc(remediationPlans.approvedAt)).limit(100) : [];
+  const agentCommands = deviceRows.length
+    ? (await listAgentCommandsForDevices(deviceRows.map(device => device.id))).slice(0, 60)
+    : [];
   const incidents = await db.select().from(incidentStates);
   const actions = user.role === "ADMIN" ? await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30) : await db.select().from(responseActions).where(eq(responseActions.actorEmail, user.email)).orderBy(desc(responseActions.createdAt)).limit(30);
   const audit = await listRecentAudit(user.email, user.role, 40);
@@ -43,6 +46,7 @@ export async function GET(request: Request) {
     actions,
     alerts,
     remediations,
+    agentCommands,
     audit,
     purchases,
     wallet: wallet ? { connected: true, address: wallet.address, mode: wallet.mode } : { connected: false, address: "", mode: "watch" },

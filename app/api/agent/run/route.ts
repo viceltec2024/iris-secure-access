@@ -4,6 +4,7 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
+import { detectPromptInjection } from "../../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
 import { routeIrisTextRequest } from "../../../../lib/iris-model-router";
 
@@ -51,6 +52,18 @@ export async function POST(request: Request) {
 
   const bindings = env as unknown as Record<string, string | undefined>;
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  const guardian = detectPromptInjection(lastUser, language);
+  if (guardian.blocked) {
+    await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: guardian.code });
+    return Response.json({
+      error: guardian.message,
+      answer: guardian.message,
+      source: "guardian",
+      blocked: true,
+      code: guardian.code,
+      steps: [{ tool: "guardian", arguments: { code: guardian.code }, ok: false }],
+    }, { status: 400 });
+  }
   const route = routeIrisTextRequest({ question: lastUser, env: bindings });
   const wantsEdit = route.kind === "edit" || isEditAssistRequest(lastUser);
   const museKey = museApiKey(bindings);

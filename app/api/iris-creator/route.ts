@@ -14,12 +14,11 @@ import {
   parseCreatorDesk,
   pauseCreatedAgent,
   rejectCreatedAgent,
-  tickApprovedAgents,
   type AgentSchedule,
   type CreatorDeskState,
   type ProposalType,
 } from "../../../lib/iris-creator";
-import { runAuthorizedAgentTask, type AgentTaskKind } from "../../../lib/iris-agent-runtime";
+import { runApprovedAgentTicks, runAuthorizedAgentTask, type AgentTaskKind } from "../../../lib/iris-agent-runtime";
 import { emptyMemoryStore, parseMemoryStore } from "../../../lib/iris-memory";
 import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
 import { enforceRateLimit } from "../../../lib/rate-limit";
@@ -59,17 +58,30 @@ export async function GET(request: Request) {
   const ctx = await requireOrgContext(user.email);
   const loaded = await loadOrgDeskValue({ kind: "creator", organizationId: ctx.organization.id, email: user.email });
   const state = loaded.value ? parseCreatorDesk(loaded.value) : emptyCreatorDesk();
-  const next = tickApprovedAgents(state);
-  if (JSON.stringify(next) !== JSON.stringify(state)) {
+  const memoryLoaded = await loadOrgDeskValue({ kind: "memory", organizationId: ctx.organization.id, email: user.email });
+  const memory = memoryLoaded.value ? parseMemoryStore(memoryLoaded.value) : emptyMemoryStore();
+  const drained = runApprovedAgentTicks({ state, language, memory });
+  if (JSON.stringify(drained.state) !== JSON.stringify(state)) {
     await saveOrgDeskValue({
       kind: "creator",
       organizationId: ctx.organization.id,
       email: user.email,
       expectedUpdatedAt: loaded.updatedAt,
-      value: JSON.stringify(next),
+      value: JSON.stringify(drained.state),
     });
   }
-  return Response.json({ ...deskPayload(next, language), organizationId: ctx.organization.id });
+  return Response.json({
+    ...deskPayload(drained.state, language),
+    organizationId: ctx.organization.id,
+    ticks: drained.ticks.map(item => ({
+      ok: item.ok,
+      task: item.task,
+      appliedToRepo: item.appliedToRepo,
+      selfModifiedCore: item.selfModifiedCore,
+      evidence: item.evidence,
+      error: item.error || null,
+    })),
+  });
 }
 
 export async function POST(request: Request) {
