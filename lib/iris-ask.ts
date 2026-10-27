@@ -4,8 +4,10 @@ import { appSettings, devices, securityAlerts } from "../db/schema";
 import { parseWalletSessionValue } from "./iris-chain.ts";
 import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
 import { liveWorkers } from "./iris-live-soc.ts";
+import { IRIS_KNOWLEDGE_SETTING, parseKnowledgeStore, rememberKnowledge, seededKnowledgeStore, serializeLearnedKnowledge } from "./iris-knowledge.ts";
 import { activeLessons, emptyMemoryStore, parseMemoryStore, searchMemory, type MemoryRecord } from "./iris-memory.ts";
 import { irisMindAnswer } from "./iris-mind.ts";
+import { withSettingCas } from "./iris-settings-cas.ts";
 import { isMuseConfigured } from "./iris-muse.ts";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "./iris-market.ts";
 import { loadOrgDeskValue } from "./iris-org-store.ts";
@@ -107,6 +109,13 @@ export async function resolveIrisAsk(input: {
   const question = [...input.messages].reverse().find(message => message.role === "user")?.content || "";
   const approvedLessons = activeLessons(memoryStore);
   const relatedMemory = searchMemory(memoryStore, question, 4);
+  let knowledge = seededKnowledgeStore();
+  try {
+    const [knowledgeRow] = await db.select().from(appSettings).where(eq(appSettings.key, IRIS_KNOWLEDGE_SETTING)).limit(1);
+    knowledge = seededKnowledgeStore(parseKnowledgeStore(knowledgeRow?.value || ""));
+  } catch {
+    knowledge = seededKnowledgeStore();
+  }
   const analystInput = {
     language: input.language,
     question,
@@ -120,6 +129,7 @@ export async function resolveIrisAsk(input: {
     incident: input.incident,
     lessons: lessonSnippets(approvedLessons),
     memoryHits: lessonSnippets(relatedMemory),
+    knowledge,
   };
 
   if (isMarketQuestion(question)) {
@@ -154,10 +164,23 @@ export async function resolveIrisAsk(input: {
   }
 
   const mind = await irisMindAnswer(analystInput);
+  if (mind.knowledge && serializeLearnedKnowledge(mind.knowledge) !== serializeLearnedKnowledge(knowledge)) {
+    await withSettingCas({
+      key: IRIS_KNOWLEDGE_SETTING,
+      actorEmail: input.user.email,
+      mutate: (current) => {
+        let next = seededKnowledgeStore(parseKnowledgeStore(current));
+        for (const fact of mind.knowledge?.facts.filter(item => item.origin === "learned") || []) {
+          next = rememberKnowledge(next, fact);
+        }
+        return { value: serializeLearnedKnowledge(next), result: true };
+      },
+    }).catch(() => false);
+  }
   return {
     answer: mind.answer,
     source: mind.source,
-    model: mind.source === "world" ? "iris-world" : "iris-local-analyst",
+    model: mind.source === "world" ? "iris-mind" : "iris-local-analyst",
     ticker: "",
     context: analystInput,
   };
