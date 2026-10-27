@@ -95,7 +95,7 @@ export async function lookupWikipedia(topic: string, language: "es" | "en"): Pro
 }
 
 export function composeWorldAnswer(extract: string, title: string, language: "es" | "en", name: string) {
-  const clean = extract.replace(/\s+/g, " ").trim();
+  const clean = extract.replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\s+/g, " ").trim();
   const body = clean.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 3).join(" ");
   const headed = title && !new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(body)
     ? `${title}. ${body}`
