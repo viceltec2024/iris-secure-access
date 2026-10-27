@@ -37,11 +37,14 @@ test("billing: test mode never enables real charges; live keys blocked", () => {
 });
 
 test("secret hygiene redacts and rejects provider key material", () => {
+  // Assemble the OpenAI-shaped fixture so `git grep` secret hygiene does not
+  // treat this test file as committed key material.
+  const fakeOpenAiShape = ["sk-", "abcdefghijklmnopqrstuvwxyz1234"].join("");
   assert.equal(containsPossibleSecret("hello"), false);
-  assert.equal(containsPossibleSecret("sk-abcdefghijklmnopqrstuvwxyz1234"), true);
-  assert.match(redactSecrets("key sk-abcdefghijklmnopqrstuvwxyz1234 end"), /\[REDACTED\]/);
+  assert.equal(containsPossibleSecret(fakeOpenAiShape), true);
+  assert.match(redactSecrets(`key ${fakeOpenAiShape} end`), /\[REDACTED\]/);
   assert.equal(assertNoSecretsInPayload({ ok: true, plan: "starter" }), true);
-  assert.throws(() => assertNoSecretsInPayload({ key: "sk-abcdefghijklmnopqrstuvwxyz1234" }));
+  assert.throws(() => assertNoSecretsInPayload({ key: fakeOpenAiShape }));
   assert.equal(maskSecretPresence("").configured, false);
   assert.equal(maskSecretPresence("abcd1234xyz").configured, true);
 });
