@@ -46,6 +46,22 @@ test("Ask IRIS evaluates simple math locally", async () => {
   assert.match(result.answer, /96/);
 });
 
+test("Ask IRIS answers memory lessons locally instead of Wikipedia movies", async () => {
+  const result = await irisMindAnswer({
+    ...base,
+    question: "qué lecciones tienes",
+    lessons: [{ id: "l1", title: "Reforzar Guardian", body: "Bloquear exec_shell", promotion: "approved" }],
+  });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /Reforzar Guardian|lecciones activas|solo lectura/i);
+  assert.doesNotMatch(result.answer, /Cartagena|comedia|beso/i);
+});
+
+test("Ask IRIS blocks Wikipedia hijacks for IRIS product topics", async () => {
+  const wiki = await irisWorldAnswer("qué lecciones tienes", "es", "owner");
+  assert.equal(wiki, "");
+});
+
 test("Ask IRIS extracts a world-knowledge topic", () => {
   assert.equal(extractSearchTopic("¿qué es la fotosíntesis?"), "fotosíntesis");
   assert.equal(extractSearchTopic("para qué sirve el firewall"), "firewall");

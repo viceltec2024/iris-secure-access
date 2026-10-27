@@ -1,4 +1,6 @@
-const WORKSPACE = /\b(dispositivos?|devices?|alertas?|alerts?|incidentes?|incidents?|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|hallazgos?|operaciones de seguridad|security operations|estado del sistema|system status|estado de seguridad|security overview|get_security_overview|overview de seguridad|macos|macbook|\bmac\b|firewall|filevault|gatekeeper|xprotect|online|offline)\b/i;
+const WORKSPACE = /\b(dispositivos?|devices?|alertas?|alerts?|incidentes?|incidents?|agente|orquest|wallet|metamask|iris chain|telemetr|enrol|passkey|amenaza|threat|malware|hallazgos?|operaciones de seguridad|security operations|estado del sistema|system status|estado de seguridad|security overview|get_security_overview|overview de seguridad|macos|macbook|\bmac\b|firewall|filevault|gatekeeper|xprotect|online|offline|lecc(?:i[oó]n|iones)|lessons?|memoria|aprendizaje|learning|misiones?|missions?|evaluaciones?|evals?|guardian|creator|organizaci[oó]n|organizacion|remediaci[oó]n|remediation|latido|heartbeat)\b/i;
+const IRIS_PRODUCT = /\b(iris|ask iris|guardian|creator|misi[oó]n|mission|eval|memoria|lecc(?:i[oó]n|iones)|lesson|soc|telemetr|enrol|passkey|elevenlabs|muse)\b/i;
+const CONNECT_MAC = /\b(conect(?:o|as|a|amos|an|ar(?:me|te|se)?|e|emos)?|reconect(?:o|as|a|amos|an|ar(?:me)?|e)?|instala(?:r)?(?:\s+el)?\s+agente|enroll|enrol(?:ar)?)\b/i;
 const GREETING = /^(?:hola|hello|hi|buenas|hey|qué tal|que tal|buenos d[ií]as|buenas tardes)(?:\s+iris)?[!.?]*$/i;
 const IDENTITY = /\b(qui[eé]n eres|who are you|qu[eé] eres|qu[eé] puedes|what can you|c[oó]mo te llamas)\b/i;
 const CONVERSATION = /\b(quiero hablar|hablemos|conversemos|h[áa]blame|platiquemos|podemos hablar|talk with you|let'?s talk)\b/i;
@@ -28,7 +30,16 @@ export function isBargeInStop(question: string) {
 }
 
 export function isWorkspaceQuestion(question: string) {
-  return WORKSPACE.test(question);
+  return WORKSPACE.test(question) || CONNECT_MAC.test(question);
+}
+
+/** Product/ops questions that must never fall through to Wikipedia. */
+export function isIrisProductQuestion(question: string) {
+  const text = question.trim();
+  if (isWorkspaceQuestion(text)) return true;
+  if (IRIS_PRODUCT.test(text) && !/\bsistema (?:solar|nervioso|digestivo)\b/i.test(text)) return true;
+  if (CONNECT_MAC.test(text)) return true;
+  return false;
 }
 
 export function isConceptExplainer(question: string) {

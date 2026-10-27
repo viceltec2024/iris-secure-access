@@ -109,6 +109,22 @@ test("Ask IRIS tells how to reconnect an offline Mac", () => {
   assert.match(answer, /firewall/i);
 });
 
+test("Ask IRIS understands first-person conecto for Mac install", () => {
+  const answer = localIrisAnswer({
+    language: "es",
+    question: "cómo conecto mi Mac",
+    userName: "owner",
+    section: "devices",
+    origin: "https://iris.example",
+    devices: [],
+    alerts: [],
+    agents: [],
+    wallet: { connected: false, address: "" },
+  });
+  assert.match(answer, /Registrar mi Mac|iris-agent-macos\.sh|16 caracteres/i);
+  assert.match(answer, /https:\/\/iris\.example/);
+});
+
 test("Ask IRIS lists live alerts instead of a generic dump", () => {
   const answer = localIrisAnswer({
     language: "es",
