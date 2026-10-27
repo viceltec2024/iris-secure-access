@@ -8,6 +8,7 @@ import type { MissionDesk, MissionRecord } from "../../lib/iris-mission";
 import type { EvalRunReport } from "../../lib/iris-evals";
 import type { PriorityCapability } from "../../lib/iris-capability-audit";
 import { classifyLabel } from "../../lib/iris-capability-audit";
+import type { MemoryRecord, MemoryStore } from "../../lib/iris-memory";
 
 type Scorecard = {
   verifiedPercent: number;
@@ -16,6 +17,8 @@ type Scorecard = {
   missing: number;
   total: number;
 };
+
+const emptyMemory: MemoryStore = { records: [], maxRecords: 200, revision: 0 };
 
 export default function IrisMissionPanel({ language }: { language: Language }) {
   const es = language === "es";
@@ -28,6 +31,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
   const [scorecard, setScorecard] = useState<Scorecard | null>(null);
   const [capabilities, setCapabilities] = useState<PriorityCapability[]>([]);
   const [lastEval, setLastEval] = useState<EvalRunReport | null>(null);
+  const [memory, setMemory] = useState<MemoryStore>(emptyMemory);
 
   async function refresh() {
     const [missionRes, evalRes] = await Promise.all([
@@ -36,14 +40,17 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
     ]);
     if (missionRes.ok) setDesk(await missionRes.json() as MissionDesk);
     if (evalRes.ok) {
-      const payload = await evalRes.json() as { scorecard: Scorecard; capabilities: PriorityCapability[] };
+      const payload = await evalRes.json() as { scorecard: Scorecard; capabilities: PriorityCapability[]; memory?: MemoryStore };
       setScorecard(payload.scorecard);
       setCapabilities(payload.capabilities || []);
+      if (payload.memory) setMemory(payload.memory);
     }
   }
 
   useEffect(() => {
     void refresh();
+    const timer = window.setInterval(() => void refresh(), 45_000);
+    return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
 
@@ -99,10 +106,11 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "run", language }),
       });
-      const payload = await response.json() as { error?: string; report?: EvalRunReport; scorecard?: Scorecard };
+      const payload = await response.json() as { error?: string; report?: EvalRunReport; scorecard?: Scorecard; memory?: MemoryStore };
       if (!response.ok) throw new Error(payload.error || "evals");
       if (payload.report) setLastEval(payload.report);
       if (payload.scorecard) setScorecard(payload.scorecard);
+      if (payload.memory) setMemory(payload.memory);
       setNotice(es
         ? `Evaluación: ${payload.report?.summary.passed}/${payload.report?.summary.total} OK (${payload.report?.summary.passRate}%).`
         : `Evaluation: ${payload.report?.summary.passed}/${payload.report?.summary.total} OK (${payload.report?.summary.passRate}%).`);
@@ -113,7 +121,31 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
     }
   }
 
+  async function decideLesson(lessonId: string, action: "approve_lesson" | "reject_lesson") {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/iris-evals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, lessonId, language }),
+      });
+      const payload = await response.json() as { error?: string; memory?: MemoryStore; lesson?: MemoryRecord };
+      if (!response.ok) throw new Error(payload.error || "lesson");
+      if (payload.memory) setMemory(payload.memory);
+      setNotice(action === "approve_lesson"
+        ? (es ? "Lección aprobada. Ask IRIS la usará como contexto de solo lectura." : "Lesson approved. Ask IRIS will use it as read-only context.")
+        : (es ? "Lección rechazada." : "Lesson rejected."));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "lesson");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const waiting = desk.missions.filter(item => ["executed", "awaiting_approval", "verified"].includes(item.status));
+  const pendingLessons = memory.records.filter(item => item.kind === "lesson" && (item.promotion === "pending" || item.promotion === "none"));
+  const approvedLessons = memory.records.filter(item => item.kind === "lesson" && item.promotion === "approved");
+  const evalHistory = memory.records.filter(item => item.kind === "eval_result").slice(0, 8);
 
   return <section className="module-panel iris-mission-panel">
     <div className="module-toolbar">
@@ -197,5 +229,38 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
         </li>)}
       </ul>
     </div>}
+
+    <div className="mission-eval-report">
+      <strong>{es ? "Board continuo de evaluaciones" : "Continuous evaluation board"}</strong>
+      <p>{es ? "Historial append-only desde memoria (auto-refresh 45s)." : "Append-only history from memory (45s auto-refresh)."}</p>
+      {evalHistory.length === 0 ? <p>{es ? "Aún no hay corridas guardadas." : "No saved runs yet."}</p> : <ul className="mission-eval-history">
+        {evalHistory.map(item => <li key={item.id}><b>{item.title}</b><span>{item.score ?? "—"}%</span></li>)}
+      </ul>}
+    </div>
+
+    <div className="mission-memory">
+      <h4>{es ? "Memoria y lecciones" : "Memory and lessons"}</h4>
+      <p>{es
+        ? "Las lecciones son append-only. Promoverlas es decisión humana; nunca autorizan modificar el núcleo de IRIS."
+        : "Lessons are append-only. Promotion is a human decision; they never authorize IRIS core changes."}</p>
+      {pendingLessons.length > 0 ? <div className="creator-waiting">
+        <strong>{es ? "Lecciones pendientes de promoción" : "Lessons awaiting promotion"}</strong>
+        {pendingLessons.slice(0, 6).map(item => <article key={item.id}>
+          <span><ShieldCheck /></span>
+          <div>
+            <b>{item.title}</b>
+            <small>{item.body.slice(0, 140)}</small>
+          </div>
+          <button disabled={busy} onClick={() => void decideLesson(item.id, "approve_lesson")}><CheckCircle />{es ? "Aprobar" : "Approve"}</button>
+          <button disabled={busy} onClick={() => void decideLesson(item.id, "reject_lesson")}>{es ? "Rechazar" : "Reject"}</button>
+        </article>)}
+      </div> : <p className="mission-memory-empty">{es ? "No hay lecciones pendientes." : "No pending lessons."}</p>}
+      {approvedLessons.length > 0 && <ul className="mission-memory-active">
+        {approvedLessons.slice(0, 5).map(item => <li key={item.id}>
+          <b>{item.title}</b>
+          <small>{es ? "Activa · solo lectura" : "Active · read-only"}</small>
+        </li>)}
+      </ul>}
+    </div>
   </section>;
 }

@@ -143,22 +143,56 @@ export function buildLessonFromEval(input: {
   };
 }
 
-/** Retrieve relevant memory without mutating anything. */
-export function searchMemory(store: MemoryStore, query: string, limit = 8) {
-  const tokens = String(query || "")
+function tokenizeMemoryText(value: string) {
+  return String(value || "")
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .filter(token => token.length >= 3)
-    .slice(0, 12);
-  if (!tokens.length) {
+    .slice(0, 64);
+}
+
+function termFrequency(tokens: string[]) {
+  const tf = new Map<string, number>();
+  for (const token of tokens) tf.set(token, (tf.get(token) || 0) + 1);
+  const length = Math.max(tokens.length, 1);
+  for (const [token, count] of tf) tf.set(token, count / length);
+  return tf;
+}
+
+/** Local TF-IDF semantic-ish retrieval (no external embeddings). Never mutates store. */
+export function searchMemory(store: MemoryStore, query: string, limit = 8) {
+  const queryTokens = tokenizeMemoryText(query).slice(0, 16);
+  if (!queryTokens.length) {
     return store.records.slice(0, limit);
   }
-  const scored = store.records.map(record => {
-    const hay = `${record.title} ${record.body} ${record.tags.join(" ")}`.toLowerCase();
-    const score = tokens.reduce((sum, token) => sum + (hay.includes(token) ? 1 : 0), 0)
-      + (record.kind === "lesson" && record.promotion === "approved" ? 0.5 : 0);
-    return { record, score };
+
+  const docs = store.records.map(record => ({
+    record,
+    tokens: tokenizeMemoryText(`${record.title} ${record.body} ${record.tags.join(" ")}`),
+  }));
+  const documentCount = Math.max(docs.length, 1);
+  const df = new Map<string, number>();
+  for (const doc of docs) {
+    for (const token of new Set(doc.tokens)) {
+      df.set(token, (df.get(token) || 0) + 1);
+    }
+  }
+  const idf = (token: string) => Math.log((1 + documentCount) / (1 + (df.get(token) || 0))) + 1;
+  const queryTf = termFrequency(queryTokens);
+
+  const scored = docs.map(doc => {
+    if (!doc.tokens.length) return { record: doc.record, score: 0 };
+    const docTf = termFrequency(doc.tokens);
+    let score = 0;
+    for (const [token, qWeight] of queryTf) {
+      const dWeight = docTf.get(token) || 0;
+      if (!dWeight) continue;
+      score += qWeight * dWeight * idf(token);
+    }
+    if (doc.record.kind === "lesson" && doc.record.promotion === "approved") score += 0.15;
+    return { record: doc.record, score };
   });
+
   return scored
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score)

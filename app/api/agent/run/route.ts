@@ -4,6 +4,7 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
+import { detectPromptInjection } from "../../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
 import { routeIrisTextRequest } from "../../../../lib/iris-model-router";
 
@@ -51,6 +52,18 @@ export async function POST(request: Request) {
 
   const bindings = env as unknown as Record<string, string | undefined>;
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  const guardian = detectPromptInjection(lastUser, language);
+  if (guardian.blocked) {
+    await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: guardian.code });
+    return Response.json({
+      error: guardian.message,
+      answer: guardian.message,
+      source: "guardian",
+      blocked: true,
+      code: guardian.code,
+      steps: [{ tool: "guardian", arguments: { code: guardian.code }, ok: false }],
+    }, { status: 400 });
+  }
   const route = routeIrisTextRequest({ question: lastUser, env: bindings });
   const wantsEdit = route.kind === "edit" || isEditAssistRequest(lastUser);
   const museKey = museApiKey(bindings);
@@ -129,11 +142,46 @@ When enough evidence is available, give the direct answer and a short next-actio
         return Response.json({ answer: answer || (language === "es" ? "IRIS terminó el análisis." : "IRIS completed the analysis."), source: "agent", steps });
       }
 
+      const modelStream = detectPromptInjection(JSON.stringify(payload.output || []).slice(0, 8000), language);
+      if (modelStream.blocked) {
+        await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: modelStream.code, phase: "model_output" });
+        return Response.json({
+          error: modelStream.message,
+          answer: modelStream.message,
+          source: "guardian",
+          blocked: true,
+          code: modelStream.code,
+          steps,
+        }, { status: 400 });
+      }
+
       input.push(...(payload.output || []));
       for (const call of calls) {
         if (!call.name || !call.call_id) continue;
+        const argGuard = detectPromptInjection(String(call.arguments || ""), language);
+        if (argGuard.blocked) {
+          steps.push({ tool: call.name, arguments: { blocked: argGuard.code }, ok: false });
+          input.push({
+            type: "function_call_output",
+            call_id: call.call_id,
+            output: JSON.stringify({ error: argGuard.message, blocked: true, code: argGuard.code }),
+          });
+          await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: argGuard.code, phase: "tool_args", tool: call.name });
+          continue;
+        }
         try {
           const result = await runIrisTool({ email: user.email, role: user.role as "ADMIN" | "USER" }, call.name, call.arguments || "{}");
+          const resultGuard = detectPromptInjection(JSON.stringify(result).slice(0, 8000), language);
+          if (resultGuard.blocked) {
+            steps.push({ tool: call.name, arguments: { blocked: resultGuard.code }, ok: false });
+            input.push({
+              type: "function_call_output",
+              call_id: call.call_id,
+              output: JSON.stringify({ error: resultGuard.message, blocked: true, code: resultGuard.code }),
+            });
+            await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: resultGuard.code, phase: "tool_result", tool: call.name });
+            continue;
+          }
           let parsed: Record<string, unknown> = {};
           try { parsed = JSON.parse(call.arguments || "{}") as Record<string, unknown>; } catch { parsed = {}; }
           steps.push({ tool: call.name, arguments: parsed, ok: true });

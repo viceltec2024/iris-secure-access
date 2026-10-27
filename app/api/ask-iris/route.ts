@@ -3,17 +3,36 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
+import { detectPromptInjection } from "../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
+import { recordOrgObs } from "../../../lib/iris-obs-store";
+import { requireOrgContext } from "../../../lib/iris-tenant";
 
 export const dynamic = "force-dynamic";
 
 type IncomingMessage = { role: "user" | "assistant"; content: string };
 
+async function recordAskObs(email: string, kind: "ask_latency_ms" | "guardian_block", value: number, label?: string) {
+  try {
+    const ctx = await requireOrgContext(email);
+    await recordOrgObs({ organizationId: ctx.organization.id, actorEmail: email, kind, value, label });
+  } catch {
+    // observability is best-effort
+  }
+}
+
 export async function POST(request: Request) {
+  const started = Date.now();
   const identity = await getChatGPTUser();
-  if (!identity) return Response.json({ error: "Your IRIS session has expired. Sign in again." }, { status: 401 });
+  if (!identity) {
+    return Response.json({
+      error: "Tu sesión de IRIS expiró. Vuelve a iniciar sesión.",
+    }, { status: 401 });
+  }
   const user = await provisionIrisUser(identity);
-  if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
+  if (user.status !== "ACTIVE") {
+    return Response.json({ error: "El acceso a IRIS está suspendido." }, { status: 403 });
+  }
 
   if (!(await enforceRateLimit(`ask-iris:${user.email}`, 60, 60 * 1000))) {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "DENIED", { reason: "rate_limited" });
@@ -34,6 +53,18 @@ export async function POST(request: Request) {
   const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
   const language = preferences.language === "en" ? "en" : "es";
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
+  const guardian = detectPromptInjection(lastUser, language);
+  if (guardian.blocked) {
+    await logAudit(user.email, "ASK_IRIS_GUARDIAN_BLOCKED", "security_context", "DENIED", { code: guardian.code });
+    await recordAskObs(user.email, "guardian_block", 1, guardian.code);
+    return Response.json({
+      error: guardian.message,
+      answer: guardian.message,
+      source: "guardian",
+      blocked: true,
+      code: guardian.code,
+    }, { status: 400 });
+  }
   const bindings = env as unknown as Record<string, string | undefined>;
   const wantsEdit = isEditAssistRequest(lastUser);
   const museKey = museApiKey(bindings);
@@ -70,12 +101,14 @@ export async function POST(request: Request) {
   const apiKey = bindings.OPENAI_API_KEY;
   if (!apiKey || resolved.source === "live-market") {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", resolved.source === "live-market" ? "live_market" : "security_context", "SUCCESS", { model: resolved.model, ticker: resolved.ticker || "" });
+    await recordAskObs(user.email, "ask_latency_ms", Date.now() - started, resolved.source);
     return Response.json({ answer: resolved.answer, source: resolved.source });
   }
 
   const analystInput = resolved.context;
   if (!analystInput) {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: resolved.model });
+    await recordAskObs(user.email, "ask_latency_ms", Date.now() - started, resolved.source);
     return Response.json({ answer: resolved.answer, source: resolved.source });
   }
 
@@ -96,9 +129,11 @@ When the user asks by voice for the system status, answer aloud naturally and co
     const answer = payload.output?.flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text || "").join("\n").trim();
     if (!answer) throw new Error("IRIS returned an empty analysis.");
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: "gpt-5.6-sol" });
+    await recordAskObs(user.email, "ask_latency_ms", Date.now() - started, "openai");
     return Response.json({ answer, source: "openai" });
   } catch {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "SUCCESS", { model: resolved.model, fallback: true });
+    await recordAskObs(user.email, "ask_latency_ms", Date.now() - started, `${resolved.source}_fallback`);
     return Response.json({ answer: resolved.answer, source: resolved.source });
   }
 }

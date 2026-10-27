@@ -22,6 +22,7 @@ import {
 } from "../../../lib/iris-tenant";
 import { assertOrgWithinLimits, getMonthlyUsage } from "../../../lib/iris-usage";
 import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
+import { readOrgObsSummary } from "../../../lib/iris-obs-store";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -118,6 +119,8 @@ export async function GET(request: Request) {
     payload.apiKeys = await listOrgApiKeys(ctx.organization.id);
     payload.billingEvents = await listBillingEvents(ctx.organization.id);
     payload.providerSecrets = providerSecretStatus(language);
+    const obs = await readOrgObsSummary(ctx.organization.id);
+    payload.observability = obs.summary;
   }
   assertNoSecretsInPayload(payload, "iris-orgs-get");
   return Response.json(payload);

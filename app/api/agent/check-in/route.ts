@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { agentRequestNonces, devices, remediationPlans, securityAlerts, trustedApplications } from "../../../../db/schema";
 import { logAudit } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
-import { takePendingAgentCommands } from "../../../../lib/iris-agent-commands";
+import { acknowledgeAgentCommands, takePendingAgentCommands, type AgentCommandResultInput } from "../../../../lib/iris-agent-commands";
 
 const MAX_BODY_BYTES = 32_768;
 const TOKEN_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
@@ -20,7 +20,12 @@ type Telemetry = {
 };
 
 type EncryptedEnvelope = { version?: number; algorithm?: string; iv?: string; ciphertext?: string; tag?: string };
-type AgentBody = { enrollmentCode?: string; telemetry?: Telemetry; encryptedTelemetry?: EncryptedEnvelope };
+type AgentBody = {
+  enrollmentCode?: string;
+  telemetry?: Telemetry;
+  encryptedTelemetry?: EncryptedEnvelope;
+  commandResults?: AgentCommandResultInput[];
+};
 
 async function sha256(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -248,15 +253,29 @@ export async function POST(request: Request) {
   const risk = calculateRisk(telemetry);
   await db.update(devices).set({ status: "ONLINE", risk, telemetry: JSON.stringify(telemetry), lastSeenAt: new Date().toISOString() }).where(eq(devices.id, device.id));
   await syncAlerts(device, telemetry);
-  const meaningful = Boolean(telemetry.securityFindings?.length || telemetry.changes?.length || risk !== device.risk);
+  const acked = await acknowledgeAgentCommands(device.id, Array.isArray(body.commandResults) ? body.commandResults : []);
+  if (acked.length) {
+    await logAudit(device.ownerEmail, "AGENT_COMMAND_ACK", device.id, "SUCCESS", {
+      results: acked.map(item => ({ id: item.id, code: item.code, status: item.status })),
+    });
+  }
+  const meaningful = Boolean(telemetry.securityFindings?.length || telemetry.changes?.length || risk !== device.risk || acked.length);
   if (meaningful) {
     await logAudit(device.ownerEmail, "AGENT_CHECKIN", device.id, "SUCCESS", {
       risk,
       findings: (telemetry.securityFindings || []).length,
       changes: (telemetry.changes || []).length,
+      commandAcks: acked.length,
       transport: telemetry.transportEncryption || "TLS+HMAC",
     });
   }
   const commands = await takePendingAgentCommands(device.id);
-  return Response.json({ deviceId: device.id, status: "ONLINE", risk, intervalSeconds: 120, commands });
+  return Response.json({
+    deviceId: device.id,
+    status: "ONLINE",
+    risk,
+    intervalSeconds: 120,
+    commands,
+    commandAcks: acked.map(item => ({ id: item.id, status: item.status })),
+  });
 }

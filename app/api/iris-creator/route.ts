@@ -14,13 +14,19 @@ import {
   parseCreatorDesk,
   pauseCreatedAgent,
   rejectCreatedAgent,
-  tickApprovedAgents,
   type AgentSchedule,
   type CreatorDeskState,
   type ProposalType,
 } from "../../../lib/iris-creator";
-import { runAuthorizedAgentTask, type AgentTaskKind } from "../../../lib/iris-agent-runtime";
+import {
+  enqueueApprovedAgentTicks,
+  processAgentTickQueue,
+  runAuthorizedAgentTask,
+  type AgentTaskKind,
+} from "../../../lib/iris-agent-runtime";
 import { emptyMemoryStore, parseMemoryStore } from "../../../lib/iris-memory";
+import { recordOrgObs } from "../../../lib/iris-obs-store";
+import { queueStats } from "../../../lib/iris-job-queue";
 import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { loadOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store";
@@ -59,7 +65,16 @@ export async function GET(request: Request) {
   const ctx = await requireOrgContext(user.email);
   const loaded = await loadOrgDeskValue({ kind: "creator", organizationId: ctx.organization.id, email: user.email });
   const state = loaded.value ? parseCreatorDesk(loaded.value) : emptyCreatorDesk();
-  const next = tickApprovedAgents(state);
+  const memoryLoaded = await loadOrgDeskValue({ kind: "memory", organizationId: ctx.organization.id, email: user.email });
+  const memory = memoryLoaded.value ? parseMemoryStore(memoryLoaded.value) : emptyMemoryStore();
+  let next = enqueueApprovedAgentTicks({ state, ownerEmail: user.email });
+  const drained = processAgentTickQueue({
+    state: next,
+    language,
+    memory,
+    ownerEmail: user.email,
+  });
+  next = drained.state;
   if (JSON.stringify(next) !== JSON.stringify(state)) {
     await saveOrgDeskValue({
       kind: "creator",
@@ -69,7 +84,30 @@ export async function GET(request: Request) {
       value: JSON.stringify(next),
     });
   }
-  return Response.json({ ...deskPayload(next, language), organizationId: ctx.organization.id });
+  if (drained.tick?.ok) {
+    await recordOrgObs({
+      organizationId: ctx.organization.id,
+      actorEmail: user.email,
+      kind: "agent_tick",
+      value: 1,
+      label: drained.job?.subjectId,
+    }).catch(() => null);
+  }
+  return Response.json({
+    ...deskPayload(next, language),
+    organizationId: ctx.organization.id,
+    queue: queueStats(next.queue),
+    ticks: drained.tick
+      ? [{
+        ok: drained.tick.ok,
+        task: drained.tick.task,
+        appliedToRepo: drained.tick.appliedToRepo,
+        selfModifiedCore: drained.tick.selfModifiedCore,
+        evidence: drained.tick.evidence,
+        error: drained.tick.error || null,
+      }]
+      : [],
+  });
 }
 
 export async function POST(request: Request) {
@@ -150,12 +188,58 @@ export async function POST(request: Request) {
 
     if (body.action === "approve") {
       const result = approveCreatedAgent(state, String(body.agentId || ""), user.email);
-      await persist(result.state);
+      const queued = enqueueApprovedAgentTicks({ state: result.state, ownerEmail: user.email });
+      await persist(queued);
       await logAudit(user.email, "IRIS_CREATOR_APPROVED", result.agent.id, "SUCCESS", {
         specialty: result.agent.blueprint.specialty,
         schedule: result.agent.schedule,
       });
-      return Response.json({ ...deskPayload(result.state, language), approved: result.agent, organizationId: orgId });
+      return Response.json({ ...deskPayload(queued, language), approved: result.agent, organizationId: orgId });
+    }
+
+    if (body.action === "process_ticks") {
+      let next = enqueueApprovedAgentTicks({ state, ownerEmail: user.email });
+      const memoryLoaded = await loadOrgDeskValue({ kind: "memory", organizationId: orgId, email: user.email });
+      const memory = memoryLoaded.value ? parseMemoryStore(memoryLoaded.value) : emptyMemoryStore();
+      const ticks = [];
+      for (let i = 0; i < 5; i += 1) {
+        const drained = processAgentTickQueue({
+          state: next,
+          language,
+          memory,
+          ownerEmail: user.email,
+        });
+        next = drained.state;
+        if (!drained.tick) break;
+        ticks.push(drained.tick);
+      }
+      await persist(next);
+      if (ticks.some(item => item.ok)) {
+        await recordOrgObs({
+          organizationId: orgId,
+          actorEmail: user.email,
+          kind: "agent_tick",
+          value: ticks.filter(item => item.ok).length,
+          label: "process_ticks",
+        }).catch(() => null);
+      }
+      await logAudit(user.email, "IRIS_CREATOR_TICKS", orgId, "SUCCESS", {
+        processed: ticks.length,
+        appliedToRepo: false,
+      }, orgId);
+      return Response.json({
+        ...deskPayload(next, language),
+        organizationId: orgId,
+        queue: queueStats(next.queue),
+        ticks: ticks.map(item => ({
+          ok: item.ok,
+          task: item.task,
+          appliedToRepo: false,
+          selfModifiedCore: false,
+          evidence: item.evidence,
+          error: item.error || null,
+        })),
+      });
     }
 
     if (body.action === "reject") {

@@ -27,6 +27,19 @@ interface ExecutionContext {
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
+  /**
+   * Optional cron hook. Durable agent ticks are primarily drained request-scoped
+   * via Creator GET / process_ticks. A Sites cron can call that path later without
+   * auto-applying repo changes.
+   */
+  async scheduled(event: { cron?: string; scheduledTime?: number }, env: Env, ctx: ExecutionContext) {
+    // Intentionally no self-modify / no repo apply. Request-scoped drains remain the source of truth.
+    void event;
+    void env;
+    void ctx;
+    return;
+  },
+
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 

@@ -46,6 +46,17 @@ type BillingInfo = {
   stripeKeyKind?: string;
 };
 type ProviderSecret = { id: string; label: string; status: string; detail: string };
+type ObsSummary = {
+  windowHours: number;
+  askCount: number;
+  askP50Ms: number | null;
+  askP95Ms: number | null;
+  guardianBlocks: number;
+  agentTicks: number;
+  providerProbes: number;
+  evalRuns: number;
+};
+type ProbeRow = { id: string; status: string; detail?: string };
 
 type OrgsPayload = {
   activeOrganizationId?: string;
@@ -58,6 +69,7 @@ type OrgsPayload = {
   billing?: BillingInfo;
   billingEvents?: Array<{ id: string; kind: string; plan: string | null; amountCents: number; createdAt: string }>;
   providerSecrets?: { providers: ProviderSecret[]; notes: string[] };
+  observability?: ObsSummary;
   error?: string;
   acceptToken?: string;
   secret?: string;
@@ -77,6 +89,7 @@ export default function IrisOrgPanel({ language }: { language: Language }) {
   const [oneTimeSecret, setOneTimeSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [probes, setProbes] = useState<ProbeRow[]>([]);
 
   async function refresh() {
     const response = await fetch(`/api/iris-orgs?view=admin&language=${language}`, { cache: "no-store" });
@@ -291,6 +304,52 @@ export default function IrisOrgPanel({ language }: { language: Language }) {
           ))}
         </ul>
         {(payload.providerSecrets?.notes || []).map(note => <p key={note} className="iris-org-note">{note}</p>)}
+
+        {canAdmin && <div className="iris-readiness-board">
+          <strong>{es ? "Sonda honesta de proveedores" : "Honest provider probe"}</strong>
+          <button type="button" disabled={busy} onClick={() => {
+            setBusy(true);
+            void fetch("/api/iris-providers/status?probe=1", { cache: "no-store" })
+              .then(async response => {
+                const data = await response.json() as { probes?: { providers?: ProbeRow[] }; error?: string };
+                if (!response.ok) throw new Error(data.error || "probe");
+                setProbes(data.probes?.providers || []);
+                setNotice(es
+                  ? "Sonda lista. Clave configurada ≠ live_ok."
+                  : "Probe ready. Configured key ≠ live_ok.");
+                await refresh();
+              })
+              .catch(error => setNotice(error instanceof Error ? error.message : "probe"))
+              .finally(() => setBusy(false));
+          }}>{es ? "Probar proveedores" : "Probe providers"}</button>
+          <ul>
+            {probes.map(item => <li key={item.id}><span>{item.id}</span><em data-live={item.status === "live_ok" || item.status === "local_ready" ? "ok" : item.status.includes("skip") || item.status.includes("missing") ? "missing" : "partial"}>{item.status}</em></li>)}
+          </ul>
+        </div>}
+
+        {payload.observability && <div className="iris-obs-board">
+          <strong>{es ? "Observabilidad (24h)" : "Observability (24h)"}</strong>
+          <ul>
+            <li><span>{es ? "Ask p50 / p95" : "Ask p50 / p95"}</span><b>{payload.observability.askP50Ms ?? "—"} / {payload.observability.askP95Ms ?? "—"} ms</b></li>
+            <li><span>{es ? "Bloqueos Guardian" : "Guardian blocks"}</span><b>{payload.observability.guardianBlocks}</b></li>
+            <li><span>{es ? "Latidos de agente" : "Agent ticks"}</span><b>{payload.observability.agentTicks}</b></li>
+            <li><span>{es ? "Sondas / evals" : "Probes / evals"}</span><b>{payload.observability.providerProbes} / {payload.observability.evalRuns}</b></li>
+          </ul>
+        </div>}
+
+        {canAdmin && <div className="creator-compose">
+          <button type="button" disabled={busy} onClick={() => void post({ action: "export" }).then(result => {
+            if (!result) return;
+            const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `iris-org-export-${payload.activeOrganizationId || "org"}.json`;
+            anchor.click();
+            URL.revokeObjectURL(url);
+            setNotice(es ? "Export compliance descargado (sin secretos)." : "Compliance export downloaded (no secrets).");
+          })}>{es ? "Exportar compliance JSON" : "Export compliance JSON"}</button>
+        </div>}
 
         {oneTimeSecret && <div className="iris-org-onetime">
           <Warning weight="fill" />

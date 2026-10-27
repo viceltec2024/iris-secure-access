@@ -27,6 +27,13 @@ type AgentContext = {
   task?: string;
 };
 
+export type IrisAskAttachment = {
+  name: string;
+  mime: string;
+  /** data URL or https URL — capped by parseAskIncident */
+  dataUrl: string;
+};
+
 export type IrisIncidentContext = {
   id: string;
   title: string;
@@ -36,6 +43,15 @@ export type IrisIncidentContext = {
   source: string;
   evidence: string[];
   recommendation: string;
+  /** Optional screenshot / evidence images for multimodal Ask (read-only). */
+  attachments?: IrisAskAttachment[];
+};
+
+export type IrisLessonSnippet = {
+  id: string;
+  title: string;
+  body: string;
+  promotion?: string;
 };
 
 export type IrisAnalystInput = {
@@ -49,6 +65,9 @@ export type IrisAnalystInput = {
   agents: AgentContext[];
   wallet?: { address?: string; connected?: boolean };
   incident?: IrisIncidentContext | null;
+  /** Human-approved lessons only — never authorize core mutation. */
+  lessons?: IrisLessonSnippet[];
+  memoryHits?: IrisLessonSnippet[];
 };
 
 function firstName(value: string) {
@@ -216,9 +235,10 @@ export function localIrisAnswer(input: IrisAnalystInput) {
         : `${name}, there is no incident selected on the board. Pick one and ask me again.`;
     }
     const evidence = input.incident.evidence.filter(Boolean).slice(0, 4).join(es ? "; " : "; ");
+    const attachments = (input.incident.attachments || []).map(item => item.name).join(", ");
     return es
-      ? `${name}, el incidente abierto es ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severidad ${input.incident.severity}, estado ${input.incident.status}. ${evidence ? `Evidencia: ${evidence}. ` : ""}${input.incident.recommendation || "Revisa el plan en el tablero antes de aprobar."}`
-      : `${name}, the open incident is ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severity ${input.incident.severity}, status ${input.incident.status}. ${evidence ? `Evidence: ${evidence}. ` : ""}${input.incident.recommendation || "Review the plan on the board before you approve."}`;
+      ? `${name}, el incidente abierto es ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severidad ${input.incident.severity}, estado ${input.incident.status}. ${evidence ? `Evidencia: ${evidence}. ` : ""}${attachments ? `Adjuntos: ${attachments}. ` : ""}${input.incident.recommendation || "Revisa el plan en el tablero antes de aprobar."}`
+      : `${name}, the open incident is ${input.incident.id}: ${input.incident.title || input.incident.subject}. Severity ${input.incident.severity}, status ${input.incident.status}. ${evidence ? `Evidence: ${evidence}. ` : ""}${attachments ? `Attachments: ${attachments}. ` : ""}${input.incident.recommendation || "Review the plan on the board before you approve."}`;
   }
 
   if (/(alerta|alert|hallazgo)/.test(question) && !/(firewall|filevault|gatekeeper)/.test(question)) {
@@ -255,6 +275,19 @@ export function localIrisAnswer(input: IrisAnalystInput) {
     return es
       ? `${name}, ${label || "tu Mac"} está inscrito pero OFFLINE: el agente no envió telemetría en los últimos 5 minutos. No puedo arrancar el LaunchAgent desde aquí. En Dispositivos pulsa Reconectar, o pega esto en Terminal (el Mac debe estar encendido y en red): ${command} Cuando el reporte llegue, pasa a ONLINE solo. El firewall apagado se arregla después, aprobando la alerta.`
       : `${name}, ${label || "your Mac"} is enrolled but OFFLINE: the agent did not send telemetry in the last 5 minutes. I cannot start the LaunchAgent from here. In Devices tap Reconnect, or paste this in Terminal (the Mac must be awake and on the network): ${command} When the report arrives, the status flips to ONLINE by itself. A disabled firewall is fixed after that by approving the alert.`;
+  }
+
+  if (/(lecc(?:i[oó]n|iones)|lesson|memoria|aprendizaje|learning)/.test(question)) {
+    const lessons = input.lessons || [];
+    if (!lessons.length) {
+      return es
+        ? `${name}, no hay lecciones aprobadas todavía. Corre evaluaciones en Misiones y aprueba las lecciones pendientes; IRIS no las aplica sola al núcleo.`
+        : `${name}, there are no approved lessons yet. Run evaluations in Missions and approve pending lessons; IRIS never applies them to the core alone.`;
+    }
+    const titles = lessons.slice(0, 3).map(item => item.title).join("; ");
+    return es
+      ? `${name}, lecciones activas (aprobadas por un humano): ${titles}. Las uso solo como contexto de lectura; no modifican el núcleo de IRIS.`
+      : `${name}, active lessons (human-approved): ${titles}. I use them as read-only context; they do not modify IRIS core.`;
   }
 
   if (/(agente|agent|orquest)/.test(question)) {

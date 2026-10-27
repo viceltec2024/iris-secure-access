@@ -4,19 +4,38 @@ import { appSettings, devices, securityAlerts } from "../db/schema";
 import { parseWalletSessionValue } from "./iris-chain.ts";
 import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
 import { liveWorkers } from "./iris-live-soc.ts";
+import { activeLessons, emptyMemoryStore, parseMemoryStore, searchMemory, type MemoryRecord } from "./iris-memory.ts";
 import { irisMindAnswer } from "./iris-mind.ts";
 import { isMuseConfigured } from "./iris-muse.ts";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "./iris-market.ts";
+import { loadOrgDeskValue } from "./iris-org-store.ts";
 import { parsePurchaseDesk } from "./iris-purchases.ts";
+import { requireOrgContext } from "./iris-tenant.ts";
 import type { IrisIncidentContext } from "./iris-local-analyst.ts";
 
 export type IrisAskMessage = { role: "user" | "assistant"; content: string };
 export type IrisAskUser = { email: string; role: string; displayName: string };
 
+function parseAskAttachments(value: unknown) {
+  if (!Array.isArray(value)) return [] as Array<{ name: string; mime: string; dataUrl: string }>;
+  return value
+    .filter(item => item && typeof item === "object")
+    .map(item => item as Record<string, unknown>)
+    .filter(item => typeof item.dataUrl === "string" && typeof item.mime === "string")
+    .filter(item => String(item.mime).startsWith("image/") && String(item.dataUrl).length <= 220_000)
+    .slice(0, 2)
+    .map(item => ({
+      name: String(item.name || "evidence").slice(0, 80),
+      mime: String(item.mime).slice(0, 80),
+      dataUrl: String(item.dataUrl),
+    }));
+}
+
 export function parseAskIncident(value: unknown): IrisIncidentContext | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   if (typeof item.id !== "string" || !item.id.trim()) return null;
+  const attachments = parseAskAttachments(item.attachments);
   return {
     id: item.id.slice(0, 80),
     title: typeof item.title === "string" ? item.title.slice(0, 200) : "",
@@ -26,7 +45,17 @@ export function parseAskIncident(value: unknown): IrisIncidentContext | null {
     source: typeof item.source === "string" ? item.source.slice(0, 80) : "",
     evidence: Array.isArray(item.evidence) ? item.evidence.filter((entry): entry is string => typeof entry === "string").slice(0, 8).map(entry => entry.slice(0, 240)) : [],
     recommendation: typeof item.recommendation === "string" ? item.recommendation.slice(0, 400) : "",
+    attachments: attachments.length ? attachments : undefined,
   };
+}
+
+function lessonSnippets(records: MemoryRecord[]) {
+  return records.slice(0, 5).map(item => ({
+    id: item.id,
+    title: item.title,
+    body: item.body.slice(0, 280),
+    promotion: item.promotion,
+  }));
 }
 
 export async function resolveIrisAsk(input: {
@@ -48,6 +77,14 @@ export async function resolveIrisAsk(input: {
   const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, `iris_purchase_desk:${input.user.email}`)).limit(1);
   const wallet = parseWalletSessionValue(walletRow?.value || "");
   const pendingPurchases = parsePurchaseDesk(deskRow?.value || "").proposals.filter(item => item.status === "awaiting_approval").length;
+  let memoryStore = emptyMemoryStore();
+  try {
+    const ctx = await requireOrgContext(input.user.email);
+    const loaded = await loadOrgDeskValue({ kind: "memory", organizationId: ctx.organization.id, email: input.user.email });
+    memoryStore = loaded.value ? parseMemoryStore(loaded.value) : emptyMemoryStore();
+  } catch {
+    memoryStore = emptyMemoryStore();
+  }
   const mappedDevices = deviceRows.map(device => ({
     id: device.id,
     name: device.name,
@@ -68,6 +105,8 @@ export async function resolveIrisAsk(input: {
     language: input.language,
   });
   const question = [...input.messages].reverse().find(message => message.role === "user")?.content || "";
+  const approvedLessons = activeLessons(memoryStore);
+  const relatedMemory = searchMemory(memoryStore, question, 4);
   const analystInput = {
     language: input.language,
     question,
@@ -79,6 +118,8 @@ export async function resolveIrisAsk(input: {
     agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),
     wallet: { connected: Boolean(wallet), address: wallet?.address || "" },
     incident: input.incident,
+    lessons: lessonSnippets(approvedLessons),
+    memoryHits: lessonSnippets(relatedMemory),
   };
 
   if (isMarketQuestion(question)) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { designAgentFromPrompt, approveCreatedAgent, addCreatedAgent, emptyCreatorDesk } from "../lib/iris-creator.ts";
-import { runAuthorizedAgentTask } from "../lib/iris-agent-runtime.ts";
+import { runApprovedAgentTicks, runAuthorizedAgentTask } from "../lib/iris-agent-runtime.ts";
 import { detectPromptInjection } from "../lib/iris-guardian.ts";
 import { appendMemory, emptyMemoryStore, recordErrorSolution } from "../lib/iris-memory.ts";
 
@@ -105,4 +105,33 @@ test("memory revisions increment to support CAS concurrency", () => {
     actorEmail: "owner@iris.local",
   }));
   assert.equal(store.revision, 2);
+});
+
+test("approved scheduled agents get a real heartbeat tick without applying repo changes", () => {
+  const agent = approvedAgent();
+  const onDemand = designAgentFromPrompt({
+    id: "rt-ondemand",
+    prompt: "Crea una IA especializada en reportes",
+    language: "es",
+    schedule: "on_demand",
+  });
+  const approvedOnDemand = approveCreatedAgent(
+    addCreatedAgent(emptyCreatorDesk(), onDemand),
+    onDemand.id,
+    "owner@iris.local",
+    "2026-10-25T11:00:00.000Z",
+  ).agent;
+  assert.equal(approvedOnDemand.schedule, "on_demand");
+  const drained = runApprovedAgentTicks({
+    state: { agents: [agent, approvedOnDemand] },
+    language: "es",
+    now: "2026-10-25T12:00:00.000Z",
+  });
+  assert.equal(drained.ticks.length, 1);
+  assert.equal(drained.ticks[0].ok, true);
+  assert.equal(drained.ticks[0].appliedToRepo, false);
+  assert.equal(drained.ticks[0].selfModifiedCore, false);
+  assert.equal(drained.state.agents[0].lastTickAt, "2026-10-25T12:00:00.000Z");
+  // on_demand keeps the approve-time stamp; drain does not re-heartbeat it
+  assert.equal(drained.state.agents[1].lastTickAt, "2026-10-25T11:00:00.000Z");
 });

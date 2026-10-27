@@ -17,6 +17,22 @@ test("Ask IRIS greets instead of reading the market tape", () => {
   assert.doesNotMatch(answer, /S&P|Nasdaq|VIX|ticker/i);
 });
 
+test("Ask IRIS surfaces human-approved lessons as read-only context", () => {
+  const answer = localIrisAnswer({
+    language: "es",
+    question: "qué lecciones de memoria tienes",
+    userName: "Ezephian",
+    section: "mission",
+    devices: [],
+    alerts: [],
+    agents: [],
+    wallet: { connected: false, address: "" },
+    lessons: [{ id: "l1", title: "Reforzar Guardian", body: "Bloquear exec_shell", promotion: "approved" }],
+  });
+  assert.match(answer, /Reforzar Guardian/);
+  assert.match(answer, /solo lectura|núcleo/i);
+});
+
 test("Ask IRIS answers system status in Spanish without OpenAI", () => {
   const answer = localIrisAnswer({
     language: "es",
