@@ -2,6 +2,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db";
 import { devices, securityAlerts } from "../db/schema";
 import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
+import { lookupWikipedia } from "./iris-world-knowledge.ts";
 
 export type IrisAgentUser = {
   email: string;
@@ -19,6 +20,7 @@ export const IRIS_AGENT_TOOL_LABELS: Record<string, { es: string; en: string }> 
   list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
   get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
   muse_edit: { es: "Muse editó el texto", en: "Muse edited the text" },
+  lookup_wikipedia: { es: "Consulté Wikipedia", en: "Looked up Wikipedia" },
 };
 
 export const IRIS_AGENT_TOOLS = [
@@ -53,6 +55,21 @@ export const IRIS_AGENT_TOOLS = [
     },
     strict: true,
   },
+  {
+    type: "function",
+    name: "lookup_wikipedia",
+    description: "Look up a general-knowledge topic in Wikipedia. Read-only public encyclopedia. Use for science, history, people, and places. Do not use for live Mac, wallet, or IRIS security state.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", minLength: 2, maxLength: 140 },
+        language: { type: "string", enum: ["es", "en"] },
+      },
+      required: ["query", "language"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
 ] as const;
 
 async function visibleDevices(user: IrisAgentUser) {
@@ -78,6 +95,21 @@ function deviceSummary(device: { id: string; name: string; platform: string; sta
 export async function runIrisTool(user: IrisAgentUser, name: string, rawArguments: string) {
   let args: Record<string, unknown> = {};
   try { args = JSON.parse(rawArguments || "{}") as Record<string, unknown>; } catch { throw new Error("Invalid tool arguments"); }
+
+  if (name === "lookup_wikipedia") {
+    const query = String(args.query || "").slice(0, 140);
+    const language = args.language === "en" ? "en" : "es";
+    const hit = await lookupWikipedia(query, language);
+    if (!hit) return { found: false, query, language };
+    return {
+      found: true,
+      title: hit.title,
+      extract: hit.extract.slice(0, 900),
+      url: hit.url,
+      language: hit.language,
+      attribution: "Wikipedia",
+    };
+  }
 
   const deviceRows = await visibleDevices(user);
   const visibleIds = deviceRows.map(device => device.id);

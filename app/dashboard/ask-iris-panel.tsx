@@ -12,6 +12,7 @@ const AGENT_STEP_LABELS: Record<string, { es: string; en: string }> = {
   list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
   get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
   muse_edit: { es: "Muse editó el texto", en: "Muse edited the text" },
+  lookup_wikipedia: { es: "Consulté Wikipedia", en: "Looked up Wikipedia" },
 };
 
 type ChatMessage = { role: "user" | "assistant"; content: string; steps?: Array<{ tool: string; ok: boolean }> };
@@ -25,10 +26,10 @@ type RecognitionConstructor = new () => RecognitionInstance;
 const welcomeMessage = (language: Language, userName: string, section = "operations"): ChatMessage => ({ role: "assistant", content: language === "es"
   ? section === "market"
     ? `Hola, ${userName}. Soy IRIS. Estoy conectada a la bolsa en vivo: veo precios, te enseño el gráfico y te digo las lecturas más limpias. Pregúntame por un ticker o por las mejores opciones.`
-    : `Hola, ${userName}. Soy IRIS. Puedes pedirme el estado del Mac o decirme “edita” / “reescribe” para que Muse te ayude con el texto. Pregúntame con tus propias palabras.`
+    : `Hola, ${userName}. Soy IRIS. Pregúntame por tu Mac, un tema de Wikipedia, o dime “edita” / “reescribe” para que Muse te ayude con el texto.`
   : section === "market"
     ? `Hi, ${userName}. I'm IRIS. I am connected to the live market: I see prices, teach the chart, and give you the cleanest readings. Ask me for a ticker or the best options.`
-    : `Hi, ${userName}. I'm IRIS. Ask about your Mac, or say “edit” / “rewrite” so Muse can help with the wording. Ask me in your own words.` });
+    : `Hi, ${userName}. I'm IRIS. Ask about your Mac, a Wikipedia topic, or say “edit” / “rewrite” so Muse can help with the wording.` });
 
 export default function AskIrisPanel({ section, selectedIncident, userName, language }: { section: string; selectedIncident: IncidentContext; incidents: IncidentContext[]; devices: DeviceContext[]; userRole: string; userName: string; language: Language }) {
   const [open, setOpen] = useState(true);

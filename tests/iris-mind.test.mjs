@@ -49,7 +49,9 @@ test("Ask IRIS evaluates simple math locally", async () => {
 test("Ask IRIS extracts a world-knowledge topic", () => {
   assert.equal(extractSearchTopic("¿qué es la fotosíntesis?"), "fotosíntesis");
   assert.equal(extractSearchTopic("para qué sirve el firewall"), "firewall");
+  assert.equal(extractSearchTopic("cuentame de Einstein"), "Einstein");
   assert.match(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /plantas/i);
+  assert.match(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /Wikipedia/i);
   assert.doesNotMatch(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /Eso es lo esencial/i);
 });
 
@@ -57,12 +59,16 @@ test("Ask IRIS answers general questions from public knowledge", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
-    if (url.includes("api.php")) {
-      return new Response(JSON.stringify({ query: { search: [{ title: "Fotosíntesis" }] } }), { status: 200 });
-    }
+    assert.match(url, /^https:\/\/es\.wikipedia\.org\/w\/api\.php/);
     return new Response(JSON.stringify({
-      title: "Fotosíntesis",
-      extract: "La fotosíntesis es el proceso por el cual las plantas convierten luz en energía química.",
+      query: {
+        pages: [{
+          title: "Fotosíntesis",
+          extract: "La fotosíntesis es el proceso por el cual las plantas convierten luz en energía química.",
+          index: 1,
+          fullurl: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis",
+        }],
+      },
     }), { status: 200 });
   };
   try {
@@ -71,6 +77,27 @@ test("Ask IRIS answers general questions from public knowledge", async () => {
     const result = await irisMindAnswer({ ...base, question: "qué es la fotosíntesis" });
     assert.equal(result.source, "world");
     assert.match(result.answer, /plantas/i);
+    assert.match(result.answer, /Wikipedia/i);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Ask IRIS skips Wikipedia disambiguation pages", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    query: {
+      pages: [
+        { title: "Marte", extract: "Marte puede referirse a: Marte (planeta).", index: 1, pageprops: { disambiguation: "" } },
+        { title: "Marte (planeta)", extract: "Marte es el cuarto planeta del sistema solar.", index: 2, fullurl: "https://es.wikipedia.org/wiki/Marte_(planeta)" },
+      ],
+    },
+  }), { status: 200 });
+  try {
+    const result = await irisMindAnswer({ ...base, question: "explícame Marte" });
+    assert.equal(result.source, "world");
+    assert.match(result.answer, /cuarto planeta/i);
+    assert.doesNotMatch(result.answer, /puede referirse/i);
   } finally {
     globalThis.fetch = original;
   }

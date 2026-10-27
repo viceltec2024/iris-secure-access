@@ -7,6 +7,7 @@ test("IRIS agent tools are read-only security lookups", () => {
   assert.match(source, /get_security_overview/);
   assert.match(source, /list_active_alerts/);
   assert.match(source, /get_device_details/);
+  assert.match(source, /lookup_wikipedia/);
   assert.match(source, /reportedDeviceStatus/);
   assert.doesNotMatch(source, /OPENAI_API_KEY\s*[:=]\s*['\"]sk-/);
   assert.doesNotMatch(source, /child_process|execSync|privateKey/);
@@ -17,6 +18,7 @@ test("IRIS agent run falls back locally and stays inside five steps", () => {
   const route = readFileSync(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
   assert.match(route, /MAX_STEPS = 5/);
   assert.match(route, /resolveIrisAsk/);
+  assert.match(route, /route\.kind !== "agent"/);
   assert.match(route, /IRIS_AGENT_TOOLS/);
   assert.match(route, /runMuseEditAgent/);
   assert.doesNotMatch(route, /arbitrary shell/);
@@ -26,6 +28,7 @@ test("Ask IRIS shows investigation steps without chain of thought", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   assert.match(panel, /Revisé el estado de seguridad/);
   assert.match(panel, /Muse editó el texto/);
+  assert.match(panel, /Consulté Wikipedia/);
   assert.match(panel, /iris-chat-steps/);
   assert.doesNotMatch(panel, /chain-of-thought|thinking out loud/i);
 });

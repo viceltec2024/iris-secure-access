@@ -3,9 +3,10 @@
  * - Muse (Meta) → edición / reescritura de texto
  * - ChatGPT (OpenAI) → análisis SOC con herramientas
  * - ElevenLabs → voz neural (TTS)
- * - Local mind → fallback cuando no hay LLM configurado
+ * - Local mind → Wikipedia y fallback cuando no hay LLM o la pregunta no es SOC
  */
 
+import { isSocFollowUp, isSocQuestion } from "./iris-query.ts";
 import { isEditAssistRequest, isMuseConfigured } from "./iris-muse.ts";
 
 export type IrisProviderId = "openai" | "muse" | "elevenlabs" | "local";
@@ -88,10 +89,15 @@ export function routeIrisTextRequest(input: {
     }
     return { kind: "edit", provider: "local", reason: "edit_intent_without_muse_key", model: "muse-local-fallback" };
   }
-  if (openaiConfigured(env)) {
-    return { kind: "agent", provider: "openai", reason: "soc_or_general", model: "gpt-5.6-sol" };
+  if (openaiConfigured(env) && (isSocQuestion(input.question) || isSocFollowUp(input.question))) {
+    return { kind: "agent", provider: "openai", reason: "soc_tools", model: "gpt-5.6-sol" };
   }
-  return { kind: "ask", provider: "local", reason: "no_openai_key", model: "iris-local-analyst" };
+  return {
+    kind: "ask",
+    provider: "local",
+    reason: openaiConfigured(env) ? "general_wikipedia_or_mind" : "no_openai_key",
+    model: "iris-local-analyst",
+  };
 }
 
 /** Decide TTS: ElevenLabs si hay clave; si no, navegador. */

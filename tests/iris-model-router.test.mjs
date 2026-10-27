@@ -44,6 +44,16 @@ test("router uses local mind without OpenAI", () => {
   assert.equal(decision.provider, "local");
 });
 
+test("router keeps general knowledge on Wikipedia even if OpenAI is configured", () => {
+  const decision = routeIrisTextRequest({
+    question: "qué es la fotosíntesis",
+    env: { OPENAI_API_KEY: "sk-test" },
+  });
+  assert.equal(decision.provider, "local");
+  assert.equal(decision.kind, "ask");
+  assert.match(decision.reason, /wikipedia|mind/);
+});
+
 test("voice routes to ElevenLabs or browser", () => {
   assert.equal(routeIrisVoice({ ELEVENLABS_API_KEY: "el-test" }).provider, "elevenlabs");
   assert.equal(routeIrisVoice({}).provider, "local");

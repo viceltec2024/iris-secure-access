@@ -97,7 +97,7 @@ export async function POST(request: Request) {
   }
 
   const apiKey = bindings.OPENAI_API_KEY;
-  if (!apiKey) {
+  if (!apiKey || route.kind !== "agent") {
     const local = await resolveIrisAsk({
       user: { email: user.email, role: user.role, displayName: user.displayName || user.email },
       messages,
@@ -106,8 +106,11 @@ export async function POST(request: Request) {
       incident: parseAskIncident(preferences.incident),
       origin: new URL(request.url).origin,
     });
-    await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: local.model, fallback: "local" });
-    return Response.json({ answer: local.answer, source: local.source, steps: [] as IrisAgentStep[] });
+    const steps: IrisAgentStep[] = local.source === "world"
+      ? [{ tool: "lookup_wikipedia", arguments: { source: "wikipedia" }, ok: true }]
+      : [];
+    await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: local.model, fallback: "local", source: local.source });
+    return Response.json({ answer: local.answer, source: local.source, steps });
   }
 
   const input: Array<Record<string, unknown>> = messages.map(message => ({ role: message.role, content: message.content }));
@@ -126,7 +129,8 @@ Never perform destructive actions. Never invent device or alert data.
 ONLINE means the Mac agent reported in the last 5 minutes. PENDING/OFFLINE telemetry is not a live scan.
 Prefer read-only investigation and explain uncertainty.
 Answer in ${language === "en" ? "English" : "Spanish"}.
-When enough evidence is available, give the direct answer and a short next-action recommendation.`,
+When enough evidence is available, give the direct answer and a short next-action recommendation.
+For general knowledge (science, history, people, places), call lookup_wikipedia instead of inventing facts. Attribute Wikipedia.`,
           input,
           tools: IRIS_AGENT_TOOLS,
           max_output_tokens: 1200,
