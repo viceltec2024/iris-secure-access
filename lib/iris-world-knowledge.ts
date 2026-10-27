@@ -1,3 +1,10 @@
+import {
+  recallKnowledge,
+  rememberKnowledge,
+  seededKnowledgeStore,
+  type KnowledgeOrigin,
+  type KnowledgeStore,
+} from "./iris-knowledge.ts";
 import { extractSearchTopic } from "./iris-query.ts";
 
 const WIKI_UA = "IRIS-Secure-Access/1.1 (https://github.com/viceltec2024/iris-secure-access; Ask IRIS)";
@@ -101,14 +108,44 @@ export function composeWorldAnswer(extract: string, title: string, language: "es
     ? `${title}. ${body}`
     : body;
   if (language === "es") {
-    return `${headed} ${name}, si quieres lo vemos con un ejemplo. Fuente: Wikipedia.`.replace(/\s+/g, " ").trim();
+    return `${name}, esto lo tengo en mi inteligencia: ${headed} Si quieres, lo vemos con un ejemplo. Fuente: Wikipedia.`.replace(/\s+/g, " ").trim();
   }
-  return `${headed} ${name}, say if you want an example. Source: Wikipedia.`.replace(/\s+/g, " ").trim();
+  return `${name}, this is in my own knowledge: ${headed} Say if you want an example. Source: Wikipedia.`.replace(/\s+/g, " ").trim();
 }
 
-export async function irisWorldAnswer(question: string, language: "es" | "en", name: string) {
-  const topic = extractSearchTopic(question);
-  const hit = await lookupWikipedia(topic, language);
-  if (!hit) return "";
-  return composeWorldAnswer(hit.extract, hit.title, language, name);
+export type IrisKnowledgeAnswer = {
+  answer: string;
+  store: KnowledgeStore;
+  origin: KnowledgeOrigin | "wikipedia" | null;
+};
+
+export async function resolveIrisKnowledge(input: {
+  question: string;
+  language: "es" | "en";
+  name: string;
+  store?: KnowledgeStore;
+}): Promise<IrisKnowledgeAnswer> {
+  const store = seededKnowledgeStore(input.store);
+  const topic = extractSearchTopic(input.question);
+  const recalled = recallKnowledge(store, topic, input.language);
+  if (recalled) {
+    return {
+      answer: composeWorldAnswer(recalled.extract, recalled.title, input.language, input.name),
+      store,
+      origin: recalled.origin,
+    };
+  }
+  const hit = await lookupWikipedia(topic, input.language);
+  if (!hit) return { answer: "", store, origin: null };
+  const next = rememberKnowledge(store, { topic, title: hit.title, extract: hit.extract, url: hit.url, language: hit.language });
+  return {
+    answer: composeWorldAnswer(hit.extract, hit.title, input.language, input.name),
+    store: next,
+    origin: "wikipedia",
+  };
+}
+
+export async function irisWorldAnswer(question: string, language: "es" | "en", name: string, store?: KnowledgeStore) {
+  const resolved = await resolveIrisKnowledge({ question, language, name, store });
+  return resolved.answer;
 }

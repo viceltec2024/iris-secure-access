@@ -2,6 +2,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db";
 import { devices, securityAlerts } from "../db/schema";
 import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
+import { recallKnowledge, seededKnowledgeStore } from "./iris-knowledge.ts";
 import { lookupWikipedia } from "./iris-world-knowledge.ts";
 
 export type IrisAgentUser = {
@@ -20,7 +21,7 @@ export const IRIS_AGENT_TOOL_LABELS: Record<string, { es: string; en: string }> 
   list_active_alerts: { es: "Revisé las alertas activas", en: "Checked active alerts" },
   get_device_details: { es: "Revisé la telemetría del dispositivo", en: "Reviewed device telemetry" },
   muse_edit: { es: "Muse editó el texto", en: "Muse edited the text" },
-  lookup_wikipedia: { es: "Consulté Wikipedia", en: "Looked up Wikipedia" },
+  lookup_wikipedia: { es: "Lo saqué de mi conocimiento", en: "Used my own knowledge" },
 };
 
 export const IRIS_AGENT_TOOLS = [
@@ -58,7 +59,7 @@ export const IRIS_AGENT_TOOLS = [
   {
     type: "function",
     name: "lookup_wikipedia",
-    description: "Look up a general-knowledge topic in Wikipedia. Read-only public encyclopedia. Use for science, history, people, and places. Do not use for live Mac, wallet, or IRIS security state.",
+    description: "Recall a general-knowledge topic from IRIS's own knowledge (Wikipedia built into the local mind). Read-only public encyclopedia. Use for science, history, people, and places. Do not use for live Mac, wallet, or IRIS security state.",
     parameters: {
       type: "object",
       properties: {
@@ -99,6 +100,18 @@ export async function runIrisTool(user: IrisAgentUser, name: string, rawArgument
   if (name === "lookup_wikipedia") {
     const query = String(args.query || "").slice(0, 140);
     const language = args.language === "en" ? "en" : "es";
+    const known = recallKnowledge(seededKnowledgeStore(), query, language);
+    if (known) {
+      return {
+        found: true,
+        title: known.title,
+        extract: known.extract.slice(0, 900),
+        url: known.url,
+        language: known.language,
+        attribution: "Wikipedia",
+        origin: known.origin,
+      };
+    }
     const hit = await lookupWikipedia(query, language);
     if (!hit) return { found: false, query, language };
     return {
@@ -108,6 +121,7 @@ export async function runIrisTool(user: IrisAgentUser, name: string, rawArgument
       url: hit.url,
       language: hit.language,
       attribution: "Wikipedia",
+      origin: "wikipedia",
     };
   }
 

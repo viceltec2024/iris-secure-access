@@ -3,7 +3,7 @@
  * - Muse (Meta) → edición / reescritura de texto
  * - ChatGPT (OpenAI) → análisis SOC con herramientas
  * - ElevenLabs → voz neural (TTS)
- * - Local mind → Wikipedia y fallback cuando no hay LLM o la pregunta no es SOC
+ * - Local mind → inteligencia propia (Wikipedia integrada) y SOC sin LLM
  */
 
 import { isSocFollowUp, isSocQuestion } from "./iris-query.ts";
@@ -71,7 +71,7 @@ export function listProviderStatus(env: IrisProviderEnv = {}): IrisProviderStatu
     {
       id: "local",
       configured: true,
-      role: "IRIS local · mente y SOC sin LLM",
+      role: "IRIS local · inteligencia propia y SOC",
       endpoint: "local",
     },
   ];
