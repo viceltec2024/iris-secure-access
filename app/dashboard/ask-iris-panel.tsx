@@ -55,6 +55,7 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [fullScreen, setFullScreen] = useState(false);
   const [attachment, setAttachment] = useState<AskAttachment | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const speakingRef = useRef(false);
   const loadingRef = useRef(false);
   const voiceStageRef = useRef(false);
@@ -719,6 +720,25 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
   }
   startListeningRef.current = startListening;
 
+  function onAttachEvidence(event: { target: HTMLInputElement }) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !file.type.startsWith("image/") || file.size > 180_000) {
+      setVoiceHint(language === "es" ? "Usa una imagen menor a 180 KB." : "Use an image under 180 KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      if (dataUrl.length > 220_000) {
+        setVoiceHint(language === "es" ? "La imagen es demasiado grande." : "The image is too large.");
+        return;
+      }
+      setAttachment({ name: file.name.slice(0, 80), mime: file.type, dataUrl });
+    };
+    reader.readAsDataURL(file);
+  }
+
   if (!open) return <button className="iris-chat-launcher" onClick={() => setOpen(true)}><ChatCircleDots weight="fill" /><span>Ask IRIS</span><i /></button>;
 
   return <aside className={`iris-chat ${voiceStage ? "voice-open" : ""}${fullScreen ? " full-screen" : ""}`} aria-label="Ask IRIS assistant" onPointerDown={event => connectVoice(event)}>
@@ -731,23 +751,12 @@ export default function AskIrisPanel({ section, selectedIncident, userName, lang
     <div className="iris-chat-messages" ref={listRef} aria-live="polite">{messages.map((message, index) => <article className={message.role} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "IRIS" : (language === "es" ? "TÚ" : "YOU")}</span><p>{message.content}</p>{message.role === "assistant" && message.steps?.length ? <ul className="iris-chat-steps">{message.steps.map((step, stepIndex) => <li className={step.ok ? "ok" : "fail"} key={`${step.tool}-${stepIndex}`}>{AGENT_STEP_LABELS[step.tool]?.[language === "en" ? "en" : "es"] || step.tool}</li>)}</ul> : null}</article>)}{loading && <article className="assistant thinking"><span>IRIS</span><p><i /><i /><i /></p></article>}</div>
     <div className="iris-chat-context">{language === "es" ? "Analizando" : "Analyzing"}: <strong>{section}</strong>{selectedIncident.id ? ` · ${selectedIncident.title || selectedIncident.id}` : ""}{voiceHint ? ` · ${voiceHint}` : ""}</div>
     {attachment && <div className="iris-ask-attachment"><span>{attachment.name}</span><button type="button" onClick={() => setAttachment(null)}>{language === "es" ? "Quitar" : "Remove"}</button></div>}
-    <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Habla o escribe tu pregunta para IRIS…" : "Speak or type your question for IRIS…"} rows={2} /><label className="iris-attach-file" title={language === "es" ? "Adjuntar evidencia (imagen)" : "Attach evidence (image)"}><input type="file" accept="image/*" onChange={event => {
-      const file = event.target.files?.[0];
-      event.target.value = "";
-      if (!file || !file.type.startsWith("image/") || file.size > 180_000) {
-        setVoiceHint(language === "es" ? "Usa una imagen menor a 180 KB." : "Use an image under 180 KB.");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = String(reader.result || "");
-        if (dataUrl.length > 220_000) {
-          setVoiceHint(language === "es" ? "La imagen es demasiado grande." : "The image is too large.");
-          return;
-        }
-        setAttachment({ name: file.name.slice(0, 80), mime: file.type, dataUrl });
-      };
-      reader.readAsDataURL(file);
-    }} /><span>+</span></label><button type="button" className={`iris-voice-command ${listening || voiceStage ? "listening" : ""}`} onClick={() => void startListening()} aria-label={language === "es" ? "Comando de voz" : "Voice command"} title={language === "es" ? "Comando de voz" : "Voice command"}><Microphone weight="fill" /></button><button type="submit" disabled={!input.trim()} aria-label="Send question"><ArrowUp weight="bold" /></button></form>
+    <form className="iris-chat-input" onSubmit={event => { event.preventDefault(); void sendMessage(); }}>
+      <textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={language === "es" ? "Habla o escribe tu pregunta para IRIS…" : "Speak or type your question for IRIS…"} rows={2} />
+      <input ref={fileInputRef} className="iris-attach-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" tabIndex={-1} aria-hidden="true" onChange={event => onAttachEvidence(event)} />
+      <button type="button" className="iris-attach-file" title={language === "es" ? "Adjuntar evidencia (imagen)" : "Attach evidence (image)"} aria-label={language === "es" ? "Adjuntar evidencia (imagen)" : "Attach evidence (image)"} onClick={event => { event.preventDefault(); event.stopPropagation(); fileInputRef.current?.click(); }}><span aria-hidden="true">+</span></button>
+      <button type="button" className={`iris-voice-command ${listening || voiceStage ? "listening" : ""}`} onClick={event => { event.preventDefault(); event.stopPropagation(); void startListening(); }} aria-label={language === "es" ? "Comando de voz" : "Voice command"} title={language === "es" ? "Hablar con IRIS" : "Talk to IRIS"}><Microphone weight="fill" /></button>
+      <button type="submit" disabled={!input.trim()} aria-label="Send question"><ArrowUp weight="bold" /></button>
+    </form>
   </aside>;
 }
