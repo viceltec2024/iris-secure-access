@@ -253,7 +253,7 @@ export function localIrisAnswer(input: IrisAnalystInput) {
       : `${name}, open alerts: ${codes}. Ask if you want the next step or the selected incident.`;
   }
 
-  if ((/(\bconect\b|\bconectar(me)?\b|\breconect)/.test(question) && !/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy|agentes|orquest|bolsa|mercado)/.test(question)) || /conectar\s+(el\s+)?(mac|dispositivo|iris)/.test(question)) {
+  if ((/\b(?:conect(?:o|as|a|amos|an|ar(?:me|te|se)?|e|emos)?|reconect(?:o|as|a|amos|an|ar(?:me)?|e)?|instala(?:r)?(?:\s+el)?\s+agente|enrol(?:ar)?)\b/.test(question) && !/(wallet|metamask|robinhood|base|token|compra|comprar|purchase|buy|agentes|orquest|bolsa|mercado)/.test(question)) || /conectar\s+(el\s+)?(mac|dispositivo|iris)/.test(question)) {
     const target = offline[0] || pending[0] || online[0];
     const label = target ? hostLabel(target) : "";
     const command = irisAgentShellCommand(input.origin || "", Boolean(target) && target.status !== "PENDING");

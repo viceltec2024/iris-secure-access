@@ -27,9 +27,13 @@ export function composeWorldAnswer(extract: string, title: string, language: "es
   return `${headed} ${name}, say if you want an example.`.replace(/\s+/g, " ").trim();
 }
 
+const IRIS_TOPIC_BLOCK = /\b(iris|firewall|filevault|gatekeeper|xprotect|macbook|macos|telemetr|passkey|guardian|creator|misi[oó]n|eval|lecc(?:i[oó]n|iones)|memoria operativa|remediaci[oó]n|enrol|agente mac)\b/i;
+
 export async function irisWorldAnswer(question: string, language: "es" | "en", name: string) {
   const topic = extractSearchTopic(question);
   if (!topic || topic.length < 2) return "";
+  // Never answer IRIS product/ops questions from Wikipedia (e.g. "lecciones" → movie).
+  if (IRIS_TOPIC_BLOCK.test(question) || IRIS_TOPIC_BLOCK.test(topic)) return "";
   const lang = language === "es" ? "es" : "en";
   const headers = { Accept: "application/json", "User-Agent": "IRIS-Secure-Access/1.0 (Ask IRIS)" };
   const search = await fetchWiki(`https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(topic)}&srlimit=1&format=json`, headers);
