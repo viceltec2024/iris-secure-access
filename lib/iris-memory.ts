@@ -21,12 +21,46 @@ export type MemoryRecord = {
   sourceId?: string;
 };
 
+/**
+ * Etapa 3 (consentimiento y borrado) — campos opcionales y auditables que
+ * viajan dentro del mismo JSON del store, sin cambiar el comportamiento
+ * existente: los registros siguen siendo append-only, max 200, y la
+ * promoción de lecciones sigue exigiendo un humano. Un store antiguo sin
+ * estos campos se lee igual que antes (se tratan como listas vacías).
+ */
+export type MemoryDataCategory =
+  | "leccion"
+  | "evaluacion"
+  | "mision"
+  | "nota_operador"
+  | "error_solucion";
+
+export type MemoryConsent = {
+  category: MemoryDataCategory;
+  granted: boolean;
+  grantedBy: string;
+  grantedAt: string;
+  /** Sin expiresAt el consentimiento no caduca; con fecha, caduca al llegar. */
+  expiresAt?: string;
+};
+
+export type MemoryTombstone = {
+  id: string;
+  kind: MemoryKind;
+  deletedAt: string;
+  deletedBy: string;
+};
+
 export type MemoryStore = {
   records: MemoryRecord[];
   /** Soft cap to avoid unbounded growth in appSettings JSON. */
   maxRecords: number;
   /** Monotonic revision for optimistic concurrency / CAS. */
   revision: number;
+  /** Etapa 3: consentimiento por categoría (ausente = sin consentir). */
+  consents?: MemoryConsent[];
+  /** Etapa 3: registro de borrados; un id aquí nunca vuelve a listarse. */
+  deletions?: MemoryTombstone[];
 };
 
 const MAX_RECORDS = 200;
@@ -36,12 +70,43 @@ export function emptyMemoryStore(): MemoryStore {
   return { records: [], maxRecords: MAX_RECORDS, revision: 0 };
 }
 
+const MEMORY_CATEGORIES: MemoryDataCategory[] = [
+  "leccion",
+  "evaluacion",
+  "mision",
+  "nota_operador",
+  "error_solucion",
+];
+
+function isMemoryConsent(value: unknown): value is MemoryConsent {
+  if (!value || typeof value !== "object") return false;
+  const row = value as MemoryConsent;
+  return MEMORY_CATEGORIES.includes(row.category)
+    && typeof row.granted === "boolean"
+    && typeof row.grantedBy === "string"
+    && typeof row.grantedAt === "string"
+    && (row.expiresAt === undefined || typeof row.expiresAt === "string");
+}
+
+function isMemoryTombstone(value: unknown): value is MemoryTombstone {
+  if (!value || typeof value !== "object") return false;
+  const row = value as MemoryTombstone;
+  return typeof row.id === "string" && Boolean(row.id)
+    && ["eval_result", "mission_result", "lesson", "operator_note", "error_solution"].includes(row.kind)
+    && typeof row.deletedAt === "string"
+    && typeof row.deletedBy === "string";
+}
+
 export function parseMemoryStore(value: string): MemoryStore {
   try {
     const parsed = JSON.parse(value) as Partial<MemoryStore>;
     const records = Array.isArray(parsed.records) ? parsed.records.filter(isMemoryRecord) : [];
     const revision = typeof parsed.revision === "number" && parsed.revision >= 0 ? Math.floor(parsed.revision) : 0;
-    return { records, maxRecords: MAX_RECORDS, revision };
+    // Etapa 3: se preservan consentimientos y borrados cuando existen;
+    // un JSON antiguo sin ellos se lee igual que antes.
+    const consents = Array.isArray(parsed.consents) ? parsed.consents.filter(isMemoryConsent) : [];
+    const deletions = Array.isArray(parsed.deletions) ? parsed.deletions.filter(isMemoryTombstone) : [];
+    return { records, maxRecords: MAX_RECORDS, revision, consents, deletions };
   } catch {
     return emptyMemoryStore();
   }

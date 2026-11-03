@@ -27,9 +27,20 @@
 import {
   buildReasonedAnswer,
   decomposeQuestion,
+  significantWords,
   type ReasonedAnswer,
 } from "./iris-reasoning.ts";
 import { irisWorldAnswerWithCitations } from "./iris-cited-answer.ts";
+import {
+  alertToInternalEvidence,
+  buildSocReasonedAnswer,
+  deviceToInternalEvidence,
+  incidentToInternalEvidence,
+  memoryRecordToInternalEvidence,
+  type InternalEvidence,
+  type SocReasonedAnswer,
+} from "./iris-soc-reasoning.ts";
+import type { MemoryRecord } from "./iris-memory.ts";
 
 export type WorldReasonedAnswer = ReasonedAnswer & {
   /** The decomposed questions, also useful for clients on any answer. */
@@ -69,4 +80,119 @@ export async function buildWorldReasonedAnswer(input: {
     })),
   });
   return { ...reasoned, stepQuestions };
+}
+
+// ---------------------------------------------------------------------------
+// SOC/local (Etapas 3–4, pendiente de PR #35): conecta la evidencia interna
+// al razonamiento SIN inventar citas web.
+//
+// Construye una respuesta razonada SOC a partir del contexto que ya reúne
+// resolveIrisAsk (dispositivos, alertas, incidente seleccionado, lecciones
+// aprobadas y hits de memoria). Cada paso descompuesto recibe solo la
+// evidencia interna cuyas palabras coinciden con la pregunta del paso;
+// un paso sin evidencia coincidente queda "sin_datos" ("No sé").
+// Devuelve null cuando no hay evidencia interna o cuando ningún paso se
+// verifica, para que la ruta conserve su respuesta local existente en
+// vez de sustituirla por un "No sé" menos útil. La ruta ask-iris NO se
+// toca en esta entrega: cablear este conector en la ruta es el paso
+// siguiente, con revisión y verificación en vivo (sesión + DB), porque
+// cambiaría respuestas visibles sin poder probarlo aquí.
+// ---------------------------------------------------------------------------
+
+export type SocAnalystContext = {
+  devices?: Array<{
+    id: string;
+    name: string;
+    status: string;
+    lastSeenAt?: string | null;
+    telemetry?: Record<string, unknown>;
+  }>;
+  alerts?: Array<{
+    id?: string;
+    deviceId: string;
+    code: string;
+    severity: string;
+    status: string;
+  }>;
+  incident?: {
+    id: string;
+    title: string;
+    subject: string;
+    severity: string;
+    status: string;
+    recommendation?: string;
+  } | null;
+  lessons?: MemoryRecord[];
+  memoryHits?: MemoryRecord[];
+};
+
+export function buildSocReasonedAnswerFromContext(input: {
+  question: string;
+  language: "es" | "en";
+  context: SocAnalystContext;
+  now?: number;
+}): (SocReasonedAnswer & { stepQuestions: string[]; droppedMemory: Array<{ id: string; reason: string }> }) | null {
+  const now = input.now ?? Date.now();
+  const pool: InternalEvidence[] = [];
+  const droppedMemory: Array<{ id: string; reason: string }> = [];
+
+  for (const device of input.context.devices || []) {
+    const telemetry = device.telemetry || {};
+    const controls: string[] = [];
+    if (typeof telemetry.firewallEnabled === "boolean") {
+      controls.push(telemetry.firewallEnabled ? "firewall activo" : "firewall apagado");
+    }
+    if (typeof telemetry.fileVaultEnabled === "boolean") {
+      controls.push(telemetry.fileVaultEnabled ? "FileVault encendido" : "FileVault apagado");
+    }
+    pool.push(deviceToInternalEvidence({
+      id: device.id,
+      name: device.name,
+      status: device.status,
+      lastSeenAt: device.lastSeenAt ?? null,
+      controls: controls.join(", "),
+      now,
+    }));
+  }
+  const deviceNames = new Map((input.context.devices || []).map(device => [device.id, device.name]));
+  for (const alert of input.context.alerts || []) {
+    if (alert.status === "RESOLVED") continue;
+    pool.push(alertToInternalEvidence({
+      id: alert.id || `${alert.deviceId}:${alert.code}`,
+      code: alert.code,
+      severity: alert.severity,
+      status: alert.status,
+      deviceName: deviceNames.get(alert.deviceId),
+    }));
+  }
+  if (input.context.incident?.id) {
+    pool.push(incidentToInternalEvidence(input.context.incident));
+  }
+  for (const record of [...(input.context.lessons || []), ...(input.context.memoryHits || [])]) {
+    const converted = memoryRecordToInternalEvidence(record);
+    if (converted.evidence) pool.push(converted.evidence);
+    else if (converted.droppedReason) droppedMemory.push({ id: record.id, reason: converted.droppedReason });
+  }
+  if (!pool.length) return null;
+
+  const stepQuestions = decomposeQuestion(input.question);
+  const reasoned = buildSocReasonedAnswer({
+    language: input.language,
+    question: input.question,
+    steps: stepQuestions.map(question => {
+      const questionWords = new Set(significantWords(question));
+      const candidates = pool.filter(item => {
+        const textWords = new Set(significantWords(`${item.title} ${item.excerpt}`));
+        return [...questionWords].some(word => textWords.has(word));
+      });
+      // Sin candidatos para este paso, el paso queda sin evidencia y el
+      // razonamiento lo reporta como "No sé" (nunca como hecho).
+      const claim = candidates.length
+        ? candidates.map(item => item.title).join("; ")
+        : "";
+      return { question, claim, evidence: candidates };
+    }),
+  });
+  if (reasoned.confidence === "no_verificado") return null;
+  return { ...reasoned, stepQuestions, droppedMemory };
 }
