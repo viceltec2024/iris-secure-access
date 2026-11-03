@@ -54,7 +54,20 @@ export default async function Home() {
             <p className="auth-disclosure">By continuing, IRIS receives only your verified account identity. Permissions are enforced on the server.</p>
           </div>
 
-          <footer className="secure-footer"><span><LockKey weight="fill" /> Encrypted session</span><span className="footer-divider" /><a href="#privacy">Privacy</a></footer>
+          <div className="iris-explainer">
+            <h2>What IRIS does · Qué hace IRIS</h2>
+            <p>IRIS coordinates supervised agents: it designs, tests and proposes — you approve. IRIS coordina agentes supervisados: diseña, prueba y propone — tú apruebas.</p>
+            <ul>
+              <li><strong>Core (coordinator):</strong> routes tasks to providers. Coordina tareas entre proveedores.</li>
+              <li><strong>Creator:</strong> designs agents in a Guardian sandbox. Diseña agentes en sandbox con Guardian.</li>
+              <li><strong>Memory:</strong> append-only lessons, human-promoted only. Lecciones solo con aprobación humana.</li>
+              <li><strong>Guardian:</strong> blocks shell, spending, deploys and core changes. Bloquea shell, gasto, despliegues y cambios al núcleo.</li>
+            </ul>
+            <p>Providers (OpenAI, Muse, ElevenLabs) activate only with a key, and a live state is shown only after a real HTTP probe. Los proveedores solo se activan con clave, y el estado “en vivo” solo se muestra tras una prueba HTTP real.</p>
+            <p>Next step after sign-in: review pending approvals in Creator and Missions. Siguiente paso tras entrar: revisa las aprobaciones pendientes en Creator y Misiones.</p>
+          </div>
+
+          <footer className="secure-footer"><span><LockKey weight="fill" /> Encrypted session</span><span className="footer-divider" /><span>Privacy · IRIS receives only your verified identity</span></footer>
         </div>
       </section>
     </main>

@@ -9,6 +9,7 @@ import type { EvalRunReport } from "../../lib/iris-evals";
 import type { PriorityCapability } from "../../lib/iris-capability-audit";
 import { classifyLabel } from "../../lib/iris-capability-audit";
 import type { MemoryRecord, MemoryStore } from "../../lib/iris-memory";
+import { friendlyError, missionStatusLabel } from "./iris-status-labels";
 
 type Scorecard = {
   verifiedPercent: number;
@@ -68,7 +69,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
       setDesk(payload);
       setNotice(payload.started?.result?.summary || (es ? "Misión creada." : "Mission created."));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : (es ? "No se pudo iniciar la misión." : "Could not start mission."));
+      setNotice(friendlyError(error, es));
     } finally {
       setBusy(false);
     }
@@ -91,7 +92,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
           ? (es ? "Misión cancelada." : "Mission cancelled.")
           : (es ? "Misión rechazada." : "Mission rejected."));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "error");
+      setNotice(friendlyError(error, es));
     } finally {
       setBusy(false);
     }
@@ -115,7 +116,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
         ? `Evaluación: ${payload.report?.summary.passed}/${payload.report?.summary.total} OK (${payload.report?.summary.passRate}%).`
         : `Evaluation: ${payload.report?.summary.passed}/${payload.report?.summary.total} OK (${payload.report?.summary.passRate}%).`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "evals");
+      setNotice(friendlyError(error, es));
     } finally {
       setBusy(false);
     }
@@ -136,7 +137,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
         ? (es ? "Lección aprobada. Ask IRIS la usará como contexto de solo lectura." : "Lesson approved. Ask IRIS will use it as read-only context.")
         : (es ? "Lección rechazada." : "Lesson rejected."));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "lesson");
+      setNotice(friendlyError(error, es));
     } finally {
       setBusy(false);
     }
@@ -160,6 +161,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
       </button>
     </div>
 
+    {scorecard && <p>{es ? "Evaluaciones locales, no de producción." : "Local evaluations, not production scores."}</p>}
     {scorecard && <div className="mission-scorecard">
       <article><span>{es ? "Verificado vs previsto" : "Verified vs planned"}</span><strong>{scorecard.verifiedPercent}%</strong></article>
       <article><span>{es ? "Probadas" : "Proven"}</span><strong>{scorecard.proven}</strong></article>
@@ -189,7 +191,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
       </div>
     </div>
 
-    {notice && <p className="creator-notice">{notice}</p>}
+    {notice && <p className="creator-notice" role="status" aria-live="polite">{notice}</p>}
 
     {waiting.length > 0 && <div className="creator-waiting">
       <strong>{es ? "Misiones ejecutadas — aceptación humana" : "Executed missions — human acceptance"}</strong>
@@ -198,7 +200,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
         <div>
           <b>{item.agent?.name || item.id.slice(0, 8)}</b>
           <small>{item.objective.slice(0, 120)}</small>
-          <small>{es ? "Estado" : "Status"}: {item.status} · {item.verification?.passed ? (es ? "evidencia OK" : "evidence OK") : (es ? "evidencia pendiente" : "evidence pending")}</small>
+          <small>{es ? "Estado" : "Status"}: {missionStatusLabel(item, es)}</small>
         </div>
         <button disabled={busy} onClick={() => void decide(item.id, "approve")}><CheckCircle />{es ? "Aceptar" : "Accept"}</button>
         <button disabled={busy} onClick={() => void decide(item.id, "reject")}>{es ? "Rechazar" : "Reject"}</button>
@@ -210,7 +212,7 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
       <h4>{es ? "Historial reciente" : "Recent history"}</h4>
       {desk.missions.slice(0, 6).map(item => <article key={item.id}>
         <div>
-          <b>{item.status}</b>
+          <b>{missionStatusLabel(item, es)}</b>
           <small>{item.objective.slice(0, 140)}</small>
           {item.result && <p>{item.result.summary}</p>}
           {item.result && <code>{item.result.evidence.join(" · ")}</code>}

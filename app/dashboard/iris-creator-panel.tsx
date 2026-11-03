@@ -6,27 +6,15 @@ import { CheckCircle, Robot, ShieldCheck, Warning, X } from "@phosphor-icons/rea
 import type { Language } from "./dashboard-i18n";
 import type { AgentSchedule, CreatedAgent, CreatorDeskState } from "../../lib/iris-creator";
 import type { ModelCoordinationReport } from "../../lib/iris-model-registry";
+import { agentStatusLabel, friendlyError, providerStatusLabel } from "./iris-status-labels";
 
 type CreatorDeskResponse = CreatorDeskState & { models?: ModelCoordinationReport };
 
 const emptyDesk: CreatorDeskState = { agents: [], queue: { jobs: [] } };
 const emptyModels: ModelCoordinationReport = { generatedAt: "", coordinators: [], notes: [] };
 
-function statusLabel(status: CreatedAgent["status"], es: boolean) {
-  const map: Record<CreatedAgent["status"], [string, string]> = {
-    draft: ["Draft", "Borrador"],
-    sandbox_passed: ["Sandbox passed", "Sandbox OK"],
-    sandbox_failed: ["Sandbox failed", "Sandbox falló"],
-    awaiting_approval: ["Awaiting approval", "Espera tu OK"],
-    approved: ["Active 24/7", "Activo 24/7"],
-    rejected: ["Rejected", "Rechazado"],
-    paused: ["Paused", "Pausado"],
-  };
-  return map[status][es ? 1 : 0];
-}
-
 function scheduleLabel(schedule: AgentSchedule, es: boolean) {
-  if (schedule === "always_on") return es ? "24/7 supervisado" : "24/7 supervised";
+  if (schedule === "always_on") return es ? "Siempre disponible · latido supervisado" : "Always available · supervised heartbeat";
   if (schedule === "business_hours") return es ? "Horario laboral" : "Business hours";
   return es ? "Bajo demanda" : "On demand";
 }
@@ -81,7 +69,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
       applyDesk(payload);
       return payload;
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : (es ? "No se pudo procesar el agente." : "The agent could not be processed."));
+      setNotice(friendlyError(error, es));
       return null;
     } finally {
       setBusy(false);
@@ -109,8 +97,8 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
     if (!result?.approved) return;
     setPending(null);
     setNotice(es
-      ? `${result.approved.name} quedó activo 24/7 con supervisión. Solo propone acciones preaprobadas.`
-      : `${result.approved.name} is active 24/7 under supervision. It only proposes pre-approved actions.`);
+      ? `${result.approved.name} quedó aprobado con latido supervisado. Solo propone acciones preaprobadas.`
+      : `${result.approved.name} is approved with a supervised heartbeat. It only proposes pre-approved actions.`);
   }
 
   const waiting = desk.agents.filter(item => item.status === "awaiting_approval");
@@ -146,8 +134,8 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
           <span>
             <strong>{es ? "IRIS no despliega sola" : "IRIS does not deploy alone"}</strong>
             {es
-              ? " Al aprobar, el agente puede trabajar 24/7 con permisos mínimos. No gasta dinero, no ejecuta shell y no cambia el núcleo sin otra autorización."
-              : " On approval, the agent may work 24/7 with least privilege. It does not spend money, run shell, or change the core without another authorization."}
+              ? " Al aprobar, el agente queda supervisado con permisos mínimos. No gasta dinero, no ejecuta shell y no cambia el núcleo sin otra autorización."
+              : " On approval, the agent stays supervised with least privilege. It does not spend money, run shell, or change the core without another authorization."}
           </span>
         </div>
         <div className="approval-actions">
@@ -177,11 +165,14 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
           <span>{es ? "CREATOR + GUARDIAN · MVP" : "CREATOR + GUARDIAN · MVP"}</span>
           <h3>{es ? "IRIS diseña. Guardian prueba. Tú apruebas." : "IRIS designs. Guardian tests. You approve."}</h3>
           <p>{es
-            ? "Los agentes aprobados pueden operar 24/7 con acciones preaprobadas. Los cambios importantes siguen pidiendo tu OK."
-            : "Approved agents can operate 24/7 with pre-approved actions. Important changes still need your OK."}</p>
+            ? "Los agentes aprobados solo proponen acciones preaprobadas. Los cambios importantes siguen pidiendo tu OK."
+            : "Approved agents only propose pre-approved actions. Important changes still need your OK."}</p>
+          <p>{es
+            ? "El latido solo se actualiza al abrir este panel o procesar la cola: sin cron real, no es ejecución continua."
+            : "The heartbeat only updates when you open this panel or drain the queue: without a real cron, it is not continuous execution."}</p>
         </div>
         <div className="creator-stats">
-          <article><span>{es ? "Activos" : "Active"}</span><strong>{active.length}</strong></article>
+          <article><span>{es ? "Aprobados" : "Approved"}</span><strong>{active.length}</strong></article>
           <article><span>{es ? "Pendientes" : "Pending"}</span><strong>{waiting.length}</strong></article>
         </div>
       </div>
@@ -200,7 +191,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
         <label>
           <span>{es ? "Horario" : "Schedule"}</span>
           <select value={schedule} onChange={event => setSchedule(event.target.value as AgentSchedule)}>
-            <option value="always_on">{es ? "24 horas / supervisado" : "24 hours / supervised"}</option>
+            <option value="always_on">{es ? "Siempre disponible · latido supervisado" : "Always available · supervised heartbeat"}</option>
             <option value="business_hours">{es ? "Horario laboral" : "Business hours"}</option>
             <option value="on_demand">{es ? "Bajo demanda" : "On demand"}</option>
           </select>
@@ -210,7 +201,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
         </button>
       </form>
 
-      {notice && <p className="creator-notice">{notice}</p>}
+      {notice && <p className="creator-notice" role="status" aria-live="polite">{notice}</p>}
 
       {models.coordinators.length > 0 ? <div className="creator-models">
         <strong>{es ? "Coordinación de modelos (estado real)" : "Model coordination (honest status)"}</strong>
@@ -218,7 +209,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
           {models.coordinators.map(item => <article key={item.id} className={`creator-model ${item.status}`}>
             <b>{item.label}</b>
             <small>{item.role}</small>
-            <span>{item.status.replaceAll("_", " ")}</span>
+            <span>{providerStatusLabel(item.status, es)}</span>
             <p>{item.detail}</p>
           </article>)}
         </div>
@@ -240,7 +231,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
 
       <div className="creator-columns">
         <div>
-          <h4>{es ? "Agentes activos" : "Active agents"}</h4>
+          <h4>{es ? "Agentes aprobados" : "Approved agents"}</h4>
           {active.length === 0 && <p>{es ? "Ninguno activo todavía." : "None active yet."}</p>}
           {active.map(item => <article className="creator-card" key={item.id}>
             <div>
@@ -256,7 +247,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
               })}>{es ? "Proponer tests" : "Propose tests"}</button>
               <button disabled={busy} onClick={() => void post({ action: "run_task", agentId: item.id, task: "heartbeat" }).then(result => {
                 if (result?.taskResult?.ok) setNotice(es ? "Latido real ejecutado (sin cambios al repo)." : "Real heartbeat ran (no repo changes).");
-                else if (result?.taskResult?.error) setNotice(result.taskResult.error);
+                else if (result?.taskResult?.error) setNotice(friendlyError(result.taskResult.error, es));
               })}>{es ? "Latido" : "Heartbeat"}</button>
               <button disabled={busy} onClick={() => void post({ action: "process_ticks" }).then(result => {
                 if (result) setNotice(es ? "Cola de latidos procesada (sin apply al repo)." : "Tick queue processed (no repo apply).");
@@ -282,7 +273,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
             <CheckCircle weight="fill" />
             <div>
               <b>{item.name}</b>
-              <small>{statusLabel(item.status, es)} · {item.sandbox.passed ? (es ? "sandbox OK" : "sandbox OK") : (es ? "sandbox falló" : "sandbox failed")}</small>
+              <small>{agentStatusLabel(item.status, es)} · {item.sandbox.passed ? (es ? "sandbox OK" : "sandbox OK") : (es ? "sandbox falló" : "sandbox failed")}</small>
             </div>
           </article>)}
         </div>
