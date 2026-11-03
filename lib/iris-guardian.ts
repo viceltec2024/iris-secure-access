@@ -30,7 +30,7 @@ const INJECTION_PATTERNS: Array<{ code: string; re: RegExp; messageEs: string; m
   },
   {
     code: "CORE_MUTATION",
-    re: /\b(self[_-]?modify|modifica(?:r)? el n[uú]cleo|rewrite core|patch main|git push|--force)\b/i,
+    re: /\b(self[_-]?modify|modif\w*\s+el\s+n[uú]cleo|rewrite core|patch main|git push|--force)\b/i,
     messageEs: "Guardian bloqueó una solicitud de modificar el núcleo de IRIS.",
     messageEn: "Guardian blocked a request to modify IRIS core.",
   },
@@ -67,7 +67,7 @@ const SQUASHED_PATTERNS: Array<{ code: string; re: RegExp }> = [
   { code: "IGNORE_PRIOR", re: /(ignore|disregard|olvida|bypass)(previous|prior|anteriores|system|instrucciones|rules|guardian)/ },
   { code: "ROLE_HIJACK", re: /(youarenow|actas|pretendtobe|eresahora)(unrestricted|root|admin|sinlimites|jailbreak)/ },
   { code: "SECRET_EXFIL", re: /(exfiltrat|dump|filtra|revela|print)(apikey|secret|password|token|credential|env)/ },
-  { code: "CORE_MUTATION", re: /(selfmodify|modificaelnucleo|rewritecore|patchmain|gitpush)/ },
+  { code: "CORE_MUTATION", re: /(selfmodify|modif[a-z]*elnucleo|rewritecore|patchmain|gitpush)/ },
 ];
 
 export function detectPromptInjection(text: string, language: "es" | "en" = "es"): InjectionFinding {

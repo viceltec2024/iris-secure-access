@@ -404,7 +404,15 @@ export function runGuardianChecks(agent: CreatedAgent, language: "es" | "en" = "
       : "Guardian requires human approval before activating the agent.",
   });
 
-  const injection = detectPromptInjection(`${agent.prompt}\n${source}`, language);
+  // The generated source declares its own blocked capabilities
+  // (blocked: ["self_modify_core", ...]). Scanning that declaration as if
+  // it were a user request makes Guardian block every designed agent:
+  // squashing "self_modify_core" yields "selfmodifycore", which matches
+  // the CORE_MUTATION paraphrase pattern. Strip the declaration from the
+  // scan input; the prompt itself is still fully scanned, and the unsafe
+  // code-pattern check below still uses the full source.
+  const sourceForScan = source.replace(/blocked:\s*\[[^\]]*\],?/g, "");
+  const injection = detectPromptInjection(`${agent.prompt}\n${sourceForScan}`, language);
   if (injection.blocked) {
     findings.push({
       severity: "block",
