@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
+import { buildWorldReasonedAnswer } from "../../../lib/iris-ask-reasoning";
 import { detectPromptInjection } from "../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
 import { recordOrgObs } from "../../../lib/iris-obs-store";
@@ -97,6 +98,34 @@ export async function POST(request: Request) {
     incident: parseAskIncident(preferences.incident),
     origin: new URL(request.url).origin,
   });
+
+  // Reasoning is live for world/general questions: the answer is rebuilt
+  // from a source actually consulted in this execution (Wikipedia via
+  // Etapa 2 citations), decomposed into steps and verified per step.
+  // Guardian already ran above; edit-assist answers return earlier and
+  // are untouched. If no allowed source was consulted, reasoned is null
+  // and the route keeps its existing local/OpenAI path — no source is
+  // ever invented, and SOC/local answers are never presented as
+  // citation-verified (their evidence is internal telemetry, not a web
+  // host). See lib/iris-ask-reasoning.ts for the full honesty contract.
+  if (resolved.source === "world") {
+    const reasoned = await buildWorldReasonedAnswer({ question: lastUser, language }).catch(() => null);
+    if (reasoned) {
+      await logAudit(user.email, "ASK_IRIS_ANALYSIS", "reasoned_world", "SUCCESS", { model: resolved.model, confidence: reasoned.confidence });
+      await recordAskObs(user.email, "ask_latency_ms", Date.now() - started, "reasoned_world");
+      return Response.json({
+        answer: reasoned.answer,
+        directAnswer: reasoned.directAnswer,
+        reasoning: reasoned.reasoning,
+        confidence: reasoned.confidence,
+        sources: reasoned.sources,
+        steps: reasoned.steps,
+        contradictions: reasoned.contradictions,
+        unknownSteps: reasoned.unknownSteps,
+        source: "reasoned_world",
+      });
+    }
+  }
 
   const apiKey = bindings.OPENAI_API_KEY;
   if (!apiKey || resolved.source === "live-market") {
