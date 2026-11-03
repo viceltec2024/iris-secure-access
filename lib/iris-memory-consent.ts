@@ -18,15 +18,16 @@
  *   - Cita: una respuesta que use memoria cita el registro por su id
  *     interno ("memoria interna [id]"), nunca como fuente web.
  *
- * Migración honesta: la ruta Ask existente (lib/iris-ask.ts) NO se cambia
- * en esta entrega, así que las lecciones aprobadas siguen funcionando
- * allí exactamente como antes. Migrar Ask a exigir consentimiento es un
- * paso posterior, con sus propias pruebas, una vez esta capa esté
- * probada. Hasta entonces, esta capa es la que usan el panel nuevo y la
- * API nueva (/api/iris-memory), no el Ask en vivo.
+ * Migración (cierre de etapas 3–4): la ruta Ask ya usa esta capa.
+ * resolveIrisAsk (lib/iris-ask.ts) filtra lecciones e hits por
+ * consentimiento vigente con applyMemoryConsentToAsk (fail closed) y la
+ * ruta app/api/ask-iris/route.ts audita la memoria suprimida por falta
+ * de consentimiento. El panel del dashboard y la API /api/iris-memory
+ * usan esta misma capa.
  */
 
 import {
+  activeLessons,
   appendMemory,
   searchMemory,
   type MemoryConsent,
@@ -235,6 +236,47 @@ export function searchMemoryConsented(store: MemoryStore, query: string, limit =
   return searchMemory(store, query, limit * 3)
     .filter(record => visible.has(record.id))
     .slice(0, limit);
+}
+
+export type AskMemoryConsent = {
+  /** True si alguna lección o hit de memoria llegó al contexto del Ask. */
+  used: boolean;
+  /** Registros que se habrían usado sin consentimiento y quedaron fuera. */
+  suppressedCount: number;
+  consentedCategories: MemoryDataCategory[];
+  lessons: MemoryRecord[];
+  memoryHits: MemoryRecord[];
+};
+
+/**
+ * Etapa 3 en Ask (cierre): la memoria solo entra al contexto con
+ * consentimiento vigente por categoría. Sin consentimiento, fail closed:
+ * ni lecciones aprobadas ni hits de búsqueda se usan, y el conteo
+ * suprimido queda para auditoría en la ruta. Función pura (sin DB) para
+ * poder probarla sin sesión ni base de datos; vive aquí — y no en
+ * lib/iris-ask.ts — precisamente para no arrastrar drizzle ni la DB a
+ * los tests. No toca memoryAllowsSelfModify() ni las reglas append-only.
+ */
+export function applyMemoryConsentToAsk(
+  store: MemoryStore,
+  question: string,
+  now = new Date().toISOString(),
+): AskMemoryConsent {
+  const visible = new Set(visibleMemoryRecords(store, now).map(record => record.id));
+  const approved = activeLessons(store);
+  const related = searchMemory(store, question, 4);
+  const lessons = approved.filter(record => visible.has(record.id));
+  const memoryHits = searchMemoryConsented(store, question, 4, now);
+  const suppressedIds = new Set(
+    [...approved, ...related].filter(record => !visible.has(record.id)).map(record => record.id),
+  );
+  return {
+    used: lessons.length > 0 || memoryHits.length > 0,
+    suppressedCount: suppressedIds.size,
+    consentedCategories: MEMORY_CATEGORIES.filter(category => consentAllows(store, category, now)),
+    lessons,
+    memoryHits,
+  };
 }
 
 /** Cita interna de un registro de memoria, para respuestas que lo usen. */
