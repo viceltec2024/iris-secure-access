@@ -74,16 +74,31 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
     }
   }
 
+  // CAS: la aceptación envía la revisión del escritorio que el usuario
+  // vio; si cambió, el servidor rechaza con revision_conflict.
   async function decide(missionId: string, action: "approve" | "reject" | "cancel") {
     setBusy(true);
     try {
       const response = await fetch("/api/iris-mission", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, missionId, language }),
+        body: JSON.stringify({
+          action,
+          missionId,
+          language,
+          ...(action === "approve" && typeof desk.revision === "number" ? { expectedRevision: desk.revision } : {}),
+        }),
       });
       const payload = await response.json() as MissionDesk & { error?: string };
-      if (!response.ok) throw new Error(payload.error || "mission");
+      if (!response.ok) {
+        if (String(payload.error || "").includes("revision_conflict")) {
+          setNotice(es
+            ? "El escritorio cambió desde que lo viste; se recargó. Revisa de nuevo antes de aceptar."
+            : "The desk changed since you saw it; it was reloaded. Review again before accepting.");
+          void refresh();
+        }
+        throw new Error(payload.error || "mission");
+      }
       setDesk(payload);
       setNotice(action === "approve"
         ? (es ? "Informe aceptado por humano. La verificación por evidencia es independiente." : "Report accepted by human. Evidence verification is independent.")
