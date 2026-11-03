@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- memory panel loads memory + consents from API on mount/language, same as the other dashboard panels */
+
 /**
  * IRIS — Panel de memoria con permiso (cierre etapas 3–4).
  *
@@ -12,7 +14,7 @@
  * El borrado pide una segunda pulsación de confirmación; nunca se borra
  * con una sola pulsación accidental.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowClockwise, CheckCircle, DownloadSimple, Eye, Trash, Warning, X } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
 
@@ -67,8 +69,12 @@ export default function IrisMemoryPanel({ language }: { language: Language }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Instante capturado al cargar (no en render): así el render sigue siendo
+  // puro y la caducidad se evalúa contra el momento de la carga, igual que antes.
+  const [now, setNow] = useState(0);
 
-  const refresh = useCallback(async () => {
+  async function refresh() {
+    setNow(Date.now());
     try {
       const response = await fetch("/api/iris-memory", { cache: "no-store" });
       if (!response.ok) throw new Error(es ? "No se pudo cargar la memoria." : "Memory could not be loaded.");
@@ -78,9 +84,13 @@ export default function IrisMemoryPanel({ language }: { language: Language }) {
     } finally {
       setLoading(false);
     }
-  }, [es]);
+  }
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    // refresh cierra sobre `es`, igual que los demás paneles del dashboard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [es]);
 
   async function post(body: Record<string, unknown>) {
     setBusy(true);
@@ -134,7 +144,7 @@ export default function IrisMemoryPanel({ language }: { language: Language }) {
         {CATEGORIES.map(category => {
           const latest = consentByCategory.get(category) || null;
           const granted = Boolean(latest?.granted);
-          const expired = Boolean(latest?.granted && latest?.expiresAt && Date.parse(latest.expiresAt) <= Date.now());
+          const expired = Boolean(latest?.granted && latest?.expiresAt && Date.parse(latest.expiresAt) <= now);
           return (
             <div key={category}>
               <strong>{(CATEGORY_LABEL[category] || [category, category])[es ? 0 : 1]}</strong>
