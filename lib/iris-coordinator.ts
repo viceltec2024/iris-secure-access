@@ -68,12 +68,18 @@ export function decideCoordinatorTask(input: {
   const notes: string[] = [];
   let route: IrisRouteDecision | null = null;
   let tool: ToolAclDecision | null = null;
-  let humanGateRequired = true;
+  // Puerta humana explícita por tipo de tarea (antes: un ternario que siempre
+  // daba false para ask/edit y un default true implícito para el resto):
+  // - mission / creator: SÍ exigen aprobación humana antes de activar.
+  // - ask / edit: solo redactan o proponen; no aplican, no despliegan y no
+  //   gastan, así que el enrutado en sí no exige puerta (la activación y
+  //   cualquier aplicación posterior sí la exigen en Creator/Mission).
+  // - voice / probe: solo consultan estado o enrutan TTS; sin puerta.
+  const humanGateRequired = task === "mission" || task === "creator";
 
   if (task === "voice") {
     route = routeIrisVoice(env);
     tool = authorizeTool({ tool: "provider_status", allowedTools: [...defaultToolsForAgent(), "provider_status"] });
-    humanGateRequired = false;
     notes.push(route.provider === "elevenlabs"
       ? "TTS enrutado a ElevenLabs solo si la clave está configurada."
       : "TTS enrutado a speechSynthesis (fallback local).");
@@ -85,7 +91,6 @@ export function decideCoordinatorTask(input: {
       agentStatus: input.agentStatus,
       humanApproved: input.humanApproved,
     });
-    humanGateRequired = route.kind === "edit" ? false : false;
     notes.push(`Proveedor de texto: ${route.provider} (${route.reason}).`);
   } else if (task === "mission") {
     tool = authorizeTool({
@@ -106,7 +111,6 @@ export function decideCoordinatorTask(input: {
       tool: "provider_status",
       allowedTools: [...defaultToolsForAgent(), "provider_status"],
     });
-    humanGateRequired = false;
     notes.push("Probe de proveedores: nunca inventa live_ok sin HTTP real.");
   }
 
