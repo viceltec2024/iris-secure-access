@@ -2,11 +2,12 @@
 
 /* eslint-disable react-hooks/set-state-in-effect -- chain panel polls wallet, token, and ledger APIs */
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowSquareOut, ArrowUp, ChartLineUp, CheckCircle, Coins, Cube, Link, Plus, Pulse, QrCode, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
+import { ArrowDown, ArrowSquareOut, ArrowUp, ChartLineUp, CheckCircle, Coins, Cube, Drop, Link, Plus, Pulse, QrCode, ShieldCheck, Wallet, Warning, X } from "@phosphor-icons/react";
 import IrisTokenMark from "../iris-token-mark";
 import QRCode from "qrcode";
 import type { Language } from "./dashboard-i18n";
 import { isEvmAddress, type WalletProvider } from "../../lib/iris-chain";
+import { buildIrisLiquidityUrl, buildIrisSwapUrl, isOfficialLiquidityUrl, liquidityMessage } from "../../lib/iris-liquidity";
 import { ROBINHOOD_CONNECT_URL, ROBINHOOD_WALLET_URL } from "../../lib/iris-purchases";
 import { BASE_MAINNET_CHAIN_ID, getMetaMaskClient, subscribeMetaMaskDisplayUri } from "./metamask-client";
 import { connectInjectedWallet, detectInjectedProvider } from "./wallet-providers";
@@ -20,7 +21,7 @@ type ChainState = { consensus: string; status: string; blocks: Block[]; transact
 type WalletMovement = { hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number; status: string; method: string };
 type WalletLiveState = { balance: string; blockNumber: number; transactions: WalletMovement[]; updatedAt: string; explorerUrl: string };
 type ActivitySample = { time: number; height: number; transactions: number; pending: number; latency: number };
-type TokenOperations = { contract: string; network: string; chainId: number; blockNumber: number; contractLive: boolean; totalSupply: string; walletBalance: string; holders: number; transfers: Array<{ hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number }>; verified: boolean; distribution: Array<{ label: string; percent: number; amount: string }>; readiness: { contract: boolean; metadata: boolean; treasuryMultisig: boolean; vesting: boolean; liquidity: boolean }; updatedAt: string };
+type TokenOperations = { contract: string; network: string; chainId: number; blockNumber: number; contractLive: boolean; totalSupply: string; walletBalance: string; holders: number; transfers: Array<{ hash: string; from: string; to: string; value: string; timestamp: string; blockNumber: number }>; verified: boolean; distribution: Array<{ label: string; percent: number; amount: string }>; readiness: { contract: boolean; metadata: boolean; treasuryMultisig: boolean; vesting: boolean; liquidity: boolean }; liquidity?: { ready: boolean; poolAddress: string; fee: number | null; amount: string; uniswapAddUrl: string; uniswapSwapUrl: string }; updatedAt: string };
 
 function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
 function chartPoints(values: number[], width = 360, height = 92) {
@@ -46,6 +47,7 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
   const [tokenDeployOpen, setTokenDeployOpen] = useState(false);
   const [tokenDeploying, setTokenDeploying] = useState(false);
   const [tokenStatus, setTokenStatus] = useState("");
+  const [liquidityOpen, setLiquidityOpen] = useState(false);
   const [tokenOperationsRecord, setTokenOperationsRecord] = useState<{ key: string; live: TokenOperations } | null>(null);
   const tokenOperationsKey = `${tokenAddress}:${wallet}`;
   const tokenOperations = tokenOperationsRecord?.key === tokenOperationsKey ? tokenOperationsRecord.live : null;
@@ -231,6 +233,19 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
     await provider.request({ method: "wallet_watchAsset", params: { type: "ERC20", options: { address, symbol: "IRIS", decimals: 18, image } } });
     setNotice(es ? "IRIS Token fue agregado a MetaMask." : "IRIS Token was added to MetaMask.");
   }
+  function openIrisLiquidity() {
+    if (!tokenAddress) return;
+    const url = tokenOperations?.liquidity?.uniswapAddUrl || buildIrisLiquidityUrl(tokenAddress);
+    if (!isOfficialLiquidityUrl(url)) {
+      setNotice(es ? "Solo se abre Uniswap oficial." : "Only official Uniswap is opened.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    setLiquidityOpen(false);
+    setNotice(es
+      ? "Uniswap abierto. Deposita IRIS + ETH en Base y confirma en MetaMask. IRIS no mueve fondos sola."
+      : "Uniswap opened. Deposit IRIS + ETH on Base and confirm in MetaMask. IRIS never moves funds alone.");
+  }
   async function deployIrisToken() {
     if (!isAdmin || tokenAddress) return;
     setTokenDeploying(true); setTokenStatus(es ? "Abre MetaMask y confirma la transacción…" : "Open MetaMask and confirm the transaction…"); setNotice("");
@@ -278,6 +293,21 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       {tokenStatus && <div className="token-deploy-status"><Pulse />{tokenStatus}</div>}
       <div className="approval-actions"><button disabled={tokenDeploying} onClick={() => setTokenDeployOpen(false)}>{es ? "Cancelar" : "Cancel"}</button><button disabled={tokenDeploying} onClick={() => void deployIrisToken()}><IrisTokenMark size={16} />{tokenDeploying ? (es ? "Procesando…" : "Processing…") : (es ? "Continuar en MetaMask" : "Continue in MetaMask")}</button></div>
     </section></div>}
+    {liquidityOpen && tokenAddress && <div className="approval-backdrop" role="presentation"><section className="approval-dialog token-deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="token-liquidity-title">
+      <button className="approval-close" aria-label={es ? "Cerrar" : "Close"} onClick={() => setLiquidityOpen(false)}><X /></button>
+      <span className="approval-icon"><Drop weight="duotone" /></span>
+      <p>{es ? "UNISWAP · BASE MAINNET" : "UNISWAP · BASE MAINNET"}</p>
+      <h2 id="token-liquidity-title">{es ? "Añadir liquidez IRIS" : "Add IRIS liquidity"}</h2>
+      <div className="token-deploy-summary"><span><b>IRIS</b>+ ETH</span><span>{es ? "Pool Uniswap" : "Uniswap pool"}</span><span>{es ? "20% asignado" : "20% allocated"}</span></div>
+      <div className="token-gas-warning"><Warning weight="fill" /><span><strong>{es ? "Tú confirmas en Uniswap y MetaMask" : "You confirm in Uniswap and MetaMask"}</strong>{es
+        ? "IRIS solo abre Uniswap oficial. Eliges cuánto IRIS y ETH aportar. IRIS no puede gastar ni crear el pool sin tu firma."
+        : "IRIS only opens official Uniswap. You choose how much IRIS and ETH to deposit. IRIS cannot spend or create the pool without your signature."}</span></div>
+      <p className="chain-notice" style={{ marginTop: 12 }}>{liquidityMessage(language, Boolean(tokenOperations?.readiness.liquidity))}</p>
+      <div className="approval-actions">
+        <button onClick={() => setLiquidityOpen(false)}>{es ? "Cancelar" : "Cancel"}</button>
+        <button onClick={() => openIrisLiquidity()}><Drop />{es ? "Abrir Uniswap" : "Open Uniswap"}</button>
+      </div>
+    </section></div>}
     {showWalletQr && <div className="wallet-qr-backdrop" role="presentation"><div className="wallet-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-qr-title">
       <button className="wallet-qr-close" aria-label={es ? "Cerrar" : "Close"} onClick={() => void cancelWalletQr()}><X /></button>
       <div className="wallet-qr-brand"><QrCode weight="duotone" /></div>
@@ -318,9 +348,16 @@ export default function IrisChainPanel({ language, isAdmin }: { language: Langua
       <article><span>{es ? "Consenso" : "Consensus"}</span><strong className="chain-consensus">PoA</strong><small><ShieldCheck />{state.consensus}</small></article>
       <article><span>{walletMode === "robinhood" ? "Robinhood" : walletMode === "metamask" ? "MetaMask" : "Base wallet"}</span><strong className="wallet-value">{wallet ? shortHash(wallet) : (es ? "Sin conectar" : "Not connected")}</strong><small className={wallet ? "wallet-network-ready" : ""}><i />{wallet ? (walletMode === "robinhood" ? (es ? "Robinhood · compras con tu OK" : "Robinhood · buys need your OK") : walletMode === "metamask" ? "Base Mainnet · 8453" : (es ? "Monitoreo en vivo" : "Live monitoring")) : (es ? "MetaMask o Robinhood" : "MetaMask or Robinhood")}</small><button disabled={walletBusy} onClick={() => void (wallet ? disconnectWallet() : connectWallet())}><Wallet />{walletBusy ? (es ? "Conectando…" : "Connecting…") : wallet ? (es ? "Desconectar" : "Disconnect") : "MetaMask"}</button></article>
     </div>
-    <section className="iris-token-panel"><div className="iris-token-mark"><IrisTokenMark size={50} /></div><div className="iris-token-copy"><span>IRIS TOKEN · BASE MAINNET</span><h3>{tokenAddress ? (es ? "Token oficial conectado" : "Official token connected") : (es ? "Preparado para desplegar" : "Ready to deploy")}</h3><p>{tokenAddress ? shortHash(tokenAddress) : (es ? "1,000,000,000 IRIS · suministro fijo · 18 decimales" : "1,000,000,000 IRIS · fixed supply · 18 decimals")}</p></div><div className="iris-token-actions">{tokenAddress ? <><a href={`https://basescan.org/token/${tokenAddress}`} target="_blank" rel="noreferrer">BaseScan <ArrowSquareOut /></a><button disabled={!wallet} onClick={() => void addIrisToken()}><Wallet />{es ? "Agregar a MetaMask" : "Add to MetaMask"}</button></> : isAdmin ? <button disabled={!wallet || walletChain !== BASE_MAINNET_CHAIN_ID} onClick={() => setTokenDeployOpen(true)}><IrisTokenMark size={16} />{wallet ? (es ? "Desplegar IRIS" : "Deploy IRIS") : (es ? "Conecta MetaMask primero" : "Connect MetaMask first")}</button> : <span>{es ? "Pendiente del administrador" : "Waiting for administrator"}</span>}</div></section>
+    <section className="iris-token-panel"><div className="iris-token-mark"><IrisTokenMark size={50} /></div><div className="iris-token-copy"><span>IRIS TOKEN · BASE MAINNET</span><h3>{tokenAddress ? (es ? "Token oficial conectado" : "Official token connected") : (es ? "Preparado para desplegar" : "Ready to deploy")}</h3><p>{tokenAddress ? shortHash(tokenAddress) : (es ? "1,000,000,000 IRIS · suministro fijo · 18 decimales" : "1,000,000,000 IRIS · fixed supply · 18 decimals")}</p></div><div className="iris-token-actions">{tokenAddress ? <><a href={`https://basescan.org/token/${tokenAddress}`} target="_blank" rel="noreferrer">BaseScan <ArrowSquareOut /></a><button type="button" onClick={() => setLiquidityOpen(true)}><Drop />{es ? "Añadir liquidez" : "Add liquidity"}</button><button disabled={!wallet} onClick={() => void addIrisToken()}><Wallet />{es ? "Agregar a MetaMask" : "Add to MetaMask"}</button></> : isAdmin ? <button disabled={!wallet || walletChain !== BASE_MAINNET_CHAIN_ID} onClick={() => setTokenDeployOpen(true)}><IrisTokenMark size={16} />{wallet ? (es ? "Desplegar IRIS" : "Deploy IRIS") : (es ? "Conecta MetaMask primero" : "Connect MetaMask first")}</button> : <span>{es ? "Pendiente del administrador" : "Waiting for administrator"}</span>}</div></section>
     {tokenAddress && <section className="token-operations-center">
       <div className="token-ops-head"><div><span><i />{es ? "DATOS REALES · BASE" : "LIVE DATA · BASE"}</span><h3>{es ? "Centro de Operaciones IRIS Token" : "IRIS Token Operations Center"}</h3><p>{es ? "Contrato, balances, distribución y preparación de tesorería." : "Contract, balances, distribution, and treasury readiness."}</p></div><a href="/token" target="_blank">{es ? "Ficha oficial" : "Official profile"}<ArrowSquareOut /></a></div>
+      <div className="token-liquidity-bar">
+        <div><Drop weight="duotone" /><span><b>{tokenOperations?.readiness.liquidity ? (es ? "Liquidez detectada" : "Liquidity detected") : (es ? "Sin liquidez en Uniswap" : "No Uniswap liquidity yet")}</b><small>{liquidityMessage(language, Boolean(tokenOperations?.readiness.liquidity))}</small></span></div>
+        <div className="token-liquidity-actions">
+          <button type="button" onClick={() => setLiquidityOpen(true)}><Drop />{es ? "Añadir liquidez" : "Add liquidity"}</button>
+          <a href={tokenOperations?.liquidity?.uniswapSwapUrl || (tokenAddress ? buildIrisSwapUrl(tokenAddress) : "#")} target="_blank" rel="noreferrer">{es ? "Comprar en Uniswap" : "Buy on Uniswap"}<ArrowSquareOut /></a>
+        </div>
+      </div>
       <div className="token-ops-metrics"><article><span>{es ? "Tu balance" : "Your balance"}</span><strong>{wallet ? `${tokenOperations?.walletBalance ?? "—"} IRIS` : "—"}</strong><small>{wallet ? shortHash(wallet) : (es ? "Conecta MetaMask" : "Connect MetaMask")}</small></article><article><span>{es ? "Suministro total" : "Total supply"}</span><strong>{tokenOperations ? Number(tokenOperations.totalSupply).toLocaleString(language) : "—"}</strong><small>IRIS · 18 {es ? "decimales" : "decimals"}</small></article><article><span>{es ? "Titulares indexados" : "Indexed holders"}</span><strong>{tokenOperations?.holders || "—"}</strong><small>{es ? "Datos del explorador" : "Explorer data"}</small></article><article><span>{es ? "Estado del contrato" : "Contract status"}</span><strong className="token-live-state">{tokenOperations?.contractLive ? (es ? "ACTIVO" : "LIVE") : (es ? "CARGANDO" : "LOADING")}</strong><small>{es ? "Bloque" : "Block"} #{tokenOperations?.blockNumber?.toLocaleString() ?? "—"}</small></article></div>
       <div className="token-ops-grid"><div className="token-distribution"><h4>{es ? "Distribución aprobada" : "Approved distribution"}</h4>{tokenOperations?.distribution.map(item => <div key={item.label}><span><b>{item.percent}%</b>{item.label}<em>{item.amount} IRIS</em></span><i><u style={{ width: `${item.percent}%` }} /></i></div>) ?? <p>{es ? "Sincronizando distribución…" : "Syncing distribution…"}</p>}</div><div className="token-readiness"><h4>{es ? "Preparación institucional" : "Institutional readiness"}</h4>{tokenOperations && Object.entries(tokenOperations.readiness).map(([key, ready]) => <div key={key} className={ready ? "ready" : "pending"}><CheckCircle weight="fill" /><span>{({ contract: es ? "Contrato en Base" : "Base contract", metadata: es ? "Logo y metadatos" : "Logo and metadata", treasuryMultisig: es ? "Tesorería multifirma" : "Multisig treasury", vesting: es ? "Vesting del equipo" : "Team vesting", liquidity: es ? "Liquidez IRIS" : "IRIS liquidity" } as Record<string,string>)[key]}</span><b>{ready ? (es ? "LISTO" : "READY") : (es ? "REQUIERE FIRMA" : "SIGNATURE REQUIRED")}</b></div>)}</div></div>
       <div className="token-transfer-head"><h4>{es ? "Transferencias recientes de IRIS" : "Recent IRIS transfers"}</h4><span>{es ? "Actualización cada 15 segundos" : "Refreshes every 15 seconds"}</span></div><div className="token-transfer-list">{tokenOperations?.transfers.map(tx => <a href={`https://basescan.org/tx/${tx.hash}`} target="_blank" rel="noreferrer" key={tx.hash}><Coins /><div><strong>{tx.value} IRIS</strong><code>{shortHash(tx.from)} → {shortHash(tx.to)}</code></div><small>{tx.timestamp ? new Date(tx.timestamp).toLocaleString(language) : `#${tx.blockNumber}`}</small><ArrowSquareOut /></a>)}{tokenOperations && !tokenOperations.transfers.length && <p>{es ? "El explorador todavía está indexando las transferencias de IRIS." : "The explorer is still indexing IRIS transfers."}</p>}</div>

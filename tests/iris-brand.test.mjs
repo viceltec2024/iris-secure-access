@@ -12,6 +12,8 @@ test("IRIS brand mark is a centered emblem without a duotone ghost path", () => 
 test("token deploy dialog uses the official IRIS token emblem", () => {
   const source = readFileSync(new URL("../app/dashboard/iris-chain-panel.tsx", import.meta.url), "utf8");
   assert.match(source, /<IrisTokenMark size=\{56\} \/>/);
+  assert.match(source, /Añadir liquidez/);
+  assert.match(source, /buildIrisLiquidityUrl/);
   assert.doesNotMatch(source, /RocketLaunch/);
 });
 
