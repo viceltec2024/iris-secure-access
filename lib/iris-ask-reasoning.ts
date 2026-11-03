@@ -12,12 +12,14 @@
  *     and never presented as fact.
  *
  * What it deliberately does NOT do:
- *   - It does not run SOC / local-context answers through citation
+ *   - It does not run SOC / local-context answers through web citation
  *     reasoning. Their evidence is internal IRIS telemetry, incidents and
  *     approved lessons — not allowed web hosts — so forcing them through
  *     validateSources would either drop them all to a false "No sé" or
- *     require inventing citations. Those answers keep their existing
- *     route and are never presented as citation-verified.
+ *     require inventing citations. SOC answers instead go through
+ *     buildSocReasonedAnswerFromContext (below), which cites internal
+ *     evidence by id (interno:<kind>:<id>) and is never presented as
+ *     web-citation-verified.
  *   - It never invents a source. If Wikipedia returns no hit, it returns
  *     null and the route keeps its existing local fallback, instead of
  *     fabricating a reasoned answer with no source.
@@ -83,21 +85,31 @@ export async function buildWorldReasonedAnswer(input: {
 }
 
 // ---------------------------------------------------------------------------
-// SOC/local (Etapas 3–4, pendiente de PR #35): conecta la evidencia interna
-// al razonamiento SIN inventar citas web.
+// SOC/local (Etapas 3–4, cierre): conecta la evidencia interna al
+// razonamiento SIN inventar citas web. La ruta visible de Ask IRIS
+// (app/api/ask-iris/route.ts) llama a este conector para respuestas
+// locales/SOC, después de Guardian y después de la vía de edición, y
+// conserva su respuesta local existente cuando esto devuelve null.
 //
 // Construye una respuesta razonada SOC a partir del contexto que ya reúne
 // resolveIrisAsk (dispositivos, alertas, incidente seleccionado, lecciones
-// aprobadas y hits de memoria). Cada paso descompuesto recibe solo la
-// evidencia interna cuyas palabras coinciden con la pregunta del paso;
-// un paso sin evidencia coincidente queda "sin_datos" ("No sé").
-// Devuelve null cuando no hay evidencia interna o cuando ningún paso se
-// verifica, para que la ruta conserve su respuesta local existente en
-// vez de sustituirla por un "No sé" menos útil. La ruta ask-iris NO se
-// toca en esta entrega: cablear este conector en la ruta es el paso
-// siguiente, con revisión y verificación en vivo (sesión + DB), porque
-// cambiaría respuestas visibles sin poder probarlo aquí.
+// aprobadas y hits de memoria — estos últimos ya filtrados por
+// consentimiento vigente en resolveIrisAsk). Cada paso descompuesto
+// recibe solo la evidencia interna cuyas palabras coinciden con la
+// pregunta del paso; un paso sin evidencia coincidente queda "sin_datos"
+// ("No sé"). Devuelve null cuando no hay evidencia interna o cuando
+// ningún paso se verifica, para que la ruta conserve su respuesta local
+// existente en vez de sustituirla por un "No sé" menos útil.
 // ---------------------------------------------------------------------------
+
+/** Snippet de memoria tal como lo recorta Ask (ver IrisLessonSnippet). */
+export type SocMemorySnippet = {
+  id: string;
+  title: string;
+  body: string;
+  kind?: string;
+  promotion?: string;
+};
 
 export type SocAnalystContext = {
   devices?: Array<{
@@ -122,8 +134,8 @@ export type SocAnalystContext = {
     status: string;
     recommendation?: string;
   } | null;
-  lessons?: MemoryRecord[];
-  memoryHits?: MemoryRecord[];
+  lessons?: SocMemorySnippet[];
+  memoryHits?: SocMemorySnippet[];
 };
 
 export function buildSocReasonedAnswerFromContext(input: {
@@ -169,7 +181,16 @@ export function buildSocReasonedAnswerFromContext(input: {
     pool.push(incidentToInternalEvidence(input.context.incident));
   }
   for (const record of [...(input.context.lessons || []), ...(input.context.memoryHits || [])]) {
-    const converted = memoryRecordToInternalEvidence(record);
+    // El snippet no trae el kind tipado completo: sin kind se trata como
+    // memoria ordinaria (nunca como lección aprobada). Las lecciones que
+    // Ask filtra por consentimiento llegan con kind "lesson".
+    const converted = memoryRecordToInternalEvidence({
+      id: record.id,
+      kind: (record.kind || "operator_note") as MemoryRecord["kind"],
+      title: record.title,
+      body: record.body,
+      promotion: record.promotion as MemoryRecord["promotion"],
+    });
     if (converted.evidence) pool.push(converted.evidence);
     else if (converted.droppedReason) droppedMemory.push({ id: record.id, reason: converted.droppedReason });
   }
