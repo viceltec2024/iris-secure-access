@@ -60,7 +60,15 @@ function isMemoryRecord(value: unknown): value is MemoryRecord {
   );
 }
 
-export function appendMemory(store: MemoryStore, record: MemoryRecord): MemoryStore {
+/**
+ * CAS: si se pasa expectedRevision y no coincide con store.revision, se
+ * rechaza con "revision_conflict" en vez de pisar una escritura concurrente.
+ * Sin expectedRevision el comportamiento anterior se mantiene.
+ */
+export function appendMemory(store: MemoryStore, record: MemoryRecord, expectedRevision?: number): MemoryStore {
+  if (expectedRevision !== undefined && expectedRevision !== (store.revision || 0)) {
+    throw new Error("revision_conflict");
+  }
   const next: MemoryRecord = {
     ...record,
     title: record.title.slice(0, 160),
@@ -74,7 +82,10 @@ export function appendMemory(store: MemoryStore, record: MemoryRecord): MemorySt
   };
 }
 
-export function requestLessonPromotion(store: MemoryStore, recordId: string): MemoryStore {
+export function requestLessonPromotion(store: MemoryStore, recordId: string, expectedRevision?: number): MemoryStore {
+  if (expectedRevision !== undefined && expectedRevision !== (store.revision || 0)) {
+    throw new Error("revision_conflict");
+  }
   const record = store.records.find(item => item.id === recordId);
   if (!record) throw new Error("Memory record not found");
   if (record.kind !== "lesson") throw new Error("Only lessons can be promoted");
@@ -93,7 +104,14 @@ export function decideLessonPromotion(
   decision: "approve" | "reject",
   actorEmail: string,
   now = new Date().toISOString(),
+  expectedRevision?: number,
 ) {
+  if (expectedRevision !== undefined && expectedRevision !== (store.revision || 0)) {
+    throw new Error("revision_conflict");
+  }
+  if (!actorEmail || !actorEmail.includes("@")) {
+    throw new Error("verified_human_actor_required");
+  }
   const record = store.records.find(item => item.id === recordId);
   if (!record) throw new Error("Memory record not found");
   if (record.kind !== "lesson") throw new Error("Only lessons can be promoted");

@@ -17,6 +17,8 @@ import {
 import { authorizeTool, defaultToolsForAgent } from "./iris-tool-acl.ts";
 
 export type IsolatedRunResult = {
+  /** True: this run used a SIMULATED approval only. Never persist as real approval. */
+  approvalSimulation: true;
   ok: boolean;
   checks: SandboxCheck[];
   proposalSample: { type: string; requiresHumanApproval: true; applied: false; summary: string } | null;
@@ -99,11 +101,14 @@ export function runIsolatedAgentSandbox(agent: CreatedAgent, language: "es" | "e
   let heartbeat: IsolatedRunResult["heartbeat"] = null;
 
   try {
+    // SIMULATION ONLY: this flag must never be stored or reused as a real
+    // human approval. The sample proposal stays applied:false and
+    // requiresHumanApproval:true.
     const proposalAcl = authorizeTool({
       tool: "proposal_queue",
       allowedTools: defaultToolsForAgent(),
       agentStatus: agent.status === "draft" ? "sandbox_passed" : agent.status,
-      humanApproved: true,
+      simulatedApproval: true,
     });
     toolTrace.push({ tool: "proposal_queue", allowed: proposalAcl.allowed, reason: proposalAcl.reason });
     if (!proposalAcl.allowed) throw new Error("permission_denied");
@@ -134,6 +139,7 @@ export function runIsolatedAgentSandbox(agent: CreatedAgent, language: "es" | "e
 
   const ok = checks.every(check => check.ok) && errors.length === 0 && Boolean(proposalSample?.requiresHumanApproval) && proposalSample?.applied === false;
   return {
+    approvalSimulation: true,
     ok,
     checks,
     proposalSample,

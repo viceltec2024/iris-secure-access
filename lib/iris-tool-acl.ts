@@ -34,6 +34,12 @@ export type ToolAclDecision = {
   tool: string;
   reason: string;
   requiresHumanApproval: boolean;
+  /**
+   * True only when the caller explicitly asked for a simulation. A simulated
+   * approval is NEVER a real human approval and must never be persisted or
+   * reused as one.
+   */
+  simulatedApproval?: boolean;
 };
 
 const DEFAULT_AGENT_TOOLS: IrisToolId[] = [
@@ -65,6 +71,8 @@ export function authorizeTool(input: {
   allowedTools?: readonly string[];
   agentStatus?: string;
   humanApproved?: boolean;
+  /** Simulation-only flag. Never set this from a real approval flow. */
+  simulatedApproval?: boolean;
 }): ToolAclDecision {
   const tool = String(input.tool || "").trim();
   if (!tool) {
@@ -86,8 +94,17 @@ export function authorizeTool(input: {
     }
   }
   const sensitive = SENSITIVE_TOOLS.has(tool as IrisToolId);
-  if (sensitive && input.humanApproved === false) {
+  if (sensitive && input.humanApproved === false && !input.simulatedApproval) {
     return { allowed: false, tool, reason: "human_approval_required", requiresHumanApproval: true };
+  }
+  if (input.simulatedApproval) {
+    return {
+      allowed: true,
+      tool,
+      reason: "allowed_simulated_only",
+      requiresHumanApproval: true,
+      simulatedApproval: true,
+    };
   }
   return {
     allowed: true,
