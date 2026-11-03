@@ -37,9 +37,11 @@ test("billing: test mode never enables real charges; live keys blocked", () => {
 });
 
 test("secret hygiene redacts and rejects provider key material", () => {
-  // Assemble the OpenAI-shaped fixture so `git grep` secret hygiene does not
-  // treat this test file as committed key material.
-  const fakeOpenAiShape = ["sk-", "abcdefghijklmnopqrstuvwxyz1234"].join("");
+  // Placeholder OBVIAMENTE falso, escrito en claro (sin armar el string por
+  // partes para esquivar el escaneo). No es una clave real ni con forma de
+  // clave real; el detector de iris-secret-hygiene lo marca por el patrón
+  // de asignación API_KEY=, no por una forma de clave.
+  const fakeOpenAiShape = "OPENAI_API_KEY=FAKE-PLACEHOLDER-NOT-A-REAL-KEY";
   assert.equal(containsPossibleSecret("hello"), false);
   assert.equal(containsPossibleSecret(fakeOpenAiShape), true);
   assert.match(redactSecrets(`key ${fakeOpenAiShape} end`), /\[REDACTED\]/);
