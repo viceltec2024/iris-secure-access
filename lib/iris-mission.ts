@@ -81,7 +81,25 @@ export type MissionRecord = {
 export type MissionDesk = {
   missions: MissionRecord[];
   queue: JobQueueState;
+  /** Monotonic revision for optimistic concurrency / CAS. */
+  revision: number;
 };
+
+export function assertMissionRevision(desk: MissionDesk, expectedRevision?: number) {
+  if (expectedRevision !== undefined && expectedRevision !== (desk.revision || 0)) {
+    throw new Error("revision_conflict");
+  }
+}
+
+function requireVerifiedHumanActor(actorEmail: string) {
+  if (!actorEmail || !actorEmail.includes("@")) {
+    throw new Error("verified_human_actor_required");
+  }
+}
+
+function bumpMissionDesk(desk: MissionDesk, missions: MissionRecord[], queue?: JobQueueState): MissionDesk {
+  return { ...desk, missions, queue: queue ?? desk.queue, revision: (desk.revision || 0) + 1 };
+}
 
 const MAX_MISSIONS = 40;
 const MAX_OBJECTIVE = 500;
@@ -89,7 +107,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
 
 export function emptyMissionDesk(): MissionDesk {
-  return { missions: [], queue: emptyJobQueue() };
+  return { missions: [], queue: emptyJobQueue(), revision: 0 };
 }
 
 export function parseMissionDesk(value: string): MissionDesk {
@@ -102,6 +120,7 @@ export function parseMissionDesk(value: string): MissionDesk {
       queue: parsed.queue && typeof parsed.queue === "object"
         ? { jobs: Array.isArray((parsed.queue as JobQueueState).jobs) ? (parsed.queue as JobQueueState).jobs : [] }
         : emptyJobQueue(),
+      revision: typeof parsed.revision === "number" && parsed.revision >= 0 ? Math.floor(parsed.revision) : 0,
     };
   } catch {
     return emptyMissionDesk();
@@ -228,10 +247,7 @@ export function planAndEnqueueMission(input: {
   };
 
   return {
-    desk: {
-      missions: [mission, ...desk.missions].slice(0, MAX_MISSIONS),
-      queue: enqueued.queue,
-    },
+    desk: bumpMissionDesk(desk, [mission, ...desk.missions].slice(0, MAX_MISSIONS), enqueued.queue),
     mission,
     job: enqueued.job,
   };
@@ -506,7 +522,9 @@ export function processMissionQueue(
  * Human acceptance of an executed/verified report.
  * Does NOT set status=verified — verification is evidence-only.
  */
-export function acceptMission(desk: MissionDesk, missionId: string, actorEmail: string, now = new Date().toISOString()) {
+export function acceptMission(desk: MissionDesk, missionId: string, actorEmail: string, now = new Date().toISOString(), expectedRevision?: number) {
+  requireVerifiedHumanActor(actorEmail);
+  assertMissionRevision(desk, expectedRevision);
   const mission = desk.missions.find(item => item.id === missionId);
   if (!mission) throw new Error("Mission not found");
   if (!["executed", "awaiting_approval", "verified"].includes(mission.status)) {
@@ -532,20 +550,18 @@ export function acceptMission(desk: MissionDesk, missionId: string, actorEmail: 
       : null,
   };
   return {
-    desk: {
-      ...desk,
-      missions: desk.missions.map(item => item.id === missionId ? next : item),
-    },
+    desk: bumpMissionDesk(desk, desk.missions.map(item => item.id === missionId ? next : item)),
     mission: next,
   };
 }
 
 /** @deprecated Use acceptMission — kept for API alias; never marks verified. */
-export function approveMission(desk: MissionDesk, missionId: string, actorEmail: string, now = new Date().toISOString()) {
-  return acceptMission(desk, missionId, actorEmail, now);
+export function approveMission(desk: MissionDesk, missionId: string, actorEmail: string, now = new Date().toISOString(), expectedRevision?: number) {
+  return acceptMission(desk, missionId, actorEmail, now, expectedRevision);
 }
 
-export function rejectMission(desk: MissionDesk, missionId: string, now = new Date().toISOString()) {
+export function rejectMission(desk: MissionDesk, missionId: string, now = new Date().toISOString(), expectedRevision?: number) {
+  assertMissionRevision(desk, expectedRevision);
   const mission = desk.missions.find(item => item.id === missionId);
   if (!mission) throw new Error("Mission not found");
   if (!["awaiting_approval", "executed", "verified", "queued", "planned"].includes(mission.status)) {
@@ -560,10 +576,7 @@ export function rejectMission(desk: MissionDesk, missionId: string, now = new Da
       : null,
   };
   return {
-    desk: {
-      ...desk,
-      missions: desk.missions.map(item => item.id === missionId ? next : item),
-    },
+    desk: bumpMissionDesk(desk, desk.missions.map(item => item.id === missionId ? next : item)),
     mission: next,
   };
 }
@@ -573,7 +586,10 @@ export function cancelMission(
   missionId: string,
   actorEmail: string,
   now = new Date().toISOString(),
+  expectedRevision?: number,
 ) {
+  requireVerifiedHumanActor(actorEmail);
+  assertMissionRevision(desk, expectedRevision);
   const mission = desk.missions.find(item => item.id === missionId);
   if (!mission) throw new Error("Mission not found");
   if (["accepted", "completed", "rejected", "cancelled"].includes(mission.status)) {
@@ -607,17 +623,11 @@ export function cancelMission(
       },
   };
   return {
-    desk: {
-      missions: desk.missions.map(item => item.id === missionId ? next : item),
-      queue: { jobs },
-    },
+    desk: bumpMissionDesk(desk, desk.missions.map(item => item.id === missionId ? next : item), { jobs }),
     mission: next,
   };
 }
 
 export function addMission(desk: MissionDesk, mission: MissionRecord): MissionDesk {
-  return {
-    ...desk,
-    missions: [mission, ...desk.missions].slice(0, MAX_MISSIONS),
-  };
+  return bumpMissionDesk(desk, [mission, ...desk.missions].slice(0, MAX_MISSIONS));
 }

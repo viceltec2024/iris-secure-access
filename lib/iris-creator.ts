@@ -48,7 +48,45 @@ export type AgentBlueprint = {
   goals: string[];
   tools: string[];
   constraints: string[];
+  /** Enfoque derivado del prompt validado (sin ampliar permisos). */
+  focus?: string;
 };
+
+/**
+ * Metas derivadas del prompt validado, no una plantilla única para todos.
+ * Solo añade metas de propuesta/revisión; nunca añade permisos, shell,
+ * gasto, deploy ni auto-modificación. Los permisos se fijan aparte y no
+ * cambian con el prompt.
+ */
+export function deriveCreatorGoals(prompt: string, specialty: string, language: "es" | "en" = "es"): { goals: string[]; focus: string } {
+  const text = prompt.toLowerCase();
+  const base = language === "es"
+    ? [
+      `Administrar tareas rutinarias de ${specialty}`,
+      "Proponer acciones claras al operador humano",
+      "Mantener un registro auditable de cada propuesta",
+    ]
+    : [
+      `Handle routine work for ${specialty}`,
+      "Propose clear actions to the human operator",
+      "Keep an auditable record of every proposal",
+    ];
+  const extra: string[] = [];
+  let focus = specialty;
+  const add = (keyword: string[], goalEs: string, goalEn: string, focusLabel: string) => {
+    if (keyword.some(k => text.includes(k))) { extra.push(language === "es" ? goalEs : goalEn); if (focus === specialty) focus = focusLabel; }
+  };
+  add(["tienda", "store", "negocio", "business", "shop", "catálogo", "catalog"], `Revisar el catálogo y proponer productos de ${specialty} para aprobación humana`, `Review the catalog and propose ${specialty} products for human approval`, specialty);
+  add(["cliente", "client", "customer"], `Proponer respuestas claras a clientes de ${specialty}`, `Propose clear replies to ${specialty} customers`, specialty);
+  add(["venta", "sales", "vender"], `Proponer acciones para impulsar ventas de ${specialty}, sin cobrar ni cerrar pagos`, `Propose actions to grow ${specialty} sales, without charging or closing payments`, specialty);
+  add(["inventario", "stock", "inventory"], `Señalar faltantes de inventario de ${specialty} para revisión humana`, `Flag ${specialty} inventory gaps for human review`, specialty);
+  add(["redes", "social", "contenido", "content"], `Proponer contenido para redes de ${specialty} para aprobación humana`, `Propose social content for ${specialty} for human approval`, specialty);
+  add(["cita", "agenda", "appointment", "reserva"], `Proponer horarios y recordatorios de ${specialty} para confirmación humana`, `Propose ${specialty} schedules and reminders for human confirmation`, specialty);
+  if (!extra.length) {
+    extra.push(language === "es" ? `Documentar aprendizajes operativos de ${specialty} con evidencia` : `Document operating learnings for ${specialty} with evidence`);
+  }
+  return { goals: [...base, ...extra.slice(0, 2)], focus };
+}
 
 export const PROPOSAL_TYPES = ["code_improvement", "test_plan", "action"] as const;
 export type ProposalType = (typeof PROPOSAL_TYPES)[number];
@@ -99,7 +137,21 @@ export type CreatorDeskState = {
   agents: CreatedAgent[];
   /** Request-scoped durable-shape queue for agent_tick jobs. */
   queue: JobQueueState;
+  /** Monotonic revision for optimistic concurrency / CAS. */
+  revision: number;
 };
+
+export function assertCreatorRevision(state: CreatorDeskState, expectedRevision?: number) {
+  if (expectedRevision !== undefined && expectedRevision !== (state.revision || 0)) {
+    throw new Error("revision_conflict");
+  }
+}
+
+function requireVerifiedHumanActor(actorEmail: string) {
+  if (!actorEmail || !actorEmail.includes("@")) {
+    throw new Error("verified_human_actor_required");
+  }
+}
 
 export const BLOCKED_CAPABILITIES = [
   "exec_shell",
@@ -114,7 +166,7 @@ const MAX_AGENTS = 24;
 const MAX_PROMPT = 500;
 
 export function emptyCreatorDesk(): CreatorDeskState {
-  return { agents: [], queue: emptyJobQueue() };
+  return { agents: [], queue: emptyJobQueue(), revision: 0 };
 }
 
 export function parseCreatorDesk(value: string): CreatorDeskState {
@@ -125,6 +177,7 @@ export function parseCreatorDesk(value: string): CreatorDeskState {
         ? parsed.agents.filter(isStoredAgent).map(normalizeStoredAgent)
         : [],
       queue: parsed.queue ? parseJobQueue(JSON.stringify(parsed.queue)) : emptyJobQueue(),
+      revision: typeof parsed.revision === "number" && parsed.revision >= 0 ? Math.floor(parsed.revision) : 0,
     };
   } catch {
     return emptyCreatorDesk();
@@ -228,21 +281,13 @@ export function designAgentFromPrompt(input: {
   const now = input.now || new Date().toISOString();
   const schedule = input.schedule && AGENT_SCHEDULES.includes(input.schedule) ? input.schedule : "always_on";
   const name = language === "es" ? `IRIS · ${specialty}` : `IRIS · ${specialty}`;
+  const personalized = deriveCreatorGoals(prompt, specialty, language);
 
   const blueprint: AgentBlueprint = {
     role: language === "es" ? `Agente especializado · ${specialty}` : `Specialized agent · ${specialty}`,
     specialty,
-    goals: language === "es"
-      ? [
-        `Administrar tareas rutinarias de ${specialty}`,
-        "Proponer acciones claras al operador humano",
-        "Mantener un registro auditable de cada propuesta",
-      ]
-      : [
-        `Handle routine work for ${specialty}`,
-        "Propose clear actions to the human operator",
-        "Keep an auditable record of every proposal",
-      ],
+    goals: personalized.goals,
+    focus: personalized.focus,
     tools: ["business_context", "draft_composer", "owner_notifier", "proposal_queue"],
     constraints: language === "es"
       ? [
@@ -484,14 +529,16 @@ export function runCreatorPipeline(agent: CreatedAgent, language: "es" | "en" = 
 }
 
 function withAgents(state: CreatorDeskState, agents: CreatedAgent[]): CreatorDeskState {
-  return { ...state, agents, queue: state.queue || emptyJobQueue() };
+  return { ...state, agents, queue: state.queue || emptyJobQueue(), revision: (state.revision || 0) + 1 };
 }
 
 export function addCreatedAgent(state: CreatorDeskState, agent: CreatedAgent): CreatorDeskState {
   return withAgents(state, [agent, ...state.agents].slice(0, MAX_AGENTS));
 }
 
-export function approveCreatedAgent(state: CreatorDeskState, agentId: string, actorEmail: string, now = new Date().toISOString()) {
+export function approveCreatedAgent(state: CreatorDeskState, agentId: string, actorEmail: string, now = new Date().toISOString(), expectedRevision?: number) {
+  requireVerifiedHumanActor(actorEmail);
+  assertCreatorRevision(state, expectedRevision);
   const agent = state.agents.find(item => item.id === agentId);
   if (!agent) throw new Error("Agent not found");
   if (agent.status !== "awaiting_approval" && agent.status !== "paused") {
@@ -666,7 +713,10 @@ export function decideAgentProposal(
   decision: "approve" | "reject",
   actorEmail: string,
   now = new Date().toISOString(),
+  expectedRevision?: number,
 ) {
+  requireVerifiedHumanActor(actorEmail);
+  assertCreatorRevision(state, expectedRevision);
   const agent = state.agents.find(item => item.id === agentId);
   if (!agent) throw new Error("Agent not found");
   const proposal = (agent.proposals || []).find(item => item.id === proposalId);
@@ -700,6 +750,6 @@ export function creatorAskReply(language: "es" | "en", userName: string, special
   const name = userName.split(/[\s@]/)[0] || "operador";
   const specialty = specialtyHint || (language === "es" ? "tu negocio" : "your business");
   return language === "es"
-    ? `${name}, abre IRIS Creator en el menú. Describe el agente (por ejemplo “administrar ${specialty}”), Guardian lo prueba en sandbox y yo te pido aprobación antes de dejarlo activo 24/7 con acciones preaprobadas.`
-    : `${name}, open IRIS Creator in the menu. Describe the agent (for example “manage ${specialty}”), Guardian tests it in a sandbox, and I ask for your approval before it stays active 24/7 with pre-approved actions.`;
+    ? `${name}, abre IRIS Creator en el menú. Describe el agente (por ejemplo “administrar ${specialty}”), Guardian lo prueba en sandbox y yo te pido aprobación antes de activarlo. El tick es solo un latido al abrir el panel o drenar la cola: no ejecuta tareas en segundo plano por sí solo.`
+    : `${name}, open IRIS Creator in the menu. Describe the agent (for example “manage ${specialty}”), Guardian tests it in a sandbox, and I ask for your approval before activating it. The tick is only a heartbeat when the panel opens or the queue drains: it does not run tasks in the background by itself.`;
 }

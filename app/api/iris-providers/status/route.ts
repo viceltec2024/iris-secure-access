@@ -36,14 +36,33 @@ export async function GET(request: Request) {
     }
   }
 
+  const probeSummary = probes
+    ? {
+      liveVerified: probes.providers.filter(item => item.status === "live_ok").map(item => item.id),
+      configuredOnly: probes.providers.filter(item => item.configured && item.status !== "live_ok").map(item => item.id),
+      notConfigured: probes.providers.filter(item => !item.configured).map(item => item.id),
+      // liveVerified means a real HTTP probe succeeded; configuredOnly means
+      // a key is present but no live call has proven the integration.
+      providers: probes.providers.map(item => ({
+        id: item.id,
+        configured: item.configured,
+        liveVerified: item.status === "live_ok",
+        status: item.status,
+        httpStatus: item.httpStatus ?? null,
+        detail: item.detail,
+      })),
+    }
+    : null;
+
   return Response.json({
     refreshedAt: new Date().toISOString(),
     providers,
     voice,
     probes,
+    probeSummary,
     honesty: {
       configuredIsNotLive: true,
-      note: "Una clave configurada no prueba integración live. Usa probe=1 o POST /api/iris-coordinator probe_providers.",
+      note: "Una clave configurada no prueba integración live. Usa probe=1 o POST /api/iris-coordinator probe_providers. Solo liveVerified=true (HTTP real OK) significa probado en vivo.",
     },
     coordination: {
       edit: "muse",
