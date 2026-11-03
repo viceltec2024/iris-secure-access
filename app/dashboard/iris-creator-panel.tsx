@@ -9,7 +9,7 @@ import type { ModelCoordinationReport } from "../../lib/iris-model-registry";
 
 type CreatorDeskResponse = CreatorDeskState & { models?: ModelCoordinationReport };
 
-const emptyDesk: CreatorDeskState = { agents: [], queue: { jobs: [] } };
+const emptyDesk: CreatorDeskState = { agents: [], queue: { jobs: [] }, revision: 0 };
 const emptyModels: ModelCoordinationReport = { generatedAt: "", coordinators: [], notes: [] };
 
 function statusLabel(status: CreatedAgent["status"], es: boolean) {
@@ -44,7 +44,11 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
   const [pending, setPending] = useState<CreatedAgent | null>(null);
 
   function applyDesk(payload: CreatorDeskResponse) {
-    setDesk({ agents: payload.agents || [], queue: payload.queue || { jobs: [] } });
+    setDesk({
+      agents: payload.agents || [],
+      queue: payload.queue || { jobs: [] },
+      revision: typeof payload.revision === "number" ? payload.revision : 0,
+    });
     if (payload.models) setModels(payload.models);
   }
 
@@ -61,14 +65,21 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
 
-  async function post(body: Record<string, unknown>) {
+  // CAS: las aprobaciones envían la revisión del escritorio que el
+  // usuario vio; si cambió desde entonces, el servidor rechaza con
+  // revision_conflict en vez de aprobar a ciegas (ver lib/iris-creator).
+  async function post(body: Record<string, unknown>, includeRevision = false) {
     setBusy(true);
     setNotice("");
     try {
       const response = await fetch("/api/iris-creator", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...body, language }),
+        body: JSON.stringify({
+          ...body,
+          language,
+          ...(includeRevision && typeof desk.revision === "number" ? { expectedRevision: desk.revision } : {}),
+        }),
       });
       const payload = await response.json() as CreatorDeskResponse & {
         error?: string;
@@ -77,7 +88,15 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
         proposal?: { id: string; title: string; status: string };
         taskResult?: { ok: boolean; error?: string };
       };
-      if (!response.ok) throw new Error(payload.error || "creator");
+      if (!response.ok) {
+        if (String(payload.error || "").includes("revision_conflict")) {
+          setNotice(es
+            ? "El escritorio cambió desde que lo viste; se recargó. Revisa de nuevo antes de aprobar."
+            : "The desk changed since you saw it; it was reloaded. Review again before approving.");
+          void refresh();
+        }
+        throw new Error(payload.error || "creator");
+      }
       applyDesk(payload);
       return payload;
     } catch (error) {
@@ -105,7 +124,7 @@ export default function IrisCreatorPanel({ language }: { language: Language }) {
 
   async function confirmApproval() {
     if (!pending) return;
-    const result = await post({ action: "approve", agentId: pending.id });
+    const result = await post({ action: "approve", agentId: pending.id }, true);
     if (!result?.approved) return;
     setPending(null);
     setNotice(es
