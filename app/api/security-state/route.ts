@@ -9,6 +9,7 @@ import { irisReconnectOrigin } from "../../../lib/iris-origin";
 import { listRecentAudit, logAudit, provisionIrisUser } from "../../../lib/authz";
 import { parseWalletSessionValue } from "../../../lib/iris-chain";
 import { approveProposal, parsePurchaseDesk, rejectProposal } from "../../../lib/iris-purchases";
+import { enforceRateLimit } from "../../../lib/rate-limit";
 
 const WALLET_KEY = "iris_local_wallet_session";
 const DESK_KEY = "iris_purchase_desk";
@@ -32,7 +33,13 @@ export async function GET(request: Request) {
   const agentCommands = deviceRows.length
     ? (await listAgentCommandsForDevices(deviceRows.map(device => device.id))).slice(0, 60)
     : [];
-  const incidents = await db.select().from(incidentStates);
+  const incidentRows = await db.select().from(incidentStates);
+  // Incidents have no device link in the schema (only updatedBy), so a
+  // non-ADMIN sees only incidents they themselves updated; ADMIN sees all.
+  // This closes the previous leak where any authenticated user received
+  // every incident row. A device-linked incident table is still needed
+  // for finer scoping (see remaining risks).
+  const incidents = user.role === "ADMIN" ? incidentRows : incidentRows.filter(row => row.updatedBy === user.email);
   const actions = user.role === "ADMIN" ? await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30) : await db.select().from(responseActions).where(eq(responseActions.actorEmail, user.email)).orderBy(desc(responseActions.createdAt)).limit(30);
   const audit = await listRecentAudit(user.email, user.role, 40);
   const [walletRow] = await db.select().from(appSettings).where(eq(appSettings.key, `${WALLET_KEY}:${user.email}`)).limit(1);
@@ -57,6 +64,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await enforceRateLimit(`iris-security-state:${user.email}`, 40, 60 * 1000))) {
+    return Response.json({ error: "Rate limit exceeded. Try again in a minute." }, { status: 429 });
+  }
   const body = await request.json().catch(() => ({})) as { type?: string; name?: string; platform?: string; deviceId?: string; appName?: string };
   if (body.type === "trust_application" && body.deviceId && body.appName) {
     const db = getDb();
@@ -92,6 +102,9 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await enforceRateLimit(`iris-security-state:${user.email}`, 40, 60 * 1000))) {
+    return Response.json({ error: "Rate limit exceeded. Try again in a minute." }, { status: 429 });
+  }
   const body = await request.json().catch(() => ({})) as { deviceId?: string };
   if (!body.deviceId) return Response.json({ error: "Device ID is required" }, { status: 400 });
 
@@ -113,6 +126,9 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await enforceRateLimit(`iris-security-state:${user.email}`, 40, 60 * 1000))) {
+    return Response.json({ error: "Rate limit exceeded. Try again in a minute." }, { status: 429 });
+  }
   const body = await request.json().catch(() => ({})) as { type?: string; alertId?: string; alertStatus?: "ACKNOWLEDGED" | "RESOLVED"; incidentId?: string; decision?: "approve" | "reject"; language?: "es" | "en" };
   if (body.type === "start_remediation" && body.alertId) {
     const db = getDb();

@@ -12,7 +12,7 @@ export type InjectionFinding = {
 const INJECTION_PATTERNS: Array<{ code: string; re: RegExp; messageEs: string; messageEn: string }> = [
   {
     code: "IGNORE_PRIOR",
-    re: /\b(ignore|olvid[ae]|disregard|bypass)\b[\s\S]{0,40}\b(previous|prior|anteriores?|system|instrucciones?|rules?|guardian)\b/i,
+    re: /\b(ignore|ignor[a-z]*|olvid[a-z]*|disregard|bypass|omit[a-z]*)\b[\s\S]{0,40}\b(previous|prior|anteriores?|anterior|system|sistema|instrucciones?|rules?|reglas|guardian)\b/i,
     messageEs: "Guardian bloqueó un intento de ignorar instrucciones previas.",
     messageEn: "Guardian blocked an attempt to ignore prior instructions.",
   },
@@ -24,7 +24,7 @@ const INJECTION_PATTERNS: Array<{ code: string; re: RegExp; messageEs: string; m
   },
   {
     code: "SECRET_EXFIL",
-    re: /\b(exfiltrat|dump|filtr[ae]|revel[ae]|print)\b[\s\S]{0,40}\b(api[_-]?key|secret|password|token|credential|\.env)\b/i,
+    re: /\b(exfiltrat[a-z]*|dump|filtr[a-z]*|revel[a-z]*|print|muestra|ense[a-z]*|dame|comparte|env[ií]a)\b[\s\S]{0,40}(?:\b(api[\s_-]?key|secrets?|passwords?|tokens?|credentials?|claves?|contrase[nñ]as?)\b|\.env\b)/i,
     messageEs: "Guardian bloqueó un intento de exfiltración de secretos.",
     messageEn: "Guardian blocked a secret-exfiltration attempt.",
   },
@@ -64,9 +64,9 @@ export function normalizeForGuardian(text: string): string {
 
 // Patrones sobre texto sin espacios ni puntuación ("ignoreprevious").
 const SQUASHED_PATTERNS: Array<{ code: string; re: RegExp }> = [
-  { code: "IGNORE_PRIOR", re: /(ignore|disregard|olvida|bypass)(previous|prior|anteriores|system|instrucciones|rules|guardian)/ },
+  { code: "IGNORE_PRIOR", re: /(ignore|disregard|olvida|bypass|ignora|ignorar)(previous|prior|anteriores|anterior|system|sistema|instrucciones|rules|reglas|guardian)/ },
   { code: "ROLE_HIJACK", re: /(youarenow|actas|pretendtobe|eresahora)(unrestricted|root|admin|sinlimites|jailbreak)/ },
-  { code: "SECRET_EXFIL", re: /(exfiltrat|dump|filtra|revela|print)(apikey|secret|password|token|credential|env)/ },
+  { code: "SECRET_EXFIL", re: /(exfiltrat|exfiltrate|dump|filtra|revela|print|muestra|ensena|dame|comparte|envia)(apikey|secret|password|token|credential|env|clave|contrasena)/ },
   { code: "CORE_MUTATION", re: /(selfmodify|modif[a-z]*elnucleo|rewritecore|patchmain|gitpush)/ },
 ];
 

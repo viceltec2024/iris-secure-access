@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../../chatgpt-auth";
 import { provisionIrisUser } from "../../../../lib/authz";
 import { listProviderStatus, routeIrisVoice } from "../../../../lib/iris-model-router";
 import { probeAllProviders } from "../../../../lib/iris-provider-probe";
+import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { requireOrgContext } from "../../../../lib/iris-tenant";
 import { recordOrgObs } from "../../../../lib/iris-obs-store";
 
@@ -21,6 +22,12 @@ export async function GET(request: Request) {
   const wantProbe = new URL(request.url).searchParams.get("probe") === "1";
   let probes = null as Awaited<ReturnType<typeof probeAllProviders>> | null;
   if (wantProbe) {
+    // A probe triggers real outbound calls with provider keys on every
+    // request, so it is rate-limited per user even though the plain
+    // status read is not: 10 probes/min, then 429.
+    if (!(await enforceRateLimit(`iris-providers-probe:${user.email}`, 10, 60 * 1000))) {
+      return Response.json({ error: "Rate limit exceeded. Try again in a minute." }, { status: 429 });
+    }
     probes = await probeAllProviders(bindings);
     try {
       const ctx = await requireOrgContext(user.email);

@@ -90,6 +90,7 @@ export async function POST(request: Request) {
     objective?: string;
     language?: string;
     missionId?: string;
+    expectedRevision?: unknown;
   };
   const language = body.language === "en" ? "en" : "es";
   const ctx = await requireOrgContext(user.email, { mutate: true });
@@ -179,7 +180,10 @@ export async function POST(request: Request) {
     }
 
     if (body.action === "approve" || body.action === "accept") {
-      const result = acceptMission(desk, String(body.missionId || ""), user.email);
+      // CAS opcional y retrocompatible, igual que en Creator: solo se
+      // exige si el cliente envía expectedRevision.
+      const expectedRevision = typeof body.expectedRevision === "number" ? body.expectedRevision : undefined;
+      const result = acceptMission(desk, String(body.missionId || ""), user.email, new Date().toISOString(), expectedRevision);
       await persist(result.desk);
       await logAudit(user.email, "IRIS_MISSION_ACCEPTED", result.mission.id, "SUCCESS", {
         appliedToRepo: false,

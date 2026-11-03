@@ -94,7 +94,11 @@ export function authorizeTool(input: {
     }
   }
   const sensitive = SENSITIVE_TOOLS.has(tool as IrisToolId);
-  if (sensitive && input.humanApproved === false && !input.simulatedApproval) {
+  // Fail closed: a sensitive tool is allowed only with an explicit human
+  // approval (true) or a simulation-only flag. Omitting humanApproved must
+  // never default to allowed, otherwise a caller that forgets the flag
+  // silently bypasses the human gate.
+  if (sensitive && input.humanApproved !== true && !input.simulatedApproval) {
     return { allowed: false, tool, reason: "human_approval_required", requiresHumanApproval: true };
   }
   if (input.simulatedApproval) {

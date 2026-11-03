@@ -129,6 +129,7 @@ export async function POST(request: Request) {
     proposalType?: string;
     task?: string;
     payload?: Record<string, unknown>;
+    expectedRevision?: unknown;
   };
 
   const mutate = body.action !== undefined && body.action !== "list";
@@ -187,7 +188,11 @@ export async function POST(request: Request) {
     }
 
     if (body.action === "approve") {
-      const result = approveCreatedAgent(state, String(body.agentId || ""), user.email);
+      // CAS opcional y retrocompatible: si el cliente envía la revisión
+      // del escritorio que vio, una aprobación sobre estado obsoleto se
+      // rechaza con revision_conflict en vez de aprobar a ciegas.
+      const expectedRevision = typeof body.expectedRevision === "number" ? body.expectedRevision : undefined;
+      const result = approveCreatedAgent(state, String(body.agentId || ""), user.email, new Date().toISOString(), expectedRevision);
       const queued = enqueueApprovedAgentTicks({ state: result.state, ownerEmail: user.email });
       await persist(queued);
       await logAudit(user.email, "IRIS_CREATOR_APPROVED", result.agent.id, "SUCCESS", {
