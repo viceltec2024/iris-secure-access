@@ -10,16 +10,17 @@
  * With no valid source the answer's first line says "No sé" / "I don't
  * know" and no unverified body is presented as fact.
  *
- * Allowed hosts today: Wikipedia editions and MDN. MDN is allowlisted
- * for caller-provided, actually-consulted sources; this module does not
- * fetch MDN, so a live MDN fetcher is still pending and must not be
- * claimed. The live world path (irisWorldAnswerWithCitations) consults
- * Wikipedia only, so a single-source world answer is "parcial", never
- * "verificado".
+ * Allowed hosts today: Wikipedia editions and MDN. The live world path
+ * (irisWorldAnswerWithCitations) consults Wikipedia and, for technical
+ * questions, MDN through lib/iris-mdn.ts — both actually consulted in
+ * this execution. Two distinct allowed hosts -> "verificado"; one ->
+ * "parcial"; none -> "no_verificado". A source that was not actually
+ * fetched in this execution is never cited.
  */
 
 import { extractSearchTopic } from "./iris-query.ts";
 import { lookupWikipedia, type WikipediaHit } from "./iris-world-knowledge.ts";
+import { lookupMdn, type MdnHit } from "./iris-mdn.ts";
 
 export type CitedConfidence = "verificado" | "parcial" | "no_verificado";
 
@@ -144,10 +145,11 @@ function firstSentences(extract: string, max = 3): string {
 }
 
 /**
- * Live world path: consults Wikipedia through lookupWikipedia (the only
- * fetcher in this module's path). One hit -> "parcial". No hit ->
- * "no_verificado" with a first-line "No sé". Never "verificado" from a
- * single source, and never a fabricated citation.
+ * Live world path: consults Wikipedia through lookupWikipedia and, for
+ * technical questions, MDN through lookupMdn — both actually fetched in
+ * this execution. One hit -> "parcial". Two distinct allowed hosts ->
+ * "verificado". No hit -> "no_verificado" with a first-line "No sé".
+ * Never a fabricated citation.
  */
 export async function irisWorldAnswerWithCitations(input: {
   question: string;
@@ -156,32 +158,51 @@ export async function irisWorldAnswerWithCitations(input: {
 }): Promise<CitedAnswer> {
   const language = input.language;
   const topic = extractSearchTopic(input.question);
-  let hit: WikipediaHit | null = null;
-  try {
-    hit = await lookupWikipedia(topic, language);
-  } catch {
-    hit = null;
-  }
-  if (!hit) {
+  const [wikiResult, mdnResult] = await Promise.allSettled([
+    (async (): Promise<WikipediaHit | null> => {
+      try {
+        return await lookupWikipedia(topic, language);
+      } catch {
+        return null;
+      }
+    })(),
+    (async (): Promise<MdnHit | null> => {
+      try {
+        return await lookupMdn(topic, language);
+      } catch {
+        return null;
+      }
+    })(),
+  ]);
+  const hit = wikiResult.status === "fulfilled" ? wikiResult.value : null;
+  const mdnHit = mdnResult.status === "fulfilled" ? mdnResult.value : null;
+  if (!hit && !mdnHit) {
     return buildCitedAnswer({ language, answerBody: "", sources: [] });
   }
-  const body = firstSentences(hit.extract, 3);
+  const primary = hit || { title: mdnHit!.title, extract: mdnHit!.excerpt };
+  const body = firstSentences(primary.extract, 3);
   const headed = new RegExp(
-    hit.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    primary.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     "i",
   ).test(body)
     ? body
-    : `${hit.title}. ${body}`;
-  return buildCitedAnswer({
-    language,
-    answerBody: headed,
-    sources: [
-      {
-        title: hit.title,
-        url: hit.url,
-        consultedAt: new Date().toISOString(),
-        excerpt: hit.extract.slice(0, 500),
-      },
-    ],
-  });
+    : `${primary.title}. ${body}`;
+  const sources: CitedAnswer["sources"] = [];
+  if (hit) {
+    sources.push({
+      title: hit.title,
+      url: hit.url,
+      consultedAt: new Date().toISOString(),
+      excerpt: hit.extract.slice(0, 500),
+    });
+  }
+  if (mdnHit) {
+    sources.push({
+      title: mdnHit.title,
+      url: mdnHit.url,
+      consultedAt: new Date().toISOString(),
+      excerpt: mdnHit.excerpt.slice(0, 500),
+    });
+  }
+  return buildCitedAnswer({ language, answerBody: headed, sources });
 }

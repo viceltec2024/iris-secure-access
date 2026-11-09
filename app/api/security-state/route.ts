@@ -10,9 +10,15 @@ import { listRecentAudit, logAudit, provisionIrisUser } from "../../../lib/authz
 import { parseWalletSessionValue } from "../../../lib/iris-chain";
 import { approveProposal, parsePurchaseDesk, rejectProposal } from "../../../lib/iris-purchases";
 import { enforceRateLimit } from "../../../lib/rate-limit";
+import { listOrgMembers, requireOrgContext } from "../../../lib/iris-tenant";
+import {
+  filterOrgScopedRows,
+  scopedReadKeys,
+  scopedWriteKey,
+} from "../../../lib/iris-org-scope";
 
-const WALLET_KEY = "iris_local_wallet_session";
-const DESK_KEY = "iris_purchase_desk";
+// Claves de wallet/compras: ahora se resuelven con alcance por org en
+// lib/iris-org-scope.ts (org primero, legada por email después).
 
 async function currentUser() {
   const identity = await getChatGPTUser();
@@ -24,14 +30,39 @@ export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
   const db = getDb();
+  // Alcance por organización (sin migración de esquema): si se resuelve
+  // el contexto de org, los dispositivos visibles son los de los miembros
+  // activos de esa org; sin contexto, se conserva el filtro por email.
+  // El ADMIN global de plataforma sigue viendo todo (rol de plataforma,
+  // no de organización). Las mutaciones de esta ruta siguen siendo
+  // fail-closed: solo actor propietario o ADMIN global.
+  let memberEmails: string[] | null = null;
+  let organizationId: string | null = null;
+  try {
+    const ctx = await requireOrgContext(user.email);
+    organizationId = ctx.organization.id;
+    memberEmails = (await listOrgMembers(organizationId)).map(row => row.userEmail);
+  } catch {
+    memberEmails = null;
+    organizationId = null;
+  }
   const deviceRows = user.role === "ADMIN"
     ? await db.select().from(devices).orderBy(desc(devices.createdAt))
-    : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt));
-  const trustedRows = deviceRows.length ? await db.select().from(trustedApplications).where(inArray(trustedApplications.deviceId, deviceRows.map(device => device.id))) : [];
-  const alerts = deviceRows.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, deviceRows.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(100) : [];
-  const remediations = deviceRows.length ? await db.select().from(remediationPlans).where(inArray(remediationPlans.deviceId, deviceRows.map(device => device.id))).orderBy(desc(remediationPlans.approvedAt)).limit(100) : [];
-  const agentCommands = deviceRows.length
-    ? (await listAgentCommandsForDevices(deviceRows.map(device => device.id))).slice(0, 60)
+    : memberEmails && memberEmails.length
+      ? await db.select().from(devices).where(inArray(devices.ownerEmail, memberEmails)).orderBy(desc(devices.createdAt))
+      : await db.select().from(devices).where(eq(devices.ownerEmail, user.email)).orderBy(desc(devices.createdAt));
+  // Defensa en profundidad: aunque la consulta ya filtra, el helper puro
+  // (probado) vuelve a aplicar el alcance antes de devolver nada.
+  const scopedDevices = filterOrgScopedRows(deviceRows, {
+    actorEmail: user.email,
+    memberEmails,
+    isGlobalAdmin: user.role === "ADMIN",
+  });
+  const trustedRows = scopedDevices.length ? await db.select().from(trustedApplications).where(inArray(trustedApplications.deviceId, scopedDevices.map(device => device.id))) : [];
+  const alerts = scopedDevices.length ? await db.select().from(securityAlerts).where(inArray(securityAlerts.deviceId, scopedDevices.map(device => device.id))).orderBy(desc(securityAlerts.lastSeenAt)).limit(100) : [];
+  const remediations = scopedDevices.length ? await db.select().from(remediationPlans).where(inArray(remediationPlans.deviceId, scopedDevices.map(device => device.id))).orderBy(desc(remediationPlans.approvedAt)).limit(100) : [];
+  const agentCommands = scopedDevices.length
+    ? (await listAgentCommandsForDevices(scopedDevices.map(device => device.id))).slice(0, 60)
     : [];
   const incidentRows = await db.select().from(incidentStates);
   // Incidents have no device link in the schema (only updatedBy), so a
@@ -42,10 +73,21 @@ export async function GET(request: Request) {
   const incidents = user.role === "ADMIN" ? incidentRows : incidentRows.filter(row => row.updatedBy === user.email);
   const actions = user.role === "ADMIN" ? await db.select().from(responseActions).orderBy(desc(responseActions.createdAt)).limit(30) : await db.select().from(responseActions).where(eq(responseActions.actorEmail, user.email)).orderBy(desc(responseActions.createdAt)).limit(30);
   const audit = await listRecentAudit(user.email, user.role, 40);
-  const [walletRow] = await db.select().from(appSettings).where(eq(appSettings.key, `${WALLET_KEY}:${user.email}`)).limit(1);
-  const wallet = parseWalletSessionValue(walletRow?.value || "");
-  const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, `${DESK_KEY}:${user.email}`)).limit(1);
-  const purchases = parsePurchaseDesk(deskRow?.value || "").proposals.filter(item => item.status === "awaiting_approval");
+  // Wallet y compras: lectura por clave de org primero, luego legada
+  // por email (retrocompatible). Si no hay contexto de org, solo la
+  // legada, como antes.
+  let walletValue = "";
+  for (const key of scopedReadKeys({ organizationId, email: user.email, base: "wallet" })) {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+    if (row?.value) { walletValue = row.value; break; }
+  }
+  const wallet = parseWalletSessionValue(walletValue);
+  let deskValue = "";
+  for (const key of scopedReadKeys({ organizationId, email: user.email, base: "purchase" })) {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+    if (row?.value) { deskValue = row.value; break; }
+  }
+  const purchases = parsePurchaseDesk(deskValue).proposals.filter(item => item.status === "awaiting_approval");
   return Response.json({
     live: true,
     agentOrigin: irisReconnectOrigin(new URL(request.url).origin, process.env.IRIS_PUBLIC_ORIGIN || ""),
@@ -57,7 +99,7 @@ export async function GET(request: Request) {
     audit,
     purchases,
     wallet: wallet ? { connected: true, address: wallet.address, mode: wallet.mode } : { connected: false, address: "", mode: "watch" },
-    devices: deviceRows.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))),
+    devices: scopedDevices.map(device => deviceView(device, trustedRows.filter(row => row.deviceId === device.id).map(row => row.appName))),
   });
 }
 
@@ -157,9 +199,17 @@ export async function PATCH(request: Request) {
 
   if (body.incidentId.startsWith("purchase:")) {
     const proposalId = body.incidentId.slice("purchase:".length);
-    const deskKey = `${DESK_KEY}:${user.email}`;
-    const [deskRow] = await db.select().from(appSettings).where(eq(appSettings.key, deskKey)).limit(1);
-    const desk = parsePurchaseDesk(deskRow?.value || "");
+    // Misma clave con alcance que el GET: org primero, legada después;
+    // se escribe en la clave con alcance (org si hay contexto).
+    let patchOrgId: string | null = null;
+    try { patchOrgId = (await requireOrgContext(user.email)).organization.id; } catch { patchOrgId = null; }
+    const deskKey = scopedWriteKey({ organizationId: patchOrgId, email: user.email, base: "purchase" });
+    let deskValue = "";
+    for (const key of scopedReadKeys({ organizationId: patchOrgId, email: user.email, base: "purchase" })) {
+      const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+      if (row?.value) { deskValue = row.value; break; }
+    }
+    const desk = parsePurchaseDesk(deskValue);
     try {
       if (approved) {
         const result = approveProposal(desk, proposalId);

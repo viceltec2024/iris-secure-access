@@ -3,6 +3,8 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { appSettings } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
+import { requireOrgContext } from "../../../lib/iris-tenant";
+import { scopedReadKeys, scopedWriteKey } from "../../../lib/iris-org-scope";
 import {
   approveProposal,
   buildPurchaseCheckout,
@@ -18,7 +20,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const DESK_KEY = "iris_purchase_desk";
+// Claves con alcance por org: lib/iris-org-scope.ts (org primero, legada después).
 const TOKEN_KEY = "iris_token_base_mainnet_contract";
 
 async function currentUser() {
@@ -26,10 +28,19 @@ async function currentUser() {
   return identity ? provisionIrisUser(identity) : null;
 }
 
+async function orgIdFor(email: string): Promise<string | null> {
+  try { return (await requireOrgContext(email)).organization.id; } catch { return null; }
+}
+
 async function loadDesk(email: string) {
-  const key = `${DESK_KEY}:${email}`;
-  const [row] = await getDb().select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
-  return { key, state: row ? parsePurchaseDesk(row.value) : emptyPurchaseDesk() };
+  const orgId = await orgIdFor(email);
+  const key = scopedWriteKey({ organizationId: orgId, email, base: "purchase" });
+  let value = "";
+  for (const k of scopedReadKeys({ organizationId: orgId, email, base: "purchase" })) {
+    const [row] = await getDb().select().from(appSettings).where(eq(appSettings.key, k)).limit(1);
+    if (row?.value) { value = row.value; break; }
+  }
+  return { key, state: value ? parsePurchaseDesk(value) : emptyPurchaseDesk() };
 }
 
 async function saveDesk(email: string, key: string, state: PurchaseDeskState) {
