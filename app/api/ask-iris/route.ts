@@ -3,7 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
-import { buildSocReasonedAnswerFromContext, buildWorldReasonedAnswer } from "../../../lib/iris-ask-reasoning";
+import { buildSocReasonedAnswerForAsk, buildWorldReasonedAnswer } from "../../../lib/iris-ask-reasoning";
 import { internalEvidenceRef } from "../../../lib/iris-soc-reasoning";
 import { detectPromptInjection } from "../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
@@ -142,7 +142,7 @@ export async function POST(request: Request) {
 
   // Razonamiento SOC/local (cierre etapas 3–4): para respuestas locales,
   // la respuesta se reconstruye desde la evidencia interna realmente
-  // consultada (dispositivos, alertas, incidente, memoria consentida),
+  // consultada (dispositivos, alertas y memoria consentida),
   // citada por id interno (interno:<kind>:<id>), nunca como cita web.
   // Guardian ya bloqueó arriba y la vía de edición ya devolvió antes, así
   // que ninguna de las dos se toca. Si el conector devuelve null (sin
@@ -150,27 +150,10 @@ export async function POST(request: Request) {
   // OpenAI o hacia el fallback local: nunca se sustituye una respuesta
   // útil por un "No sé".
   if (resolved.source === "local" && resolved.context) {
-    const soc = buildSocReasonedAnswerFromContext({
+    const soc = buildSocReasonedAnswerForAsk({
       question: lastUser,
       language,
-      context: {
-        devices: (resolved.context.devices || []).map(device => ({
-          id: device.id,
-          name: device.name,
-          status: device.status,
-          lastSeenAt: device.lastSeenAt ?? null,
-          telemetry: device.telemetry,
-        })),
-        alerts: (resolved.context.alerts || []).map(alert => ({
-          deviceId: alert.deviceId,
-          code: alert.code,
-          severity: alert.severity,
-          status: alert.status,
-        })),
-        incident: resolved.context.incident,
-        lessons: resolved.context.lessons,
-        memoryHits: resolved.context.memoryHits,
-      },
+      context: resolved.context,
     });
     if (soc) {
       await logAudit(user.email, "ASK_IRIS_ANALYSIS", "reasoned_soc", "SUCCESS", {

@@ -37,12 +37,12 @@ import {
   alertToInternalEvidence,
   buildSocReasonedAnswer,
   deviceToInternalEvidence,
-  incidentToInternalEvidence,
   memoryRecordToInternalEvidence,
   type InternalEvidence,
   type SocReasonedAnswer,
 } from "./iris-soc-reasoning.ts";
 import type { MemoryRecord } from "./iris-memory.ts";
+import type { IrisAnalystInput } from "./iris-local-analyst.ts";
 
 export type WorldReasonedAnswer = ReasonedAnswer & {
   /** The decomposed questions, also useful for clients on any answer. */
@@ -126,6 +126,7 @@ export type SocAnalystContext = {
     severity: string;
     status: string;
   }>;
+  /** Client-selected incident context is not verified evidence. */
   incident?: {
     id: string;
     title: string;
@@ -137,6 +138,36 @@ export type SocAnalystContext = {
   lessons?: SocMemorySnippet[];
   memoryHits?: SocMemorySnippet[];
 };
+
+export function buildSocReasonedAnswerForAsk(input: {
+  question: string;
+  language: "es" | "en";
+  context: Pick<IrisAnalystInput, "devices" | "alerts" | "lessons" | "memoryHits">;
+  now?: number;
+}) {
+  return buildSocReasonedAnswerFromContext({
+    question: input.question,
+    language: input.language,
+    now: input.now,
+    context: {
+      devices: input.context.devices.map(device => ({
+        id: device.id,
+        name: device.name,
+        status: device.status,
+        lastSeenAt: device.lastSeenAt,
+        telemetry: device.telemetry,
+      })),
+      alerts: input.context.alerts.map(alert => ({
+        deviceId: alert.deviceId,
+        code: alert.code,
+        severity: alert.severity,
+        status: alert.status,
+      })),
+      lessons: input.context.lessons,
+      memoryHits: input.context.memoryHits,
+    },
+  });
+}
 
 export function buildSocReasonedAnswerFromContext(input: {
   question: string;
@@ -177,9 +208,6 @@ export function buildSocReasonedAnswerFromContext(input: {
       deviceName: deviceNames.get(alert.deviceId),
     }));
   }
-  if (input.context.incident?.id) {
-    pool.push(incidentToInternalEvidence(input.context.incident));
-  }
   for (const record of [...(input.context.lessons || []), ...(input.context.memoryHits || [])]) {
     // El snippet no trae el kind tipado completo: sin kind se trata como
     // memoria ordinaria (nunca como lección aprobada). Las lecciones que
@@ -209,7 +237,7 @@ export function buildSocReasonedAnswerFromContext(input: {
       // Sin candidatos para este paso, el paso queda sin evidencia y el
       // razonamiento lo reporta como "No sé" (nunca como hecho).
       const claim = candidates.length
-        ? candidates.map(item => item.title).join("; ")
+        ? candidates.map(item => `${item.title}: ${item.excerpt}`).join("; ")
         : "";
       return { question, claim, evidence: candidates };
     }),

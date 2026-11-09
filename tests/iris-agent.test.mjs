@@ -18,6 +18,8 @@ test("IRIS agent run falls back locally and stays inside five steps", () => {
   const route = readFileSync(new URL("../app/api/agent/run/route.ts", import.meta.url), "utf8");
   assert.match(route, /MAX_STEPS = 5/);
   assert.match(route, /resolveIrisAsk/);
+  assert.match(route, /buildSocReasonedAnswerForAsk/);
+  assert.match(route, /ASK_IRIS_MEMORY_CONSENT/);
   assert.match(route, /route\.kind !== "agent"/);
   assert.match(route, /IRIS_AGENT_TOOLS/);
   assert.match(route, /runMuseEditAgent/);

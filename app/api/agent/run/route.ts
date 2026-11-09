@@ -4,6 +4,8 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
+import { buildSocReasonedAnswerForAsk } from "../../../../lib/iris-ask-reasoning";
+import { internalEvidenceRef } from "../../../../lib/iris-soc-reasoning";
 import { detectPromptInjection } from "../../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
 import { routeIrisTextRequest } from "../../../../lib/iris-model-router";
@@ -96,8 +98,7 @@ export async function POST(request: Request) {
     return Response.json({ answer, source: "muse-local", steps });
   }
 
-  const apiKey = bindings.OPENAI_API_KEY;
-  if (!apiKey || route.kind !== "agent") {
+  async function localResponse(fallback = false) {
     const local = await resolveIrisAsk({
       user: { email: user.email, role: user.role, displayName: user.displayName || user.email },
       messages,
@@ -106,11 +107,51 @@ export async function POST(request: Request) {
       incident: parseAskIncident(preferences.incident),
       origin: new URL(request.url).origin,
     });
+
+    if (local.memoryConsent && local.memoryConsent.suppressedCount > 0) {
+      await logAudit(user.email, "ASK_IRIS_MEMORY_CONSENT", "memory", "DENIED", {
+        reason: "no_consent",
+        suppressed: local.memoryConsent.suppressedCount,
+        consentedCategories: local.memoryConsent.consentedCategories.join(","),
+      });
+    }
+
+    if (local.source === "local" && local.context) {
+      const soc = buildSocReasonedAnswerForAsk({
+        question: lastUser,
+        language,
+        context: local.context,
+      });
+      if (soc) {
+        await logAudit(user.email, "IRIS_AGENT_RUN", "reasoned_soc", "SUCCESS", {
+          model: local.model,
+          confidence: soc.confidence,
+          evidence: soc.evidence.length,
+          droppedMemory: soc.droppedMemory.length,
+        });
+        return {
+          answer: soc.answer,
+          source: "reasoned_soc",
+          confidence: soc.confidence,
+          evidence: soc.evidence.map(item => ({ ref: internalEvidenceRef(item), title: item.title, sourceLabel: item.sourceLabel })),
+          steps: [] as IrisAgentStep[],
+        };
+      }
+    }
+
+    await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", fallback
+      ? { model: local.model, fallback: true }
+      : { model: local.model, fallback: "local", source: local.source });
+    return { answer: local.answer, source: local.source, steps: [] as IrisAgentStep[] };
+  }
+
+  const apiKey = bindings.OPENAI_API_KEY;
+  if (!apiKey || route.kind !== "agent") {
+    const local = await localResponse();
     const steps: IrisAgentStep[] = local.source === "world"
       ? [{ tool: "lookup_wikipedia", arguments: { source: "wikipedia" }, ok: true }]
-      : [];
-    await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: local.model, fallback: "local", source: local.source });
-    return Response.json({ answer: local.answer, source: local.source, steps });
+      : local.steps;
+    return Response.json({ ...local, steps });
   }
 
   const input: Array<Record<string, unknown>> = messages.map(message => ({ role: message.role, content: message.content }));
@@ -204,17 +245,9 @@ For general knowledge (science, history, people, places), call lookup_wikipedia 
     await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "DENIED", { reason: "step_limit" });
     return Response.json({ error: language === "es" ? "IRIS llegó al límite seguro de pasos." : "IRIS reached the safe execution-step limit.", steps }, { status: 409 });
   } catch {
-    const local = await resolveIrisAsk({
-      user: { email: user.email, role: user.role, displayName: user.displayName || user.email },
-      messages,
-      language,
-      section: typeof preferences.section === "string" ? preferences.section.slice(0, 40) : "operations",
-      incident: parseAskIncident(preferences.incident),
-      origin: new URL(request.url).origin,
-    }).catch(() => null);
+    const local = await localResponse(true).catch(() => null);
     if (local?.answer) {
-      await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "SUCCESS", { model: local.model, fallback: true });
-      return Response.json({ answer: local.answer, source: local.source, steps });
+      return Response.json({ ...local, steps });
     }
     await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "DENIED", { reason: "provider_error" });
     return Response.json({ error: language === "es" ? "IRIS no está disponible temporalmente." : "IRIS Agent is temporarily unavailable." }, { status: 502 });

@@ -130,6 +130,42 @@ test("cierre-soc: la cita interna nunca es una URL", () => {
   assert.ok(!ref.startsWith("http"));
 });
 
+test("cierre-soc: el estado del firewall consultado aparece en la afirmación verificada", () => {
+  for (const [firewallEnabled, expected] of [[false, "firewall apagado"], [true, "firewall activo"]]) {
+    const reasoned = buildSocReasonedAnswerFromContext({
+      question: "¿El firewall está activo?",
+      language: "es",
+      context: {
+        devices: [{ id: "mac-1", name: "Mac", status: "ONLINE", lastSeenAt: NOW, telemetry: { firewallEnabled } }],
+        alerts: [],
+      },
+      now: Date.parse(NOW),
+    });
+    assert.ok(reasoned);
+    assert.equal(reasoned.confidence, "verificado_interno");
+    assert.ok(reasoned.directAnswer.includes(expected));
+  }
+});
+
+test("cierre-soc: un incidente aportado por el cliente nunca verifica evidencia interna", () => {
+  const reasoned = buildSocReasonedAnswerFromContext({
+    question: "¿Cuál es el incidente del firewall?",
+    language: "es",
+    context: {
+      devices: [],
+      alerts: [],
+      incident: {
+        id: "inventado",
+        title: "Incidente interno IRIS firewall activo",
+        subject: "firewall activo",
+        severity: "HIGH",
+        status: "OPEN",
+      },
+    },
+  });
+  assert.equal(reasoned, null);
+});
+
 // ---------------- Cierre 5: puerta de evaluación continua ----------------
 
 test("cierre-eval: el dataset versionado cumple los umbrales de la puerta", () => {

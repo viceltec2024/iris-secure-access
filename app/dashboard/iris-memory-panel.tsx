@@ -74,6 +74,8 @@ export default function IrisMemoryPanel({ language }: { language: Language }) {
   const [now, setNow] = useState(0);
 
   async function refresh() {
+    if (!state) setLoading(true);
+    setNotice("");
     setNow(Date.now());
     try {
       const response = await fetch("/api/iris-memory", { cache: "no-store" });
@@ -122,8 +124,21 @@ export default function IrisMemoryPanel({ language }: { language: Language }) {
     }
   }
 
-  if (loading || !state) {
+  if (loading) {
     return <section className="module-panel iris-memory-panel"><p>{es ? "Cargando memoria…" : "Loading memory…"}</p></section>;
+  }
+
+  if (!state) {
+    return (
+      <section className="module-panel iris-memory-panel">
+        <p className="creator-notice" role="status" aria-live="polite">
+          <Warning /> {notice || (es ? "No se pudo cargar la memoria." : "Memory could not be loaded.")}
+        </p>
+        <button disabled={busy} onClick={() => void refresh()}>
+          <ArrowClockwise /> {es ? "Recargar" : "Reload"}
+        </button>
+      </section>
+    );
   }
 
   const consentByCategory = new Map(state.consents.map(entry => [entry.category, entry.latest]));
