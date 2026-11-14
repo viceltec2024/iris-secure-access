@@ -3,7 +3,8 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
-import { buildWorldReasonedAnswer } from "../../../lib/iris-ask-reasoning";
+import { buildSocReasonedAnswerForAsk, buildWorldReasonedAnswer } from "../../../lib/iris-ask-reasoning";
+import { internalEvidenceRef } from "../../../lib/iris-soc-reasoning";
 import { detectPromptInjection } from "../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
 import { recordOrgObs } from "../../../lib/iris-obs-store";
@@ -99,6 +100,18 @@ export async function POST(request: Request) {
     origin: new URL(request.url).origin,
   });
 
+  // Etapa 3 en Ask: la memoria ya viene filtrada por consentimiento
+  // vigente dentro de resolveIrisAsk (fail closed). Si hubo registros que
+  // se habrían usado y quedaron fuera por falta de consentimiento, queda
+  // en auditoría: el usuario puede consentirlos en el panel de memoria.
+  if (resolved.memoryConsent && resolved.memoryConsent.suppressedCount > 0) {
+    await logAudit(user.email, "ASK_IRIS_MEMORY_CONSENT", "memory", "DENIED", {
+      reason: "no_consent",
+      suppressed: resolved.memoryConsent.suppressedCount,
+      consentedCategories: resolved.memoryConsent.consentedCategories.join(","),
+    });
+  }
+
   // Reasoning is live for world/general questions: the answer is rebuilt
   // from a source actually consulted in this execution (Wikipedia via
   // Etapa 2 citations), decomposed into steps and verified per step.
@@ -123,6 +136,44 @@ export async function POST(request: Request) {
         contradictions: reasoned.contradictions,
         unknownSteps: reasoned.unknownSteps,
         source: "reasoned_world",
+      });
+    }
+  }
+
+  // Razonamiento SOC/local (cierre etapas 3–4): para respuestas locales,
+  // la respuesta se reconstruye desde la evidencia interna realmente
+  // consultada (dispositivos, alertas y memoria consentida),
+  // citada por id interno (interno:<kind>:<id>), nunca como cita web.
+  // Guardian ya bloqueó arriba y la vía de edición ya devolvió antes, así
+  // que ninguna de las dos se toca. Si el conector devuelve null (sin
+  // evidencia o sin pasos verificados), el flujo sigue intacto hacia
+  // OpenAI o hacia el fallback local: nunca se sustituye una respuesta
+  // útil por un "No sé".
+  if (resolved.source === "local" && resolved.context) {
+    const soc = buildSocReasonedAnswerForAsk({
+      question: lastUser,
+      language,
+      context: resolved.context,
+    });
+    if (soc) {
+      await logAudit(user.email, "ASK_IRIS_ANALYSIS", "reasoned_soc", "SUCCESS", {
+        model: resolved.model,
+        confidence: soc.confidence,
+        evidence: soc.evidence.length,
+        droppedMemory: soc.droppedMemory.length,
+      });
+      await recordAskObs(user.email, "ask_latency_ms", Date.now() - started, "reasoned_soc");
+      return Response.json({
+        answer: soc.answer,
+        directAnswer: soc.directAnswer,
+        reasoning: soc.reasoning,
+        confidence: soc.confidence,
+        evidence: soc.evidence.map(item => ({ ref: internalEvidenceRef(item), title: item.title, sourceLabel: item.sourceLabel })),
+        steps: soc.steps,
+        contradictions: soc.contradictions,
+        unknownSteps: soc.unknownSteps,
+        droppedMemory: soc.droppedMemory,
+        source: "reasoned_soc",
       });
     }
   }

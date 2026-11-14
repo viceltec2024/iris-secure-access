@@ -17,6 +17,7 @@
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
     ,"token:compile": "node scripts/compile-iris-token.mjs"
+    ,"quality-gate": "node --experimental-strip-types scripts/iris-quality-gate.mjs"
   },
   "dependencies": {
     "@metamask/connect-evm": "^2.1.1",

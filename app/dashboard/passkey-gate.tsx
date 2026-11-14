@@ -32,11 +32,11 @@ export default function PasskeyGate({ passkeyEnrolled, passwordConfigured, verif
     try {
       const optionsResponse = await fetch(`/api/passkeys/${mode === "register" ? "register" : "auth"}/options`, { method: "POST" });
       const options = await optionsResponse.json();
-      if (!optionsResponse.ok) throw new Error(options.error || "No se pudo iniciar Touch ID");
+      if (!optionsResponse.ok) throw new Error(options.error || "No se pudo iniciar la verificación con Face ID o Touch ID");
       const credential = mode === "register" ? await startRegistration({ optionsJSON: options }) : await startAuthentication({ optionsJSON: options });
       const verifyResponse = await fetch(`/api/passkeys/${mode === "register" ? "register" : "auth"}/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(credential) });
       const result = await verifyResponse.json();
-      if (!verifyResponse.ok || !result.verified) throw new Error(result.error || "Touch ID no pudo verificarse");
+      if (!verifyResponse.ok || !result.verified) throw new Error(result.error || "Face ID o Touch ID no pudo verificarse");
       window.location.reload();
     } catch (cause) {
       setError(cause instanceof Error && cause.name !== "NotAllowedError" ? cause.message : "La verificación fue cancelada o no se completó."); setBusy(false);
@@ -56,13 +56,13 @@ export default function PasskeyGate({ passkeyEnrolled, passwordConfigured, verif
   if ((passkeyEnrolled || passwordConfigured) && !verified) return <main className="passkey-lock"><section className="passkey-card">
     <div className="passkey-mark"><LockKey weight="fill" /></div><span>IRIS · ACCESO PROTEGIDO</span><h1>Verifica que eres tú</h1>
     {passwordConfigured && <form className="iris-password-form" onSubmit={submitPassword}><label htmlFor="iris-password">Contraseña de IRIS</label><input id="iris-password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required maxLength={128} autoFocus /><button type="submit" disabled={busy}><Key weight="bold" />{busy ? "Verificando…" : "Entrar con contraseña"}</button></form>}
-    {passkeyEnrolled && <><div className="passkey-divider"><span>o</span></div><button onClick={() => runPasskey("auth")} disabled={busy || !webAuthnAvailable}><Fingerprint weight="bold" />Verificar con clave de acceso</button>{platformAuthenticatorAvailable === false && webAuthnAvailable && <small className="passkey-hint">Touch ID no está disponible aquí. Continúa con una passkey de tu teléfono o una llave de seguridad.</small>}{!webAuthnAvailable && <small className="passkey-error">Este navegador no admite claves de acceso. Abre IRIS en Safari o Chrome.</small>}</>}
+    {passkeyEnrolled && <><div className="passkey-divider"><span>o</span></div><button onClick={() => runPasskey("auth")} disabled={busy || !webAuthnAvailable}><Fingerprint weight="bold" />Verificar con Face ID o Touch ID</button>{platformAuthenticatorAvailable === false && webAuthnAvailable && <small className="passkey-hint">Face ID y Touch ID no están disponibles aquí. Continúa con una passkey de tu teléfono o una llave de seguridad.</small>}{!webAuthnAvailable && <small className="passkey-error">Este navegador no admite claves de acceso. Abre IRIS en Safari o Chrome.</small>}</>}
     {error && <small className="passkey-error">{error}</small>}<a href={signOutPath}>Cerrar sesión de ChatGPT</a>
   </section></main>;
 
   return <>{!passkeyEnrolled && !passwordConfigured && <aside className={`passkey-enroll ${showPasswordSetup ? "password-open" : ""}`}>
-    <ShieldCheck weight="fill" /><div><strong>Protege el acceso a IRIS</strong><span>Elige Touch ID o crea una contraseña privada de IRIS.</span>{error && <small>{error}</small>}</div>
-    {!showPasswordSetup ? <div className="passkey-choice"><button onClick={() => runPasskey("register")} disabled={busy || !webAuthnAvailable}><Fingerprint weight="bold" />Crear clave de acceso</button><button onClick={() => { setError(""); setShowPasswordSetup(true); }}><Key weight="bold" />Crear contraseña</button></div>
+    <ShieldCheck weight="fill" /><div><strong>Protege el acceso a IRIS</strong><span>Usa Face ID o Touch ID con una clave de acceso, o crea una contraseña privada de IRIS.</span>{error && <small>{error}</small>}</div>
+    {!showPasswordSetup ? <div className="passkey-choice"><button onClick={() => runPasskey("register")} disabled={busy || !webAuthnAvailable}><Fingerprint weight="bold" />Crear clave con Face ID o Touch ID</button><button onClick={() => { setError(""); setShowPasswordSetup(true); }}><Key weight="bold" />Crear contraseña</button></div>
     : <form className="password-setup-form" onSubmit={submitPassword}><input type="password" autoComplete="new-password" placeholder="Contraseña (mínimo 12 caracteres)" minLength={12} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} required /><input type="password" autoComplete="new-password" placeholder="Repetir contraseña" minLength={12} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} required /><button type="submit" disabled={busy}><Key weight="bold" />{busy ? "Guardando…" : "Guardar contraseña"}</button><button type="button" className="password-cancel" onClick={() => setShowPasswordSetup(false)}>Cancelar</button></form>}
   </aside>}{children}</>;
 }
