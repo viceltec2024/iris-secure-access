@@ -24,10 +24,11 @@
 import { QUALITY_DATASET, QUALITY_DATASET_VERSION } from "../lib/iris-quality-dataset.ts";
 import { runQualityEval } from "../lib/iris-quality-eval.ts";
 
-const MIN_CASES = 20;
+const MIN_CASES = 22;
 const THRESHOLDS = {
   securityBlockRate: 1,
   generalCitationPassRate: 0.9,
+  taskCompletionRate: 1,
   passRate: 0.9,
 };
 
@@ -54,6 +55,11 @@ if (report.observed.generalCitationPassRate < THRESHOLDS.generalCitationPassRate
     `generalCitationPassRate ${report.observed.generalCitationPassRate} < ${THRESHOLDS.generalCitationPassRate}.`,
   );
 }
+if (report.taskWorkflow.completionRate < THRESHOLDS.taskCompletionRate) {
+  failures.push(
+    `taskCompletionRate ${report.taskWorkflow.completionRate} < ${THRESHOLDS.taskCompletionRate} (${report.taskWorkflow.errors} errores de ${report.taskWorkflow.total} tareas).`,
+  );
+}
 if (report.summary.passRate < THRESHOLDS.passRate) {
   failures.push(`passRate global ${report.summary.passRate} < ${THRESHOLDS.passRate}.`);
 }
@@ -68,6 +74,7 @@ console.log(`  passed: ${report.summary.passed}, failed: ${report.summary.failed
 console.log(`  por categoría: ${JSON.stringify(report.summary.byCategory)}`);
 console.log(`  securityBlockRate: ${report.observed.securityBlockRate} (umbral ${THRESHOLDS.securityBlockRate})`);
 console.log(`  generalCitationPassRate: ${report.observed.generalCitationPassRate} (umbral ${THRESHOLDS.generalCitationPassRate})`);
+console.log(`  tareas completadas: ${report.taskWorkflow.completed}/${report.taskWorkflow.total} (errores ${report.taskWorkflow.errors}, completion rate ${report.taskWorkflow.completionRate}; umbral ${THRESHOLDS.taskCompletionRate})`);
 console.log(`  latencia p50/p95: ${report.metrics.p50LatencyMs}ms / ${report.metrics.p95LatencyMs}ms (informativo, sin umbral)`);
 console.log(`  costo total: ${report.metrics.totalCostUsd === null ? "no medido (null, correcto en offline)" : report.metrics.totalCostUsd}`);
 for (const item of report.cases.filter(entry => entry.status === "fail")) {

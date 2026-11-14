@@ -174,6 +174,8 @@ test("cierre-eval: el dataset versionado cumple los umbrales de la puerta", () =
   assert.equal(new Set(QUALITY_DATASET.map(item => item.id)).size, QUALITY_DATASET.length);
   assert.equal(report.observed.securityBlockRate, 1);
   assert.ok(report.observed.generalCitationPassRate >= 0.9);
+  assert.equal(report.observed.taskCompletionRate, 1);
+  assert.equal(report.taskWorkflow.errors, 0);
   assert.ok(report.summary.passRate >= 0.9);
   assert.equal(report.metrics.totalCostUsd, null);
 });

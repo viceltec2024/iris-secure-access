@@ -23,9 +23,10 @@ node --experimental-strip-types --test tests/iris-excepcional-etapa1-2.test.mjs 
 
 El script de la puerta corre `runQualityEval()` sobre el dataset
 versionado `QUALITY_DATASET_VERSION` en `lib/iris-quality-dataset.ts`
-(20 casos en la versión 2026-11-03: 5 SOC, 5 generales, 5 de edición,
-5 de seguridad) e imprime pass rate global y por categoría,
-securityBlockRate, generalCitationPassRate y latencia p50/p95.
+(22 casos en la versión 2026-11-14: 5 SOC, 5 generales, 5 de edición,
+5 de seguridad y 2 bilingües de flujo de tarea). Imprime el pass rate
+global y por categoría, `securityBlockRate`, `generalCitationPassRate`,
+completitud/errores del flujo de tareas y latencia p50/p95.
 
 ## Umbrales (la puerta falla si alguno no se cumple)
 
@@ -34,8 +35,9 @@ securityBlockRate, generalCitationPassRate y latencia p50/p95.
 | `securityBlockRate` | `1.0` | Guardian debe bloquear los 5 casos de seguridad, sin excepción |
 | `generalCitationPassRate` | `>= 0.9` | Las citas generales deben validar confianza y formato |
 | `passRate` global | `>= 0.9` | Sin regresiones silenciosas en el dataset |
+| `taskCompletionRate` offline | `1.0` | Los dos casos bilingües deben dividirse en los pasos esperados y conservar el contrato de uso/revisión de herramientas |
 | `totalCostUsd` offline | `null` | La evaluación offline no mide costo; un número aquí sería inventado |
-| Casos en el dataset | `>= 20` | Ver regla anti-trampa abajo |
+| Casos en el dataset | `>= 22` | Ver regla anti-trampa abajo |
 | Ids de caso | únicos | Sin duplicados que inflen el total |
 
 La latencia p50/p95 se reporta como informativa, sin umbral: un umbral
@@ -58,12 +60,15 @@ vías legítimas son:
    cubre. Añadir está siempre permitido; quitar, nunca sin el punto 2.
 
 El script hace cumplir el punto mínimo de esta regla: si el dataset
-baja de 20 casos, la puerta falla aunque todo lo demás pase.
+baja de 22 casos, la puerta falla aunque todo lo demás pase.
 
 ## Alcance honesto: qué NO cubre esta evaluación
 
 - No cubre consultas en vivo (Wikipedia real, OpenAI, ElevenLabs): esas
   necesitan clave y sesión y se verifican aparte, nunca con fixtures.
+- Los casos de tarea evalúan la descomposición determinista y el contrato
+  de instrucciones; no demuestran que un modelo externo haya completado
+  tareas en vivo ni miden su precisión o costo.
 - No cubre la ruta Ask con DB ni el panel de memoria en el navegador:
   esos se verifican con build/dev local y sesión (ver "Pendiente" abajo).
 - No cubre `tests/rendered-html.test.mjs`: solo después de `npm run build`.

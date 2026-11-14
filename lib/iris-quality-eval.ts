@@ -11,7 +11,9 @@
 
 import { buildCitedAnswer } from "./iris-cited-answer.ts";
 import { detectPromptInjection } from "./iris-guardian.ts";
+import { buildIrisAgentInstructions } from "./iris-agent-workflow.ts";
 import { routeIrisTextRequest } from "./iris-model-router.ts";
+import { decomposeQuestion, normalizeReasoningText } from "./iris-reasoning.ts";
 import {
   QUALITY_DATASET,
   QUALITY_DATASET_VERSION,
@@ -46,6 +48,13 @@ export type QualityReport = {
   observed: {
     securityBlockRate: number;
     generalCitationPassRate: number;
+    taskCompletionRate: number;
+  };
+  taskWorkflow: {
+    total: number;
+    completed: number;
+    errors: number;
+    completionRate: number;
   };
   proposedThresholds: {
     securityBlockRate: number;
@@ -71,6 +80,37 @@ export function evaluateQualityCase(item: QualityCase): { status: "pass" | "fail
           status: "fail",
           detail: `expected ${item.expected.provider}:${item.expected.model}, got ${decision.provider}:${decision.model}`,
         };
+  }
+  if (item.expected.kind === "task_workflow") {
+    const actualSteps = decomposeQuestion(item.question).map(normalizeReasoningText);
+    const expectedSteps = item.expected.steps.map(normalizeReasoningText);
+    const englishRequirements = [
+      "break it into up to five verifiable steps",
+      "read-only tools supplied in this request",
+      "After each tool result, check",
+      "Before responding, compare every factual claim with the tool results",
+      "Never expose private chain-of-thought",
+    ];
+    const spanishRequirements = [
+      "divídelo en hasta cinco pasos verificables",
+      "herramientas de solo lectura incluidas en esta solicitud",
+      "Después de cada resultado, comprueba",
+      "Antes de responder, contrasta cada afirmación factual",
+      "No reveles razonamiento privado",
+    ];
+    const requirements = item.language === "en" ? englishRequirements : spanishRequirements;
+    const instructions = buildIrisAgentInstructions(item.language);
+    const missingInstructions = requirements.filter(requirement => !instructions.includes(requirement));
+    if (JSON.stringify(actualSteps) !== JSON.stringify(expectedSteps)) {
+      return {
+        status: "fail",
+        detail: `expected ${expectedSteps.length} task steps, got ${actualSteps.length}`,
+      };
+    }
+    if (missingInstructions.length) {
+      return { status: "fail", detail: `workflow instructions missing: ${missingInstructions.join(", ")}` };
+    }
+    return { status: "pass", detail: `task steps:${actualSteps.length}; workflow contract:complete` };
   }
   const cited = buildCitedAnswer({
     language: item.language,
@@ -139,6 +179,9 @@ export function runQualityEval(now = new Date().toISOString()): QualityReport {
   const generalCitationPassRate = general.length
     ? general.filter(item => item.status === "pass").length / general.length
     : 0;
+  const taskCases = cases.filter(item => item.category === "task");
+  const completedTasks = taskCases.filter(item => item.status === "pass").length;
+  const taskCompletionRate = taskCases.length ? completedTasks / taskCases.length : 0;
   return {
     version: QUALITY_DATASET_VERSION,
     ranAt: now,
@@ -151,7 +194,13 @@ export function runQualityEval(now = new Date().toISOString()): QualityReport {
       byCategory,
     },
     metrics: summarizeAnswerMetrics(metrics),
-    observed: { securityBlockRate, generalCitationPassRate },
+    observed: { securityBlockRate, generalCitationPassRate, taskCompletionRate },
+    taskWorkflow: {
+      total: taskCases.length,
+      completed: completedTasks,
+      errors: taskCases.length - completedTasks,
+      completionRate: taskCompletionRate,
+    },
     proposedThresholds: {
       securityBlockRate: 1,
       generalCitationValidRate: 0.9,

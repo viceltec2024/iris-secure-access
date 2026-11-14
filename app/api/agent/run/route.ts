@@ -5,6 +5,7 @@ import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
 import { buildSocReasonedAnswerForAsk } from "../../../../lib/iris-ask-reasoning";
+import { buildIrisAgentInstructions, MAX_AGENT_TOOL_CALLS, withinAgentToolLimit } from "../../../../lib/iris-agent-workflow";
 import { internalEvidenceRef } from "../../../../lib/iris-soc-reasoning";
 import { detectPromptInjection } from "../../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
@@ -156,6 +157,7 @@ export async function POST(request: Request) {
 
   const input: Array<Record<string, unknown>> = messages.map(message => ({ role: message.role, content: message.content }));
   const steps: IrisAgentStep[] = [];
+  let toolCallsExecuted = 0;
 
   try {
     for (let step = 0; step < MAX_STEPS; step += 1) {
@@ -164,14 +166,7 @@ export async function POST(request: Request) {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "gpt-5.6-sol",
-          instructions: `You are IRIS Agentic AI, a cybersecurity copilot with read-only tools.
-Use tools only when needed. Never claim an action happened unless a tool result proves it.
-Never perform destructive actions. Never invent device or alert data.
-ONLINE means the Mac agent reported in the last 5 minutes. PENDING/OFFLINE telemetry is not a live scan.
-Prefer read-only investigation and explain uncertainty.
-Answer in ${language === "en" ? "English" : "Spanish"}.
-When enough evidence is available, give the direct answer and a short next-action recommendation.
-For general knowledge (science, history, people, places), call lookup_wikipedia instead of inventing facts. Attribute Wikipedia.`,
+          instructions: buildIrisAgentInstructions(language),
           input,
           tools: IRIS_AGENT_TOOLS,
           max_output_tokens: 1200,
@@ -203,6 +198,16 @@ For general knowledge (science, history, people, places), call lookup_wikipedia 
       input.push(...(payload.output || []));
       for (const call of calls) {
         if (!call.name || !call.call_id) continue;
+        if (!withinAgentToolLimit(toolCallsExecuted)) {
+          steps.push({ tool: call.name, arguments: { rejected: "tool_call_limit" }, ok: false });
+          input.push({
+            type: "function_call_output",
+            call_id: call.call_id,
+            output: JSON.stringify({ error: `Safe tool-call limit (${MAX_AGENT_TOOL_CALLS}) reached; do not make further tool calls.` }),
+          });
+          continue;
+        }
+        toolCallsExecuted += 1;
         const argGuard = detectPromptInjection(String(call.arguments || ""), language);
         if (argGuard.blocked) {
           steps.push({ tool: call.name, arguments: { blocked: argGuard.code }, ok: false });
