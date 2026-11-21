@@ -4,7 +4,8 @@ import { appSettings, devices, securityAlerts } from "../db/schema";
 import { parseWalletSessionValue } from "./iris-chain.ts";
 import { parseJsonRecord, reportedDeviceStatus } from "./iris-device-view.ts";
 import { liveWorkers } from "./iris-live-soc.ts";
-import { activeLessons, emptyMemoryStore, parseMemoryStore, searchMemory, type MemoryRecord } from "./iris-memory.ts";
+import { emptyMemoryStore, parseMemoryStore, type MemoryRecord } from "./iris-memory.ts";
+import { applyMemoryConsentToAsk } from "./iris-memory-consent.ts";
 import { irisMindAnswer } from "./iris-mind.ts";
 import { isMuseConfigured } from "./iris-muse.ts";
 import { briefingFromBoard, extractTicker, fetchLiveTape, fetchMarketChart, isMarketQuestion, marketAnswer } from "./iris-market.ts";
@@ -55,6 +56,7 @@ function lessonSnippets(records: MemoryRecord[]) {
     title: item.title,
     body: item.body.slice(0, 280),
     promotion: item.promotion,
+    kind: item.kind,
   }));
 }
 
@@ -105,8 +107,7 @@ export async function resolveIrisAsk(input: {
     language: input.language,
   });
   const question = [...input.messages].reverse().find(message => message.role === "user")?.content || "";
-  const approvedLessons = activeLessons(memoryStore);
-  const relatedMemory = searchMemory(memoryStore, question, 4);
+  const gatedMemory = applyMemoryConsentToAsk(memoryStore, question);
   const analystInput = {
     language: input.language,
     question,
@@ -118,8 +119,13 @@ export async function resolveIrisAsk(input: {
     agents: agents.map(agent => ({ id: agent.id, role: agent.role, status: agent.status, task: agent.task })),
     wallet: { connected: Boolean(wallet), address: wallet?.address || "" },
     incident: input.incident,
-    lessons: lessonSnippets(approvedLessons),
-    memoryHits: lessonSnippets(relatedMemory),
+    lessons: lessonSnippets(gatedMemory.lessons),
+    memoryHits: lessonSnippets(gatedMemory.memoryHits),
+    memoryConsent: {
+      used: gatedMemory.used,
+      suppressedCount: gatedMemory.suppressedCount,
+      consentedCategories: gatedMemory.consentedCategories,
+    },
   };
 
   if (isMarketQuestion(question)) {
@@ -136,7 +142,7 @@ export async function resolveIrisAsk(input: {
         ideas: [],
         briefing: briefingFromBoard(tape.quotes, []),
       };
-      return { answer: marketAnswer(question, input.language, board, chart), source: "live-market" as const, model: "iris-jar-live", ticker: ticker || "" };
+      return { answer: marketAnswer(question, input.language, board, chart), source: "live-market" as const, model: "iris-jar-live", ticker: ticker || "", context: analystInput, memoryConsent: analystInput.memoryConsent };
     } catch {
       const tape = await fetchLiveTape().catch(() => null);
       if (tape?.quotes.length) {
@@ -148,6 +154,8 @@ export async function resolveIrisAsk(input: {
           source: "live-market" as const,
           model: "iris-jar-live",
           ticker: "",
+          context: analystInput,
+          memoryConsent: analystInput.memoryConsent,
         };
       }
     }
@@ -160,5 +168,6 @@ export async function resolveIrisAsk(input: {
     model: mind.source === "world" ? "iris-world" : "iris-local-analyst",
     ticker: "",
     context: analystInput,
+    memoryConsent: analystInput.memoryConsent,
   };
 }

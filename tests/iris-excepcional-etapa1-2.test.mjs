@@ -32,12 +32,12 @@ const WIKI_EN = {
   consultedAt: "2026-11-03T00:00:00.000Z",
 };
 
-test("etapa 1: dataset versionado con 20 casos en 4 categorías", () => {
-  assert.equal(QUALITY_DATASET_VERSION, "2026-11-03");
-  assert.equal(QUALITY_DATASET.length, 20);
+test("etapa 1: dataset versionado con casos en 5 categorías", () => {
+  assert.equal(QUALITY_DATASET_VERSION, "2026-11-14");
+  assert.equal(QUALITY_DATASET.length, 22);
   const counts = {};
   for (const item of QUALITY_DATASET) counts[item.category] = (counts[item.category] || 0) + 1;
-  assert.deepEqual(counts, { soc: 5, general: 5, edit: 5, security: 5 });
+  assert.deepEqual(counts, { soc: 5, general: 5, edit: 5, task: 2, security: 5 });
   assert.ok(!QUALITY_DATASET.some(item => /sk-|api[_-]?key\s*[:=]\s*\S/i.test(item.question)));
 });
 
@@ -62,16 +62,19 @@ test("etapa 1: métricas p50/p95, tokens y costo sin inventar", () => {
 
 test("etapa 1: el evaluador offline corre el dataset completo", () => {
   const report = runQualityEval("2026-11-03T00:00:00.000Z");
-  assert.equal(report.version, "2026-11-03");
-  assert.equal(report.summary.total, 20);
-  assert.equal(report.summary.passed, 20);
+  assert.equal(report.version, "2026-11-14");
+  assert.equal(report.summary.total, 22);
+  assert.equal(report.summary.passed, 22);
   assert.equal(report.summary.failed, 0);
   assert.equal(report.summary.passRate, 1);
   assert.equal(report.observed.securityBlockRate, 1);
+  assert.equal(report.taskWorkflow.completed, 2);
+  assert.equal(report.taskWorkflow.errors, 0);
+  assert.equal(report.observed.taskCompletionRate, 1);
   assert.equal(report.observed.generalCitationPassRate, 1);
-  assert.equal(report.metrics.count, 20);
+  assert.equal(report.metrics.count, 22);
   assert.equal(report.metrics.liveCount, 0);
-  assert.equal(report.metrics.notLiveCount, 20);
+  assert.equal(report.metrics.notLiveCount, 22);
   assert.equal(report.metrics.totalCostUsd, null);
   assert.ok(report.metrics.p50LatencyMs >= 0);
   assert.ok(report.metrics.p95LatencyMs >= report.metrics.p50LatencyMs);
