@@ -52,6 +52,8 @@ export type IrisLessonSnippet = {
   title: string;
   body: string;
   promotion?: string;
+  /** Kind del registro original; lo usa el razonamiento SOC para citarlo. */
+  kind?: string;
 };
 
 export type IrisAnalystInput = {
@@ -68,6 +70,12 @@ export type IrisAnalystInput = {
   /** Human-approved lessons only — never authorize core mutation. */
   lessons?: IrisLessonSnippet[];
   memoryHits?: IrisLessonSnippet[];
+  /** Consentimiento vigente aplicado a la memoria de este Ask (Etapa 3). */
+  memoryConsent?: {
+    used: boolean;
+    suppressedCount: number;
+    consentedCategories: string[];
+  };
 };
 
 function firstName(value: string) {

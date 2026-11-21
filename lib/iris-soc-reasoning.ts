@@ -1,6 +1,8 @@
 /**
- * IRIS — Razonamiento SOC/local con evidencia interna (pendiente de la
- * conexión de razonamiento de PR #35).
+ * IRIS — Razonamiento SOC/local con evidencia interna, cableado a la
+ * ruta visible de Ask IRIS (app/api/ask-iris/route.ts) desde el cierre
+ * de las etapas 3–4. Antes de ese cableado vivía solo como biblioteca
+ * probada (PR #36).
  *
  * El problema que resuelve: las respuestas SOC/local NO podían pasar por
  * el razonamiento con citas web (Etapa 2), porque su evidencia es
@@ -145,9 +147,11 @@ function evidenceSupports(claim: string, evidence: InternalEvidence[]): boolean 
   return distinctive.length >= 2;
 }
 
-/** Una lección solo es evidencia si un humano la aprobó; si no, se descarta. */
+/** Una lección solo es evidencia si un humano la aprobó; si no, se descarta.
+ *  Acepta el registro completo o el snippet que Ask ya recorta (id, kind,
+ *  title, body, promotion): solo esos campos se usan como evidencia. */
 export function memoryRecordToInternalEvidence(
-  record: MemoryRecord,
+  record: Pick<MemoryRecord, "id" | "kind" | "title" | "body" | "promotion">,
 ): { evidence: InternalEvidence | null; droppedReason: string | null } {
   if (record.kind === "lesson" && record.promotion !== "approved") {
     return { evidence: null, droppedReason: "lesson_not_approved" };
