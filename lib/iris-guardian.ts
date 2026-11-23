@@ -70,11 +70,36 @@ const SQUASHED_PATTERNS: Array<{ code: string; re: RegExp }> = [
   { code: "CORE_MUTATION", re: /(selfmodify|modificaelnucleo|rewritecore|patchmain|gitpush)/ },
 ];
 
-export function detectPromptInjection(text: string, language: "es" | "en" = "es"): InjectionFinding {
-  const sample = String(text || "").slice(0, 8000);
-  if (!sample.trim()) {
-    return { blocked: false, code: "EMPTY", message: "" };
+// Tamaño máximo absoluto de entrada que Guardian procesará (protege contra
+// denegación de servicio por payloads enormes), muy por encima de cualquier
+// mensaje legítimo de usuario.
+const MAX_GUARDIAN_INPUT = 200_000;
+// Tamaño de cada ventana de análisis y solape entre ventanas. El solape debe
+// cubrir la distancia máxima de cualquier patrón (los más largos usan
+// [\s\S]{0,40} entre palabras clave), con margen.
+const WINDOW_SIZE = 8_000;
+const WINDOW_OVERLAP = 200;
+
+function* slidingWindows(text: string): Generator<string> {
+  if (text.length <= WINDOW_SIZE) {
+    yield text;
+    return;
   }
+  const step = WINDOW_SIZE - WINDOW_OVERLAP;
+  for (let start = 0; start < text.length; start += step) {
+    yield text.slice(start, start + WINDOW_SIZE);
+    if (start + WINDOW_SIZE >= text.length) break;
+  }
+}
+
+/**
+ * Revisa una ventana ya normalizada/comprimida contra los patrones de
+ * Guardian. No decide el truncado ni el muestreo: eso lo hace
+ * detectPromptInjection, que puede llamar esta función varias veces sobre
+ * distintas ventanas del mismo texto para que un relleno largo antes de la
+ * frase gatillo no evada la detección.
+ */
+function scanWindow(sample: string, language: "es" | "en"): InjectionFinding | null {
   const normalized = normalizeForGuardian(sample);
   const squashed = normalized.replace(/[^a-z0-9]/g, "");
   for (const pattern of INJECTION_PATTERNS) {
@@ -95,6 +120,22 @@ export function detectPromptInjection(text: string, language: "es" | "en" = "es"
         message: language === "es" ? (base?.messageEs || "Guardian bloqueó un intento de evasión.") : (base?.messageEn || "Guardian blocked an evasion attempt."),
       };
     }
+  }
+  return null;
+}
+
+export function detectPromptInjection(text: string, language: "es" | "en" = "es"): InjectionFinding {
+  const full = String(text || "").slice(0, MAX_GUARDIAN_INPUT);
+  if (!full.trim()) {
+    return { blocked: false, code: "EMPTY", message: "" };
+  }
+  // Antes, un payload con relleno antes de la frase gatillo podía superar los
+  // primeros 8000 caracteres y quedar fuera de la única muestra analizada.
+  // Ahora se recorre todo el texto (hasta MAX_GUARDIAN_INPUT) en ventanas
+  // solapadas, así ninguna sección del mensaje escapa al análisis.
+  for (const window of slidingWindows(full)) {
+    const finding = scanWindow(window, language);
+    if (finding) return finding;
   }
   return { blocked: false, code: "CLEAN", message: "" };
 }
