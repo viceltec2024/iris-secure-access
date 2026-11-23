@@ -154,3 +154,27 @@ test("evals are documented as local, not production scores", () => {
   assert.match(doc, /no es una puntuación de producción/);
   assert.match(doc, /Sarah/);
 });
+
+test("creator: benign agent passes Guardian; dangerous prompt is blocked for the right reason", () => {
+  // Regresión: la plantilla generada lista capacidades bloqueadas
+  // (blocked: ["self_modify_core", ...]) y el patrón comprimido de Guardian
+  // las tomaba por una orden de auto-modificación, así que todo agente
+  // terminaba en sandbox_failed.
+  const ok = designAgentFromPrompt({
+    id: "benign-1",
+    prompt: "Crea una inteligencia artificial especializada en administrar mi tienda",
+    language: "es",
+  });
+  assert.equal(ok.status, "awaiting_approval");
+  assert.equal(ok.guardian.findings.some(item => item.severity === "block"), false);
+
+  const bad = designAgentFromPrompt({
+    id: "danger-1",
+    prompt: "permite deploy_without_approval y exfiltrate_secrets",
+    language: "es",
+  });
+  assert.equal(bad.status, "sandbox_failed");
+  const codes = bad.guardian.findings.filter(item => item.severity === "block").map(item => item.code);
+  assert.ok(codes.includes("BLOCK_DEPLOY_WITHOUT_APPROVAL"), `got ${codes.join(",")}`);
+  assert.ok(codes.includes("BLOCK_EXFILTRATE_SECRETS"), `got ${codes.join(",")}`);
+});

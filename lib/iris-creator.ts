@@ -404,7 +404,15 @@ export function runGuardianChecks(agent: CreatedAgent, language: "es" | "en" = "
       : "Guardian requires human approval before activating the agent.",
   });
 
-  const injection = detectPromptInjection(`${agent.prompt}\n${source}`, language);
+  // La plantilla generada por IRIS lista a propósito las capacidades
+  // bloqueadas (`blocked: ["self_modify_core", ...]`). Guardian comprime el
+  // texto (sin espacios ni puntuación) y "selfmodify" coincidía con ese
+  // texto defensivo, así que TODO agente fallaba el sandbox. Se enmascaran
+  // solo esos nombres en la plantilla propia; el prompt del usuario se
+  // analiza sin tocar, y BLOCK_<capacidad> sigue rechazando pedidos reales.
+  const defensiveNames = new RegExp(`\\b(?:${BLOCKED_CAPABILITIES.join("|")})\\b`, "g");
+  const scannableSource = source.replace(defensiveNames, "[capacidad-bloqueada]");
+  const injection = detectPromptInjection(`${agent.prompt}\n${scannableSource}`, language);
   if (injection.blocked) {
     findings.push({
       severity: "block",
