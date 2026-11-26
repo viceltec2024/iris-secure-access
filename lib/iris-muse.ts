@@ -132,6 +132,7 @@ export async function runMuseEditAgent(input: {
 
   const response = await fetch(`${MUSE_BASE_URL}/chat/completions`, {
     method: "POST",
+    signal: AbortSignal.timeout(8000),
     headers: {
       Authorization: `Bearer ${input.apiKey}`,
       "Content-Type": "application/json",
