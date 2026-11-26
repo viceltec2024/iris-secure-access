@@ -404,7 +404,19 @@ export function runGuardianChecks(agent: CreatedAgent, language: "es" | "en" = "
       : "Guardian requires human approval before activating the agent.",
   });
 
-  const injection = detectPromptInjection(`${agent.prompt}\n${source}`, language);
+  // The generated spec declares the blocked capabilities (system-generated
+  // from BLOCKED_CAPABILITIES, never user input). Scanning that declaration
+  // makes Guardian flag IRIS's own spec: "self_modify_core" matches the
+  // CORE_MUTATION squashed pattern, so every benign agent was blocked and
+  // no mission could ever verify (CI red on main since PR #31). Strip that
+  // one system-generated line; the prompt and every user-derived field in
+  // the spec are still scanned in full.
+  const blockedDeclaration = `blocked: ${JSON.stringify([...BLOCKED_CAPABILITIES])},`;
+  const scannableSource = source
+    .split("\n")
+    .filter((line) => line.trim() !== blockedDeclaration)
+    .join("\n");
+  const injection = detectPromptInjection(`${agent.prompt}\n${scannableSource}`, language);
   if (injection.blocked) {
     findings.push({
       severity: "block",
