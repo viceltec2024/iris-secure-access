@@ -143,3 +143,16 @@ test("Ask IRIS connects the microphone before saying Te escucho", () => {
   assert.match(start, /releaseAudioForMicrophone/);
   assert.doesNotMatch(start.slice(0, mic), /await speak\(/);
 });
+
+test("Ask IRIS mic button is not a file picker label", () => {
+  const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(panel, /className=\{`iris-voice-command/);
+  assert.match(panel, /void startListening\(\)/);
+  assert.match(panel, /fileInputRef\.current\?\.click\(\)/);
+  assert.match(panel, /className="iris-attach-input"/);
+  assert.doesNotMatch(panel, /<label className="iris-attach-file"/);
+  assert.doesNotMatch(panel, /iris-attach-file"[^>]*>[\s\S]*type="file"/);
+  assert.match(css, /grid-template-columns:1fr 40px 48px 48px/);
+  assert.match(css, /\.iris-attach-input\{display:none!important\}/);
+});
