@@ -162,6 +162,12 @@ export const BLOCKED_CAPABILITIES = [
   "network_unrestricted",
 ] as const;
 
+// Línea de política que la plantilla generada incluye. La comparten el
+// generador y runGuardianChecks para que siempre coincidan exactamente.
+export function blockedPolicyLine(): string {
+  return `blocked: ${JSON.stringify([...BLOCKED_CAPABILITIES])}`;
+}
+
 const MAX_AGENTS = 24;
 const MAX_PROMPT = 500;
 
@@ -351,7 +357,7 @@ export const agentSpec = {
   autonomy: "supervised",
   permissions: ${permissions},
   goals: ${goals},
-  blocked: ${JSON.stringify([...BLOCKED_CAPABILITIES])},
+  ${blockedPolicyLine()},
 };
 
 export function proposeAction(input) {
@@ -404,7 +410,12 @@ export function runGuardianChecks(agent: CreatedAgent, language: "es" | "en" = "
       : "Guardian requires human approval before activating the agent.",
   });
 
-  const injection = detectPromptInjection(`${agent.prompt}\n${source}`, language);
+  // La plantilla generada incluye la lista de capacidades bloqueadas
+  // (p. ej. "self_modify_core"), que Guardian confundía con una petición de
+  // modificar el núcleo. Solo se quita esa línea de política, generada por
+  // IRIS; el prompt y el resto del código fuente se siguen escaneando enteros.
+  const scannedSource = source.split(blockedPolicyLine()).join("blocked: []");
+  const injection = detectPromptInjection(`${agent.prompt}\n${scannedSource}`, language);
   if (injection.blocked) {
     findings.push({
       severity: "block",
