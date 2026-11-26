@@ -33,4 +33,4 @@
 - Deploy staging + restore/rollback drills
 - Email delivery de invitaciones (hoy: token en UI admin)
 - R2 archivos por tenant
-- Merge a `main` solo con OK expresa
+- Merge a `main`: completado (la Fase B está en main)
