@@ -120,6 +120,7 @@ export async function POST(request: Request) {
     for (let step = 0; step < MAX_STEPS; step += 1) {
       const ai = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
+        signal: AbortSignal.timeout(8000),
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "gpt-5.6-sol",
