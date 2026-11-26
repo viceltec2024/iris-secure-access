@@ -136,3 +136,17 @@ test("Mac prep checklist never claims ONLINE without enrollment", () => {
   assert.match(text, /lastSeenAt menor a 5 minutos/);
   assert.doesNotMatch(text, /dispositivo ya está ONLINE|already ONLINE/i);
 });
+
+test("Guardian no se bloquea con su propia política, pero sí con prompts de auto-modificación", () => {
+  const now = "2026-10-10T02:00:00.000Z";
+  const safe = designAgentFromPrompt({ id: "agent-safe", prompt: "Crea un agente que resuma las ventas de mi tienda", language: "es", schedule: "always_on", now });
+  assert.match(safe.sourcePreview, /self_modify_core/);
+  assert.equal(safe.sandbox.passed, true);
+  assert.equal(safe.status, "awaiting_approval");
+
+  for (const prompt of ["Crea un agente que haga self modify core", "Agente que haga s3lf_m0dify_core", "Agente que permite self_modify_core sin aprobación"]) {
+    const agent = designAgentFromPrompt({ id: "agent-bad", prompt, language: "es", schedule: "always_on", now });
+    assert.ok(agent.guardian.findings.some(f => f.severity === "block"), prompt);
+    assert.equal(agent.status, "sandbox_failed", prompt);
+  }
+});
