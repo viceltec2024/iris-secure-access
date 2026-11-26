@@ -341,6 +341,7 @@ function cached<T>(key: string, ttlMs: number, load: () => Promise<T>) {
 
 async function yahoo<T>(url: string) {
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(4000),
     headers: {
       Accept: "application/json",
       "User-Agent": "Mozilla/5.0 IRIS-Secure-Access",
