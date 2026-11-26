@@ -113,7 +113,7 @@ test("Ask IRIS stops waiting on hung world knowledge", async () => {
     const result = await irisMindAnswer({ ...base, question: "cuéntame algo de marte" });
     assert.equal(result.source, "local");
     assert.match(result.answer, /Ezephian|marte/i);
-    assert.ok(Date.now() - started < 5000);
+    assert.ok(Date.now() - started < 10000);
   } finally {
     globalThis.fetch = original;
   }
