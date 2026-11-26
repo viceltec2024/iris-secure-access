@@ -82,7 +82,7 @@ Ver `docs/IRIS-1.0-OPS.md`. Límites sugeridos pre-prod:
 ## Checklist staging (antes de pedir prod)
 
 - [ ] Secrets staging cargados (no git)
-- [ ] Migraciones aplicadas en D1 staging (incluye 0011 orgs)
+- [ ] Migraciones aplicadas en D1 staging (incluye 0011 orgs y 0012 Fase B)
 - [ ] Probe providers ejecutado; integraciones live o explícitamente disabled
 - [ ] Smoke: sign-in, Ask IRIS, Creator run_task, Mission verified≠accept
 - [ ] Smoke multi-tenant: crear org B, confirmar que no lee desks de org A

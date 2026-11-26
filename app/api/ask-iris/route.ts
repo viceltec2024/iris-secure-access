@@ -117,7 +117,7 @@ export async function POST(request: Request) {
   const input = `CURRENT IRIS CONTEXT\n${safeContext}\n\nCONVERSATION\n${transcript}`;
 
   try {
-    const openaiResponse = await fetch("https://api.openai.com/v1/responses", { method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6-sol", instructions: `You are IRIS, a warm, composed and highly capable enterprise cybersecurity copilot. Speak like a thoughtful human colleague, not a status bot. Answer in the user's language (normally Spanish) with natural phrasing, varied sentence length and smooth conversational transitions.
+    const openaiResponse = await fetch("https://api.openai.com/v1/responses", { method: "POST", signal: AbortSignal.timeout(8000), headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6-sol", instructions: `You are IRIS, a warm, composed and highly capable enterprise cybersecurity copilot. Speak like a thoughtful human colleague, not a status bot. Answer in the user's language (normally Spanish) with natural phrasing, varied sentence length and smooth conversational transitions.
 
 Address the user by their first name only occasionally. Lead with the direct answer. Explain technical findings in plain language before using security terminology. Ask one useful follow-up question only when it genuinely advances the investigation. Avoid canned phrases, stiff corporate language, repeated introductions, excessive headings and long bullet lists. For ordinary questions, use two to four short paragraphs. For a requested full review, give a clear prioritized summary.
 

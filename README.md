@@ -107,11 +107,14 @@ Abrir `http://127.0.0.1:5173/dashboard` (identidad local
 
 ```bash
 npm run lint
-node --experimental-strip-types --test tests/*.mjs
+npm run typecheck
+npm test
+npm run test:smoke
 ```
 
-Omitir `tests/rendered-html.test.mjs` hasta después de `npm run build`,
-como indica `AGENTS.md`.
+`npm test` corre la suite unitaria (omite `tests/rendered-html.test.mjs`,
+que necesita `dist/` tras `npm run build`). `npm run test:smoke` corre
+el smoke de HTML renderizado tras el build.
 
 ## Límites honestos (no prometer más)
 

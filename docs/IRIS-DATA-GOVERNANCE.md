@@ -9,6 +9,8 @@
 | Mission/Creator/Memory desks | Mientras la org esté ACTIVE | Export antes de delete |
 | Devices/alerts | 12 meses tras OFFLINE | SOC |
 
+> Nota: la retención es hoy una política documentada sin enforcement automático; no existe purga ni cron que la aplique.
+
 ## Eliminación (derecho al olvido org)
 
 1. OWNER solicita `ORG_DELETE` (API futura / soporte)

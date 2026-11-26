@@ -65,6 +65,7 @@ export async function POST(request: Request) {
 
   const response = await fetch(url, {
     method: "POST",
+    signal: AbortSignal.timeout(15000),
     headers: {
       "xi-api-key": apiKey,
       "Content-Type": "application/json",

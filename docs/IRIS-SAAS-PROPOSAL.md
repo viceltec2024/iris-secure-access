@@ -95,7 +95,7 @@ Pagos: interfaz `BillingProvider` stub; integración real **solo tras autorizaci
 4. Auditoría incluye `organizationId`
 5. Sin Stripe/cobros activos
 6. Tests unitarios de aislamiento en verde
-7. No merge a main / no prod
+7. No deploy a prod (la Fase B ya está en main)
 
 ## 9. Fases
 
