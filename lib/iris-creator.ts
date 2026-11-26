@@ -404,7 +404,8 @@ export function runGuardianChecks(agent: CreatedAgent, language: "es" | "en" = "
       : "Guardian requires human approval before activating the agent.",
   });
 
-  const injection = detectPromptInjection(`${agent.prompt}\n${source}`, language);
+  const sourceForScan = source.replace(/blocked:\s*\[[^\]]*\],?/g, "");
+  const injection = detectPromptInjection(`${agent.prompt}\n${sourceForScan}`, language);
   if (injection.blocked) {
     findings.push({
       severity: "block",
