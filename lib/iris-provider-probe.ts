@@ -42,6 +42,7 @@ export async function probeOpenAI(env: ProviderProbeEnv, now = new Date().toISOS
   }
   try {
     const response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(4000),
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (!response.ok) {
@@ -91,6 +92,7 @@ export async function probeMuse(env: ProviderProbeEnv, now = new Date().toISOStr
   }
   try {
     const response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(4000),
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (!response.ok) {
@@ -141,6 +143,7 @@ export async function probeElevenLabs(env: ProviderProbeEnv, now = new Date().to
   }
   try {
     const response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(4000),
       headers: { "xi-api-key": apiKey },
     });
     if (!response.ok) {
