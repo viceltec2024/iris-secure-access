@@ -24,10 +24,13 @@ Coordination: edit → Muse, SOC/tools → OpenAI, speech → ElevenLabs, otherw
 ## Test
 
 ```bash
-node --experimental-strip-types --test tests/*.mjs
+npm run lint
+npm run typecheck
+npm test
+npm run test:smoke
 ```
 
-Skip `tests/rendered-html.test.mjs` unless you already ran `npm run build`. `npm run lint` must stay at 0 errors.
+`npm test` runs the unit suite (it skips `tests/rendered-html.test.mjs`, which needs `dist/` from `npm run build`). `npm run test:smoke` runs the rendered-HTML smoke test after a build. `npm run lint` must stay at 0 errors.
 
 ## Product rules
 
