@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { irisMindAnswer } from "../lib/iris-mind.ts";
 import { composeWorldAnswer, irisWorldAnswer } from "../lib/iris-world-knowledge.ts";
-import { extractSearchTopic, isConversationStart, isIdentityQuestion, isSocQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
+import { extractSearchTopic, isConversationStart, isIdentityQuestion, isOwnIntelligenceQuestion, isSocQuestion, tryEvaluateMath } from "../lib/iris-query.ts";
 
 const base = {
   language: "es",
@@ -28,6 +28,16 @@ test("Ask IRIS names itself instead of dumping SOC status", async () => {
   const result = await irisMindAnswer({ ...base, question: "quién eres" });
   assert.equal(result.source, "local");
   assert.match(result.answer, /Soy IRIS/);
+  assert.match(result.answer, /inteligencia propia/);
+  assert.doesNotMatch(result.answer, /0 dispositivo/);
+});
+
+test("Ask IRIS says Wikipedia lives inside its own intelligence", async () => {
+  assert.equal(isOwnIntelligenceQuestion("quiero que IRIS tenga inteligencia propia"), true);
+  assert.equal(isOwnIntelligenceQuestion("wikipedia dentro del sistema"), true);
+  const result = await irisMindAnswer({ ...base, question: "quiero wikipedia dentro del sistema y inteligencia propia" });
+  assert.equal(result.source, "local");
+  assert.match(result.answer, /Wikipedia está dentro de IRIS|inteligencia/i);
   assert.doesNotMatch(result.answer, /0 dispositivo/);
 });
 
@@ -55,29 +65,55 @@ test("Ask IRIS extracts a world-knowledge topic", () => {
   assert.doesNotMatch(composeWorldAnswer("Las plantas convierten luz en energía.", "Fotosíntesis", "es", "Ezephian"), /Eso es lo esencial/i);
 });
 
-test("Ask IRIS answers general questions from public knowledge", async () => {
+test("Ask IRIS answers seeded encyclopedia topics from its own knowledge", async () => {
   const original = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("seeded knowledge must not call Wikipedia");
+  };
+  try {
+    const wiki = await irisWorldAnswer("qué es la fotosíntesis", "es", "Ezephian");
+    assert.match(wiki, /fotosíntesis|plantas/i);
+    assert.match(wiki, /inteligencia/i);
+    const result = await irisMindAnswer({ ...base, question: "qué es la fotosíntesis" });
+    assert.equal(result.source, "world");
+    assert.match(result.answer, /plantas|azúcares|oxígeno/i);
+    assert.match(result.answer, /Wikipedia/i);
+    const mars = await irisMindAnswer({ ...base, question: "explícame Marte" });
+    assert.match(mars.answer, /cuarto planeta|planeta rojo/i);
+    const curie = await irisMindAnswer({ ...base, question: "quién fue Marie Curie" });
+    assert.match(curie.answer, /Nobel|radiactividad/i);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Ask IRIS learns a Wikipedia topic into its own knowledge", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
   globalThis.fetch = async (input) => {
+    calls += 1;
     const url = String(input);
     assert.match(url, /^https:\/\/es\.wikipedia\.org\/w\/api\.php/);
     return new Response(JSON.stringify({
       query: {
         pages: [{
-          title: "Fotosíntesis",
-          extract: "La fotosíntesis es el proceso por el cual las plantas convierten luz en energía química.",
+          title: "Quimioterapia",
+          extract: "La quimioterapia es un tratamiento con fármacos para destruir células que se dividen rápido, usado sobre todo contra el cáncer.",
           index: 1,
-          fullurl: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis",
+          fullurl: "https://es.wikipedia.org/wiki/Quimioterapia",
         }],
       },
     }), { status: 200 });
   };
   try {
-    const wiki = await irisWorldAnswer("qué es la fotosíntesis", "es", "Ezephian");
-    assert.match(wiki, /fotosíntesis/i);
-    const result = await irisMindAnswer({ ...base, question: "qué es la fotosíntesis" });
-    assert.equal(result.source, "world");
-    assert.match(result.answer, /plantas/i);
-    assert.match(result.answer, /Wikipedia/i);
+    const first = await irisMindAnswer({ ...base, question: "qué es la quimioterapia" });
+    assert.equal(first.source, "world");
+    assert.match(first.answer, /cáncer|fármacos/i);
+    assert.equal(calls, 1);
+    const second = await irisMindAnswer({ ...base, question: "qué es la quimioterapia", knowledge: first.knowledge });
+    assert.equal(second.source, "world");
+    assert.match(second.answer, /cáncer|fármacos/i);
+    assert.equal(calls, 1);
   } finally {
     globalThis.fetch = original;
   }
@@ -88,15 +124,15 @@ test("Ask IRIS skips Wikipedia disambiguation pages", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({
     query: {
       pages: [
-        { title: "Marte", extract: "Marte puede referirse a: Marte (planeta).", index: 1, pageprops: { disambiguation: "" } },
-        { title: "Marte (planeta)", extract: "Marte es el cuarto planeta del sistema solar.", index: 2, fullurl: "https://es.wikipedia.org/wiki/Marte_(planeta)" },
+        { title: "Mercurio", extract: "Mercurio puede referirse a: Mercurio (planeta).", index: 1, pageprops: { disambiguation: "" } },
+        { title: "Mercurio (planeta)", extract: "Mercurio es el planeta más cercano al Sol.", index: 2, fullurl: "https://es.wikipedia.org/wiki/Mercurio_(planeta)" },
       ],
     },
   }), { status: 200 });
   try {
-    const result = await irisMindAnswer({ ...base, question: "explícame Marte" });
+    const result = await irisMindAnswer({ ...base, question: "explícame Mercurio" });
     assert.equal(result.source, "world");
-    assert.match(result.answer, /cuarto planeta/i);
+    assert.match(result.answer, /más cercano al Sol/i);
     assert.doesNotMatch(result.answer, /puede referirse/i);
   } finally {
     globalThis.fetch = original;
@@ -110,7 +146,7 @@ test("Ask IRIS stops waiting on hung world knowledge", async () => {
   });
   const started = Date.now();
   try {
-    const result = await irisMindAnswer({ ...base, question: "cuéntame algo de marte" });
+    const result = await irisMindAnswer({ ...base, question: "cuéntame algo de la magnetosfera" });
     assert.equal(result.source, "local");
     assert.match(result.answer, /Ezephian|marte/i);
     assert.ok(Date.now() - started < 5000);

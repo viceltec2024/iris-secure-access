@@ -1,4 +1,5 @@
 import { irisAgentShellCommand } from "./iris-device-view.ts";
+import type { KnowledgeStore } from "./iris-knowledge.ts";
 import { isConceptExplainer, isSocFollowUp } from "./iris-query.ts";
 
 type DeviceContext = {
@@ -68,6 +69,8 @@ export type IrisAnalystInput = {
   /** Human-approved lessons only — never authorize core mutation. */
   lessons?: IrisLessonSnippet[];
   memoryHits?: IrisLessonSnippet[];
+  /** Wikipedia-backed knowledge that lives inside IRIS. */
+  knowledge?: KnowledgeStore;
 };
 
 function firstName(value: string) {

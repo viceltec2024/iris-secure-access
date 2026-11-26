@@ -28,7 +28,7 @@ test("Ask IRIS shows investigation steps without chain of thought", () => {
   const panel = readFileSync(new URL("../app/dashboard/ask-iris-panel.tsx", import.meta.url), "utf8");
   assert.match(panel, /Revisé el estado de seguridad/);
   assert.match(panel, /Muse editó el texto/);
-  assert.match(panel, /Consulté Wikipedia/);
+  assert.match(panel, /Lo saqué de mi conocimiento/);
   assert.match(panel, /iris-chat-steps/);
   assert.doesNotMatch(panel, /chain-of-thought|thinking out loud/i);
 });
