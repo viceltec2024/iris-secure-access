@@ -11,12 +11,13 @@ import {
   rejectMission,
 } from "../../../lib/iris-mission";
 import { appendMemory, emptyMemoryStore, parseMemoryStore, recordErrorSolution } from "../../../lib/iris-memory";
-import { loadOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store";
+import { loadOrgDeskValue, mutateOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store";
 import type { IrisPlanId } from "../../../lib/iris-plans";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { requireOrgContext } from "../../../lib/iris-tenant";
 import { assertOrgWithinLimits, recordUsageEvent } from "../../../lib/iris-usage";
 import { requireStepUp } from "../../../lib/iris-step-up";
+import { concurrencyErrorBody, isConcurrencyError } from "../../../lib/iris-cas-core";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,6 @@ async function appendOrgMemory(input: {
   kind?: "mission_result" | "error";
   error?: string;
 }) {
-  const loaded = await loadOrgDeskValue({ kind: "memory", organizationId: input.organizationId, email: input.email });
-  const store = loaded.value ? parseMemoryStore(loaded.value) : emptyMemoryStore();
   const record = input.kind === "error"
     ? recordErrorSolution({
       id: crypto.randomUUID(),
@@ -58,13 +57,13 @@ async function appendOrgMemory(input: {
       promotion: "none" as const,
       sourceId: input.missionId,
     };
-  const next = appendMemory(store, record);
-  await saveOrgDeskValue({
+  // Se vuelve a aplicar sobre la memoria más reciente si otro escritor ganó,
+  // para no pisar aprobaciones de lecciones ni otros resultados.
+  await mutateOrgDeskValue({
     kind: "memory",
     organizationId: input.organizationId,
     email: input.email,
-    expectedUpdatedAt: loaded.updatedAt,
-    value: JSON.stringify(next),
+    mutate: value => ({ value: JSON.stringify(appendMemory(value ? parseMemoryStore(value) : emptyMemoryStore(), record)), result: null }),
   });
 }
 
@@ -209,6 +208,7 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
+    if (isConcurrencyError(error)) return Response.json(concurrencyErrorBody(language), { status: 409 });
     const message = error instanceof Error ? error.message : "mission";
     await logAudit(user.email, "IRIS_MISSION_DENIED", String(body.missionId || "mission"), "DENIED", { message, action: body.action }, orgId);
     return Response.json({ error: message }, { status: 400 });

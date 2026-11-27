@@ -39,8 +39,12 @@ export function emptyMemoryStore(): MemoryStore {
 export function parseMemoryStore(value: string): MemoryStore {
   try {
     const parsed = JSON.parse(value) as Partial<MemoryStore>;
-    const records = Array.isArray(parsed.records) ? parsed.records.filter(isMemoryRecord) : [];
-    const revision = typeof parsed.revision === "number" && parsed.revision >= 0 ? Math.floor(parsed.revision) : 0;
+    const seen = new Set<string>();
+    const records = (Array.isArray(parsed.records) ? parsed.records : [])
+      .filter(isMemoryRecord)
+      .map(normalizeStoredRecord)
+      .filter(record => (seen.has(record.id) ? false : (seen.add(record.id), true)));
+    const revision = typeof parsed.revision === "number" && Number.isFinite(parsed.revision) && parsed.revision >= 0 ? Math.floor(parsed.revision) : 0;
     return { records, maxRecords: MAX_RECORDS, revision };
   } catch {
     return emptyMemoryStore();
@@ -52,12 +56,53 @@ function isMemoryRecord(value: unknown): value is MemoryRecord {
   const row = value as MemoryRecord;
   return Boolean(
     row.id
+    && typeof row.id === "string"
     && typeof row.title === "string"
     && typeof row.body === "string"
     && typeof row.createdBy === "string"
     && ["eval_result", "mission_result", "lesson", "operator_note", "error_solution"].includes(row.kind)
     && ["none", "pending", "approved", "rejected"].includes(row.promotion)
   );
+}
+
+/** Un registro guardado con `tags` corrupto rompía searchMemory (tags.join). */
+function normalizeStoredRecord(record: MemoryRecord): MemoryRecord {
+  const tags = Array.isArray(record.tags) ? record.tags.filter((tag): tag is string => typeof tag === "string") : [];
+  const createdAt = typeof record.createdAt === "string" ? record.createdAt : "";
+  const normalized: MemoryRecord = { ...record, tags, createdAt };
+  // Solo una lección puede estar aprobada, y solo con un humano registrado.
+  if (normalized.kind !== "lesson" && normalized.promotion !== "none") normalized.promotion = "none";
+  if (normalized.promotion === "approved" && !isHumanActor(normalized.promotedBy)) normalized.promotion = "pending";
+  return normalized;
+}
+
+function isHumanActor(value: unknown): value is string {
+  return typeof value === "string" && value.includes("@");
+}
+
+/**
+ * Las lecciones aprobadas las activó un humano: el tope de registros nunca
+ * las borra. Las pendientes se protegen hasta MAX_PROTECTED_PENDING (las más
+ * recientes), para que evaluaciones fallidas repetidas no hagan crecer la
+ * memoria sin límite. Se descartan primero los registros más antiguos.
+ */
+const MAX_PROTECTED_PENDING = 50;
+
+function capRecords(records: MemoryRecord[], max: number): MemoryRecord[] {
+  if (records.length <= max) return records;
+  let pendingRoom = MAX_PROTECTED_PENDING;
+  const isProtected = records.map(item => {
+    if (item.kind !== "lesson") return false;
+    if (item.promotion === "approved") return true;
+    if (item.promotion === "pending" && pendingRoom > 0) { pendingRoom -= 1; return true; }
+    return false;
+  });
+  let room = Math.max(max - isProtected.filter(Boolean).length, 0);
+  return records.filter((_, index) => {
+    if (isProtected[index]) return true;
+    if (room > 0) { room -= 1; return true; }
+    return false;
+  });
 }
 
 /**
@@ -69,16 +114,27 @@ export function appendMemory(store: MemoryStore, record: MemoryRecord, expectedR
   if (expectedRevision !== undefined && expectedRevision !== (store.revision || 0)) {
     throw new Error("revision_conflict");
   }
+  if (!record.id || store.records.some(item => item.id === record.id)) {
+    throw new Error("duplicate_memory_id");
+  }
+  // Append-only: nada entra ya aprobado. Una lección nueva queda pendiente y
+  // solo decideLessonPromotion (con un humano) puede activarla.
+  const { promotedAt: _promotedAt, promotedBy: _promotedBy, ...rest } = record;
+  void _promotedAt; void _promotedBy;
+  const promotion: MemoryRecord["promotion"] = record.kind === "lesson"
+    ? (record.promotion === "none" || record.promotion === "rejected" ? record.promotion : "pending")
+    : "none";
   const next: MemoryRecord = {
-    ...record,
+    ...rest,
+    promotion,
     title: record.title.slice(0, 160),
     body: record.body.slice(0, MAX_BODY),
-    tags: (record.tags || []).slice(0, 12).map(tag => String(tag).slice(0, 40)),
+    tags: (Array.isArray(record.tags) ? record.tags : []).slice(0, 12).map(tag => String(tag).slice(0, 40)),
   };
   return {
     ...store,
     revision: (store.revision || 0) + 1,
-    records: [next, ...store.records].slice(0, store.maxRecords || MAX_RECORDS),
+    records: capRecords([next, ...store.records], store.maxRecords || MAX_RECORDS),
   };
 }
 

@@ -8,12 +8,14 @@ import {
   decideLessonPromotion,
   emptyMemoryStore,
   parseMemoryStore,
+  type MemoryRecord,
 } from "../../../lib/iris-memory";
-import { loadOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store";
+import { loadOrgDeskValue, mutateOrgDeskValue } from "../../../lib/iris-org-store";
 import { readOrgObsSummary, recordOrgObs } from "../../../lib/iris-obs-store";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { requireOrgContext } from "../../../lib/iris-tenant";
 import { requireStepUp } from "../../../lib/iris-step-up";
+import { concurrencyErrorBody, isConcurrencyError } from "../../../lib/iris-cas-core";
 
 export const dynamic = "force-dynamic";
 
@@ -61,8 +63,7 @@ export async function POST(request: Request) {
   const language = body.language === "en" ? "en" : "es";
   const ctx = await requireOrgContext(user.email, { mutate: true });
   const orgId = ctx.organization.id;
-  const loaded = await loadOrgDeskValue({ kind: "memory", organizationId: orgId, email: user.email });
-  const store = loaded.value ? parseMemoryStore(loaded.value) : emptyMemoryStore();
+  const readStore = (value: string) => (value ? parseMemoryStore(value) : emptyMemoryStore());
 
   try {
     if (body.action === "run") {
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
         id: crypto.randomUUID(),
         language,
       });
-      let next = appendMemory(store, {
+      const evalRecord: MemoryRecord = {
         id: crypto.randomUUID(),
         kind: "eval_result",
         title: language === "es" ? `Eval ${report.summary.passRate}%` : `Eval ${report.summary.passRate}%`,
@@ -84,9 +85,9 @@ export async function POST(request: Request) {
         createdBy: user.email,
         promotion: "none",
         sourceId: report.id,
-      });
-      if (report.summary.failed > 0) {
-        next = appendMemory(next, buildLessonFromEval({
+      };
+      const lessonRecord = report.summary.failed > 0
+        ? buildLessonFromEval({
           id: crypto.randomUUID(),
           evalId: report.id,
           title: language === "es" ? "Lección: reforzar casos fallidos" : "Lesson: reinforce failed cases",
@@ -96,14 +97,19 @@ export async function POST(request: Request) {
           score: report.summary.passRate,
           actorEmail: user.email,
           now: report.ranAt,
-        }));
-      }
-      await saveOrgDeskValue({
+        })
+        : null;
+      // La memoria se relee y se vuelve a añadir si otro escritor ganó, así una
+      // aprobación humana simultánea no se pierde.
+      const next = await mutateOrgDeskValue({
         kind: "memory",
         organizationId: orgId,
         email: user.email,
-        expectedUpdatedAt: loaded.updatedAt,
-        value: JSON.stringify(next),
+        mutate: value => {
+          let updated = appendMemory(readStore(value), evalRecord);
+          if (lessonRecord) updated = appendMemory(updated, lessonRecord);
+          return { value: JSON.stringify(updated), result: updated };
+        },
       });
       await logAudit(user.email, "IRIS_EVAL_RUN", report.id, "SUCCESS", {
         passRate: report.summary.passRate,
@@ -126,13 +132,14 @@ export async function POST(request: Request) {
 
     if (body.action === "approve_lesson" || body.action === "reject_lesson") {
       const decision = body.action === "approve_lesson" ? "approve" : "reject";
-      const result = decideLessonPromotion(store, String(body.lessonId || ""), decision, user.email);
-      await saveOrgDeskValue({
+      const result = await mutateOrgDeskValue({
         kind: "memory",
         organizationId: orgId,
         email: user.email,
-        expectedUpdatedAt: loaded.updatedAt,
-        value: JSON.stringify(result.store),
+        mutate: value => {
+          const decided = decideLessonPromotion(readStore(value), String(body.lessonId || ""), decision, user.email);
+          return { value: JSON.stringify(decided.store), result: decided };
+        },
       });
       await logAudit(user.email, decision === "approve" ? "IRIS_LESSON_APPROVED" : "IRIS_LESSON_REJECTED", result.record.id, "SUCCESS", {
         sourceId: result.record.sourceId || "",
@@ -142,6 +149,7 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
+    if (isConcurrencyError(error)) return Response.json(concurrencyErrorBody(language), { status: 409 });
     const message = error instanceof Error ? error.message : "evals";
     await logAudit(user.email, "IRIS_EVAL_DENIED", "evals", "DENIED", { message, action: body.action }, orgId);
     return Response.json({ error: message }, { status: 400 });
