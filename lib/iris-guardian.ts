@@ -111,6 +111,10 @@ function scanWindow(sample: string, language: "es" | "en"): InjectionFinding | n
       };
     }
   }
+  return scanSquashed(squashed, language);
+}
+
+function scanSquashed(squashed: string, language: "es" | "en"): InjectionFinding | null {
   for (const pattern of SQUASHED_PATTERNS) {
     if (pattern.re.test(squashed)) {
       const base = INJECTION_PATTERNS.find(item => item.code === pattern.code);
@@ -125,19 +129,64 @@ function scanWindow(sample: string, language: "es" | "en"): InjectionFinding | n
 }
 
 export function detectPromptInjection(text: string, language: "es" | "en" = "es"): InjectionFinding {
-  const full = String(text || "").slice(0, MAX_GUARDIAN_INPUT);
+  const full = String(text || "");
   if (!full.trim()) {
     return { blocked: false, code: "EMPTY", message: "" };
   }
+  // Falla cerrado: un texto mayor que MAX_GUARDIAN_INPUT no se recorta (lo
+  // que quedara fuera no se analizaría y reabriría el bypass por relleno);
+  // se bloquea entero.
+  if (full.length > MAX_GUARDIAN_INPUT) {
+    return {
+      blocked: true,
+      code: "OVERSIZE",
+      message: language === "es"
+        ? "Guardian bloqueó una entrada demasiado grande para analizarla completa."
+        : "Guardian blocked an input too large to scan completely.",
+    };
+  }
   // Antes, un payload con relleno antes de la frase gatillo podía superar los
   // primeros 8000 caracteres y quedar fuera de la única muestra analizada.
-  // Ahora se recorre todo el texto (hasta MAX_GUARDIAN_INPUT) en ventanas
-  // solapadas, así ninguna sección del mensaje escapa al análisis.
+  // Ahora se recorre todo el texto en ventanas solapadas, así ninguna sección
+  // del mensaje escapa al análisis.
   for (const window of slidingWindows(full)) {
     const finding = scanWindow(window, language);
     if (finding) return finding;
   }
+  // Los patrones comprimidos ignoran espacios y puntuación, así que un
+  // relleno largo de separadores ("self" + 500 espacios + "modify") puede
+  // caer entre dos ventanas. Se repiten sobre el texto completo comprimido.
+  const squashedFull = normalizeForGuardian(full).replace(/[^a-z0-9]/g, "");
+  const squashedFinding = scanSquashed(squashedFull, language);
+  if (squashedFinding) return squashedFinding;
   return { blocked: false, code: "CLEAN", message: "" };
+}
+
+/**
+ * Revisa la conversación completa que envía el cliente, no solo el último
+ * mensaje del usuario. Todo el historial (incluidos los mensajes con rol
+ * "assistant", que el cliente puede falsificar) llega al modelo.
+ *
+ * - El último mensaje del usuario decide `finding`: si está marcado, la
+ *   petición se bloquea como antes.
+ * - Cualquier mensaje anterior marcado se quita del historial en vez de
+ *   bloquear la petición. Así una inyección escondida en el historial nunca
+ *   llega al modelo, y una conversación que ya tuvo un bloqueo (o una
+ *   respuesta legítima de IRIS que menciona "curl") no queda bloqueada
+ *   para siempre.
+ */
+export function guardConversation<T extends { role: string; content: string }>(
+  messages: T[],
+  language: "es" | "en" = "es",
+): { finding: InjectionFinding; messages: T[]; dropped: number } {
+  let lastUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") { lastUserIndex = index; break; }
+  }
+  const lastUser = lastUserIndex >= 0 ? messages[lastUserIndex].content : "";
+  const finding = detectPromptInjection(lastUser, language);
+  const kept = messages.filter((message, index) => index === lastUserIndex || !detectPromptInjection(message.content, language).blocked);
+  return { finding, messages: kept, dropped: messages.length - kept.length };
 }
 
 export function guardianAllowsPayload(text: string, language: "es" | "en" = "es") {

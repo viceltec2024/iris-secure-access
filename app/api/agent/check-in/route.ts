@@ -1,4 +1,4 @@
-import { eq, lt } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { agentRequestNonces, devices, remediationPlans, securityAlerts, trustedApplications } from "../../../../db/schema";
 import { logAudit } from "../../../../lib/authz";
@@ -210,7 +210,11 @@ export async function POST(request: Request) {
     const token = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
     const issuedAt = new Date();
     const risk = calculateRisk(telemetry);
-    await db.update(devices).set({ agentTokenHash: await sha256(token), agentTokenIssuedAt: issuedAt.toISOString(), agentTokenExpiresAt: new Date(issuedAt.getTime() + TOKEN_LIFETIME_MS).toISOString(), status: "ONLINE", risk, telemetry: JSON.stringify(telemetry), lastSeenAt: issuedAt.toISOString() }).where(eq(devices.id, device.id));
+    // Solo la primera inscripción gana: el UPDATE exige que el token siga
+    // vacío, así dos peticiones simultáneas con el mismo código no reciben
+    // ambas un token.
+    const claimed = await db.update(devices).set({ agentTokenHash: await sha256(token), agentTokenIssuedAt: issuedAt.toISOString(), agentTokenExpiresAt: new Date(issuedAt.getTime() + TOKEN_LIFETIME_MS).toISOString(), status: "ONLINE", risk, telemetry: JSON.stringify(telemetry), lastSeenAt: issuedAt.toISOString() }).where(and(eq(devices.id, device.id), eq(devices.enrollmentCode, code), isNull(devices.agentTokenHash))).returning({ id: devices.id });
+    if (!claimed.length) return Response.json({ error: "Invalid or already-used enrollment code" }, { status: 401 });
     await syncAlerts(device, telemetry);
     await logAudit(device.ownerEmail, "AGENT_ENROLLED", device.id, "SUCCESS", {
       hostname: telemetry.hostname || "",
@@ -238,7 +242,8 @@ export async function POST(request: Request) {
   if (!secureEqual(signature, expectedSignature)) return Response.json({ error: "Invalid request signature" }, { status: 401 });
   const [usedNonce] = await db.select().from(agentRequestNonces).where(eq(agentRequestNonces.nonce, nonce)).limit(1);
   if (usedNonce) return Response.json({ error: "Repeated request" }, { status: 409 });
-  await db.insert(agentRequestNonces).values({ nonce, deviceId: device.id });
+  const insertedNonce = await db.insert(agentRequestNonces).values({ nonce, deviceId: device.id }).onConflictDoNothing().returning({ nonce: agentRequestNonces.nonce });
+  if (!insertedNonce.length) return Response.json({ error: "Repeated request" }, { status: 409 });
   await db.delete(agentRequestNonces).where(lt(agentRequestNonces.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()));
   try {
     telemetry = body.encryptedTelemetry

@@ -3,7 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { parseAskIncident, resolveIrisAsk } from "../../../lib/iris-ask";
-import { detectPromptInjection } from "../../../lib/iris-guardian";
+import { guardConversation } from "../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
 import { recordOrgObs } from "../../../lib/iris-obs-store";
 import { requireOrgContext } from "../../../lib/iris-tenant";
@@ -43,8 +43,8 @@ export async function POST(request: Request) {
   try { body = await request.json(); } catch { return Response.json({ error: "Solicitud inválida." }, { status: 400 }); }
   const preferencesEarly = body.context && typeof body.context === "object" ? body.context as { language?: unknown } : {};
   const languageHint = preferencesEarly.language === "en" ? "en" : "es";
-  const messages = Array.isArray(body.messages) ? body.messages.slice(-12).filter(message => (message.role === "user" || message.role === "assistant") && typeof message.content === "string").map(message => ({ role: message.role, content: message.content.slice(0, 2400) })) : [];
-  if (!messages.some(message => message.role === "user")) {
+  const rawMessages = Array.isArray(body.messages) ? body.messages.slice(-12).filter(message => (message.role === "user" || message.role === "assistant") && typeof message.content === "string").map(message => ({ role: message.role, content: message.content.slice(0, 2400) })) : [];
+  if (!rawMessages.some(message => message.role === "user")) {
     return Response.json({
       error: languageHint === "en" ? "Write a question for IRIS." : "Escribe una pregunta para IRIS.",
     }, { status: 400 });
@@ -52,8 +52,13 @@ export async function POST(request: Request) {
 
   const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
   const language = preferences.language === "en" ? "en" : "es";
+  // Guardian revisa toda la conversación: el último mensaje del usuario
+  // bloquea; los mensajes anteriores marcados se quitan antes del modelo.
+  const conversation = guardConversation(rawMessages, language);
+  const messages = conversation.messages;
+  const guardian = conversation.finding;
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
-  const guardian = detectPromptInjection(lastUser, language);
+  if (conversation.dropped) await logAudit(user.email, "GUARDIAN_HISTORY_DROPPED", "security_context", "DENIED", { dropped: conversation.dropped });
   if (guardian.blocked) {
     await logAudit(user.email, "ASK_IRIS_GUARDIAN_BLOCKED", "security_context", "DENIED", { code: guardian.code });
     await recordAskObs(user.email, "guardian_block", 1, guardian.code);

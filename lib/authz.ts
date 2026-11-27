@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditEvents, users } from "../db/schema";
 import type { ChatGPTUser } from "../app/chatgpt-auth";
@@ -29,6 +29,8 @@ export async function findIrisUser(identity: ChatGPTUser) {
   return existing || null;
 }
 
+const AUDIT_APPEND_ATTEMPTS = 5;
+
 export async function logAudit(
   actorEmail: string,
   action: string,
@@ -39,8 +41,49 @@ export async function logAudit(
 ) {
   const db = getDb();
   const normalizedMetadata = JSON.stringify(metadata);
+  // La cadena de hashes se bifurcaba si dos peticiones leían el mismo último
+  // evento antes de insertar. D1 no tiene transacciones interactivas, así que
+  // el INSERT solo se aplica si el último hash sigue siendo el que leímos
+  // (una sola sentencia SQLite, atómica). Si otro evento entró antes, se
+  // vuelve a leer y a calcular.
+  for (let attempt = 0; attempt < AUDIT_APPEND_ATTEMPTS; attempt += 1) {
+    const [previous] = await db.select().from(auditEvents).orderBy(desc(auditEvents.id)).limit(1);
+    const previousHash = previous?.eventHash || "GENESIS";
+    const eventHash = await auditEventHash(previousHash, actorEmail, organizationId, action, resource, outcome, normalizedMetadata);
+    const result = await db.run(sql`
+      INSERT INTO audit_events (actor_email, organization_id, action, resource, outcome, metadata, previous_hash, event_hash)
+      SELECT ${actorEmail}, ${organizationId || null}, ${action}, ${resource}, ${outcome}, ${normalizedMetadata}, ${previousHash}, ${eventHash}
+      WHERE COALESCE((SELECT NULLIF(event_hash, '') FROM audit_events ORDER BY id DESC LIMIT 1), 'GENESIS') = ${previousHash}
+    `);
+    if (Number(result?.meta?.changes ?? 0) > 0) return;
+  }
+  // Con mucha contención, nunca se pierde un evento de auditoría: se inserta
+  // igualmente y queda marcado para que la verificación lo explique.
   const [previous] = await db.select().from(auditEvents).orderBy(desc(auditEvents.id)).limit(1);
   const previousHash = previous?.eventHash || "GENESIS";
+  const contendedMetadata = JSON.stringify({ ...metadata, auditChainContended: true });
+  const eventHash = await auditEventHash(previousHash, actorEmail, organizationId, action, resource, outcome, contendedMetadata);
+  await db.insert(auditEvents).values({
+    actorEmail,
+    organizationId: organizationId || null,
+    action,
+    resource,
+    outcome,
+    metadata: contendedMetadata,
+    previousHash,
+    eventHash,
+  });
+}
+
+export async function auditEventHash(
+  previousHash: string,
+  actorEmail: string,
+  organizationId: string | null | undefined,
+  action: string,
+  resource: string,
+  outcome: "SUCCESS" | "DENIED",
+  metadata: string,
+): Promise<string> {
   const material = JSON.stringify({
     previousHash,
     actorEmail,
@@ -48,20 +91,10 @@ export async function logAudit(
     action,
     resource,
     outcome,
-    metadata: normalizedMetadata,
+    metadata,
   });
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
-  const eventHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-  await db.insert(auditEvents).values({
-    actorEmail,
-    organizationId: organizationId || null,
-    action,
-    resource,
-    outcome,
-    metadata: normalizedMetadata,
-    previousHash,
-    eventHash,
-  });
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function listRecentAudit(actorEmail: string, role: IrisRole, limit = 20) {

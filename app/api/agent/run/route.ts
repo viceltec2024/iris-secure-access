@@ -4,7 +4,7 @@ import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { IRIS_AGENT_TOOLS, runIrisTool, type IrisAgentStep } from "../../../../lib/iris-agent";
 import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
-import { detectPromptInjection } from "../../../../lib/iris-guardian";
+import { detectPromptInjection, guardConversation } from "../../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
 import { routeIrisTextRequest } from "../../../../lib/iris-model-router";
 
@@ -45,14 +45,19 @@ export async function POST(request: Request) {
 
   const preferences = body.context && typeof body.context === "object" ? body.context as { language?: unknown; section?: unknown; incident?: unknown } : {};
   const language = body.language === "en" || preferences.language === "en" ? "en" : "es";
-  const messages = Array.isArray(body.messages)
+  const rawMessages = Array.isArray(body.messages)
     ? body.messages.slice(-12).filter(message => (message.role === "user" || message.role === "assistant") && typeof message.content === "string").map(message => ({ role: message.role, content: message.content.slice(0, 3000) }))
     : [];
-  if (!messages.some(message => message.role === "user")) return Response.json({ error: language === "es" ? "Escribe una pregunta para IRIS." : "Write a request for IRIS." }, { status: 400 });
+  if (!rawMessages.some(message => message.role === "user")) return Response.json({ error: language === "es" ? "Escribe una pregunta para IRIS." : "Write a request for IRIS." }, { status: 400 });
 
   const bindings = env as unknown as Record<string, string | undefined>;
+  // Guardian revisa toda la conversación: el último mensaje del usuario
+  // bloquea; los mensajes anteriores marcados se quitan antes del modelo.
+  const conversation = guardConversation(rawMessages, language);
+  const messages = conversation.messages;
+  const guardian = conversation.finding;
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
-  const guardian = detectPromptInjection(lastUser, language);
+  if (conversation.dropped) await logAudit(user.email, "GUARDIAN_HISTORY_DROPPED", "agent", "DENIED", { dropped: conversation.dropped });
   if (guardian.blocked) {
     await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: guardian.code });
     return Response.json({
@@ -146,7 +151,7 @@ For general knowledge (science, history, people, places), call lookup_wikipedia 
         return Response.json({ answer: answer || (language === "es" ? "IRIS terminó el análisis." : "IRIS completed the analysis."), source: "agent", steps });
       }
 
-      const modelStream = detectPromptInjection(JSON.stringify(payload.output || []).slice(0, 8000), language);
+      const modelStream = detectPromptInjection(JSON.stringify(payload.output || []), language);
       if (modelStream.blocked) {
         await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: modelStream.code, phase: "model_output" });
         return Response.json({
@@ -175,7 +180,7 @@ For general knowledge (science, history, people, places), call lookup_wikipedia 
         }
         try {
           const result = await runIrisTool({ email: user.email, role: user.role as "ADMIN" | "USER" }, call.name, call.arguments || "{}");
-          const resultGuard = detectPromptInjection(JSON.stringify(result).slice(0, 8000), language);
+          const resultGuard = detectPromptInjection(JSON.stringify(result), language);
           if (resultGuard.blocked) {
             steps.push({ tool: call.name, arguments: { blocked: resultGuard.code }, ok: false });
             input.push({
