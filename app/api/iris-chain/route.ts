@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { irisChainBlocks, irisChainTransactions } from "../../../db/schema";
@@ -67,17 +67,31 @@ export async function POST(request: Request) {
     const previousHash = latest?.hash || "0".repeat(64);
     const hash = await sha256(JSON.stringify({ height, previousHash, merkleRoot, validator, createdAt }));
     // D1 no admite transacciones interactivas (db.transaction falla en
-    // producción). db.batch ejecuta las sentencias de forma atómica: si otro
-    // administrador selló el mismo height a la vez, el INSERT choca con la
-    // clave primaria y no se confirma ninguna transacción.
+    // producción). db.batch ejecuta las sentencias de forma atómica y revierte
+    // todo si una falla. Primero se confirman las transacciones pendientes
+    // (solo las que siguen sin bloque) y al final se inserta el bloque solo si
+    // se confirmaron TODAS y el bloque anterior sigue siendo height - 1. Si
+    // otro sellado se cruzó, el hash queda NULL, falla la restricción NOT NULL
+    // y se revierte el lote: nunca se guarda un bloque vacío ni desalineado.
     const confirmations = pending.map(transaction => db.update(irisChainTransactions)
       .set({ blockHeight: height, status: "CONFIRMED" })
       .where(and(eq(irisChainTransactions.id, transaction.id), isNull(irisChainTransactions.blockHeight))));
+    const sealBlock = db.run(sql`
+      INSERT INTO iris_chain_blocks (height, hash, previous_hash, merkle_root, transaction_count, validator, created_at)
+      VALUES (
+        ${height},
+        CASE
+          WHEN (SELECT COUNT(*) FROM iris_chain_transactions WHERE block_height = ${height}) = ${pending.length}
+           AND COALESCE((SELECT MAX(height) FROM iris_chain_blocks), -1) = ${height - 1}
+          THEN ${hash}
+          ELSE NULL
+        END,
+        ${previousHash}, ${merkleRoot}, ${pending.length}, ${validator}, ${createdAt}
+      )
+    `);
     try {
-      await db.batch([
-        db.insert(irisChainBlocks).values({ height, hash, previousHash, merkleRoot, transactionCount: pending.length, validator, createdAt }),
-        ...confirmations,
-      ]);
+      const [first, ...rest] = confirmations;
+      await db.batch([first, ...rest, sealBlock]);
     } catch {
       return Response.json({ error: "Otro bloque se selló al mismo tiempo. Vuelve a intentarlo." }, { status: 409 });
     }

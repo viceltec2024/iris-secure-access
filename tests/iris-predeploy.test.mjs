@@ -42,7 +42,10 @@ test("worker strips untrusted identity headers before routing", () => {
 test("IRIS Chain seals blocks with an atomic D1 batch, not db.transaction", () => {
   const route = read("app/api/iris-chain/route.ts");
   assert.doesNotMatch(route, /db\.transaction\(/);
-  assert.match(route, /await db\.batch\(\[/);
+  assert.match(route, /await db\.batch\(\[first, \.\.\.rest, sealBlock\]\)/);
+  // El bloque se inserta al final y solo si se confirmaron todas las pendientes.
+  assert.match(route, /WHERE block_height = \$\{height\}\) = \$\{pending\.length\}/);
+  assert.match(route, /ELSE NULL/);
   assert.match(route, /isNull\(irisChainTransactions\.blockHeight\)\)\)/);
   assert.match(route, /status: 409/);
 });
