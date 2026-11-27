@@ -292,11 +292,19 @@ export function newQuarantine(track: ActorTrack, now = Date.now()): Quarantine {
   };
 }
 
+/** "02:25 UTC": legible en texto y en voz, sin depender de la zona del servidor. */
+export function quarantineUntilLabel(until: string): string {
+  const at = Date.parse(until);
+  if (!Number.isFinite(at)) return until;
+  return `${new Date(at).toISOString().slice(11, 16)} UTC`;
+}
+
 export function quarantineBody(quarantine: Quarantine, language: "es" | "en" = "es") {
+  const label = quarantineUntilLabel(quarantine.until);
   return {
     error: language === "en"
-      ? `Guardian paused AI features for this account after repeated attacks, until ${quarantine.until}. An administrator was notified.`
-      : `Guardian pausó las funciones de IA de esta cuenta tras ataques repetidos, hasta ${quarantine.until}. Se avisó al administrador.`,
+      ? `Guardian paused AI features for this account after repeated attacks, until ${label} (about 15 minutes). An administrator was notified.`
+      : `Guardian pausó las funciones de IA de esta cuenta tras ataques repetidos, hasta las ${label} (unos 15 minutos). Se avisó al administrador.`,
     code: "guardian_quarantine",
     until: quarantine.until,
   };

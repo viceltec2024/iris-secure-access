@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { decodedPayloads, detectAttackSignals, detectPromptInjection } from "../lib/iris-guardian.ts";
 import {
+  quarantineBody,
   assessPosture,
   auditTimestamp,
   buildThreatReport,
@@ -232,4 +233,10 @@ test("solo un administrador puede levantar cuarentenas o suspender, y Guardian n
   assert.match(source, /if \(user\.role !== "ADMIN"\)/);
   assert.match(source, /updateUserAccess\(/);
   assert.doesNotMatch(read("lib/iris-threats.ts"), /\.delete\(users\)|\.delete\(devices\)|status: "SUSPENDED"/);
+});
+
+test("el aviso de cuarentena da una hora legible, no un sello ISO", () => {
+  const body = quarantineBody({ email: "m@x.test", until: "2026-11-27T02:25:09.836Z", reason: "", count: 3, createdAt: "" });
+  assert.match(body.error, /hasta las 02:25 UTC \(unos 15 minutos\)/);
+  assert.doesNotMatch(body.error, /T02:25:09/);
 });
