@@ -7,6 +7,7 @@ import { guardConversation } from "../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../lib/iris-muse";
 import { recordOrgObs } from "../../../lib/iris-obs-store";
 import { requireOrgContext } from "../../../lib/iris-tenant";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
   if (user.status !== "ACTIVE") {
     return Response.json({ error: "El acceso a IRIS está suspendido." }, { status: 403 });
   }
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   if (!(await enforceRateLimit(`ask-iris:${user.email}`, 60, 60 * 1000))) {
     await logAudit(user.email, "ASK_IRIS_ANALYSIS", "security_context", "DENIED", { reason: "rate_limited" });

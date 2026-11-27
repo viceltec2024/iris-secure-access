@@ -33,6 +33,7 @@ import { loadOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store"
 import type { IrisPlanId } from "../../../lib/iris-plans";
 import { requireOrgContext } from "../../../lib/iris-tenant";
 import { assertOrgWithinLimits, recordUsageEvent } from "../../../lib/iris-usage";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,8 @@ function deskPayload(state: CreatorDeskState, language: "es" | "en" = "es") {
 export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const language = new URL(request.url).searchParams.get("language") === "en" ? "en" : "es";
   const ctx = await requireOrgContext(user.email);
   const loaded = await loadOrgDeskValue({ kind: "creator", organizationId: ctx.organization.id, email: user.email });
@@ -113,6 +116,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   if (!(await enforceRateLimit(`iris-creator:${user.email}`, 40, 60 * 1000))) {
     await logAudit(user.email, "IRIS_CREATOR", "creator", "DENIED", { reason: "rate_limited" });

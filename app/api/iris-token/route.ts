@@ -4,6 +4,7 @@ import { getDb } from "../../../db";
 import { appSettings } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
 import { deploymentFromReceipt } from "../../../lib/iris-token-deploy";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 const CONTRACT_KEY = "iris_token_base_mainnet_contract";
 const BASE_RPC = "https://mainnet.base.org";
@@ -29,6 +30,8 @@ async function rpc(method: string, params: unknown[]) {
 export async function GET() {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const [setting] = await getDb().select().from(appSettings).where(eq(appSettings.key, CONTRACT_KEY)).limit(1);
   return Response.json({
     address: setting?.value || null,
@@ -44,6 +47,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   if (user.role !== "ADMIN") return Response.json({ error: "Administrator approval required" }, { status: 403 });
 
   const body = await request.json().catch(() => ({})) as { address?: string; transactionHash?: string };

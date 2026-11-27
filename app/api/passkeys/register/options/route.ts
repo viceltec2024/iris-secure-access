@@ -1,14 +1,22 @@
 import { generateRegistrationOptions } from "@simplewebauthn/server";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
-import { provisionIrisUser } from "../../../../../lib/authz";
+import { logAudit, provisionIrisUser } from "../../../../../lib/authz";
 import { PASSKEY_RP_NAME, parsePasskeyTransports, passkeysFor, stableUserId, storeChallenge } from "../../../../../lib/passkeys";
 import { passkeyRelyingParty } from "../../../../../lib/iris-origin";
 import { enforceRateLimit } from "../../../../../lib/rate-limit";
+import { requireFactorEnrollment, suspendedResponse } from "../../../../../lib/iris-step-up";
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
   if (!identity) return Response.json({ error: "Authentication required" }, { status: 401 });
   const user = await provisionIrisUser(identity);
+  const suspended = suspendedResponse(user.status);
+  if (suspended) return suspended;
+  const enrollment = await requireFactorEnrollment(user.email);
+  if (enrollment) {
+    await logAudit(user.email, "STEP_UP_FACTOR_ENROLLMENT", "step_up_access", "DENIED", { reason: "existing_factor_not_verified" });
+    return enrollment;
+  }
 
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
   if (!(await enforceRateLimit(`passkey-register-options:${ip}`, 10, 10 * 60 * 1000))) {

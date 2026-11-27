@@ -15,6 +15,7 @@ import {
   rejectProposal,
   type PurchaseDeskState,
 } from "../../../lib/iris-purchases";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,8 @@ async function irisTokenAddress() {
 export async function GET() {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const { key, state } = await loadDesk(user.email);
   const next = materializeDueProposals(state, await irisTokenAddress());
   if (JSON.stringify(next) !== JSON.stringify(state)) await saveDesk(user.email, key, next);
@@ -57,6 +60,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   const body = await request.json().catch(() => ({})) as {
     action?: string;

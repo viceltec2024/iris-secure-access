@@ -16,6 +16,7 @@ import type { IrisPlanId } from "../../../lib/iris-plans";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { requireOrgContext } from "../../../lib/iris-tenant";
 import { assertOrgWithinLimits, recordUsageEvent } from "../../../lib/iris-usage";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,8 @@ async function appendOrgMemory(input: {
 export async function GET() {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const ctx = await requireOrgContext(user.email);
   const loaded = await loadOrgDeskValue({ kind: "mission", organizationId: ctx.organization.id, email: user.email });
   const desk = loaded.value ? parseMissionDesk(loaded.value) : emptyMissionDesk();
@@ -79,6 +82,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   if (!(await enforceRateLimit(`iris-mission:${user.email}`, 30, 60 * 1000))) {
     await logAudit(user.email, "IRIS_MISSION", "mission", "DENIED", { reason: "rate_limited" });

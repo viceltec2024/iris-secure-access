@@ -7,6 +7,7 @@ import { parseAskIncident, resolveIrisAsk } from "../../../../lib/iris-ask";
 import { detectPromptInjection, guardConversation } from "../../../../lib/iris-guardian";
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
 import { routeIrisTextRequest } from "../../../../lib/iris-model-router";
+import { requireStepUp } from "../../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
   if (!identity) return Response.json({ error: "Your IRIS session has expired. Sign in again." }, { status: 401 });
   const user = await provisionIrisUser(identity);
   if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   if (!(await enforceRateLimit(`iris-agent:${user.email}`, 12, 60 * 1000))) {
     await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "DENIED", { reason: "rate_limited" });

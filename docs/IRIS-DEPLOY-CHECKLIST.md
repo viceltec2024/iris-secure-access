@@ -34,6 +34,9 @@ de forma automática.
       en `/api/security-state`. Mejor aún: desactiva la ruta
       `workers.dev` del Worker si Sites no la necesita.
 - [ ] Tu usuario aparece como ADMIN en `/admin/users`.
+- [ ] Con una passkey o contraseña inscrita, en una ventana nueva (sin la
+      cookie `iris_biometric_session`) `GET /api/security-state` devuelve
+      **403** con `code: "step_up_required"`, y tras verificar devuelve 200.
 - [ ] `GET /api/iris-providers/status?probe=1` muestra `liveVerified` para
       cada proveedor que anuncies. Una clave configurada no es una
       integración probada.

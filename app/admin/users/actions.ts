@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireChatGPTUser } from "../../chatgpt-auth";
 import { provisionIrisUser, updateUserAccess } from "../../../lib/authz";
+import { stepUpState } from "../../../lib/iris-step-up";
+import { stepUpSatisfied } from "../../../lib/iris-step-up-core";
 
 export type AccessActionState = { ok: boolean; message: string };
 
@@ -10,6 +12,8 @@ export async function changeUserAccess(_previous: AccessActionState, formData: F
   try {
     const identity = await requireChatGPTUser("/admin/users");
     const actor = await provisionIrisUser(identity);
+    if (actor.status !== "ACTIVE") throw new Error("El acceso a IRIS está suspendido.");
+    if (!stepUpSatisfied(await stepUpState(actor.email))) throw new Error("Verifica tu identidad en IRIS (clave de acceso o contraseña) para continuar.");
     const targetEmail = String(formData.get("targetEmail") || "");
     const role = String(formData.get("role") || "USER");
     const status = String(formData.get("status") || "ACTIVE");

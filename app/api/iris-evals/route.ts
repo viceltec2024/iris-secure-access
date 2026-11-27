@@ -13,6 +13,7 @@ import { loadOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store"
 import { readOrgObsSummary, recordOrgObs } from "../../../lib/iris-obs-store";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { requireOrgContext } from "../../../lib/iris-tenant";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ async function currentUser() {
 export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const language = new URL(request.url).searchParams.get("language") === "en" ? "en" : "es";
   const ctx = await requireOrgContext(user.email);
   const loaded = await loadOrgDeskValue({ kind: "memory", organizationId: ctx.organization.id, email: user.email });
@@ -42,6 +45,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   if (!(await enforceRateLimit(`iris-evals:${user.email}`, 20, 60 * 1000))) {
     await logAudit(user.email, "IRIS_EVALS", "evals", "DENIED", { reason: "rate_limited" });

@@ -1,5 +1,6 @@
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { provisionIrisUser } from "../../../lib/authz";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 const ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
 
@@ -17,6 +18,8 @@ export async function GET(request: Request) {
   if (!identity) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const user = await provisionIrisUser(identity);
   if (user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const address = new URL(request.url).searchParams.get("address") || "";
   if (!ADDRESS_PATTERN.test(address)) return Response.json({ error: "Invalid wallet address" }, { status: 400 });
 
