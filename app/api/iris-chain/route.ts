@@ -76,24 +76,33 @@ export async function POST(request: Request) {
     const confirmations = pending.map(transaction => db.update(irisChainTransactions)
       .set({ blockHeight: height, status: "CONFIRMED" })
       .where(and(eq(irisChainTransactions.id, transaction.id), isNull(irisChainTransactions.blockHeight))));
-    const sealBlock = db.run(sql`
-      INSERT INTO iris_chain_blocks (height, hash, previous_hash, merkle_root, transaction_count, validator, created_at)
-      VALUES (
-        ${height},
-        CASE
-          WHEN (SELECT COUNT(*) FROM iris_chain_transactions WHERE block_height = ${height}) = ${pending.length}
-           AND COALESCE((SELECT MAX(height) FROM iris_chain_blocks), -1) = ${height - 1}
-          THEN ${hash}
-          ELSE NULL
-        END,
-        ${previousHash}, ${merkleRoot}, ${pending.length}, ${validator}, ${createdAt}
-      )
-    `);
+    // Insert normal de Drizzle (no db.run con SQL crudo: el batch de D1 de
+    // Drizzle no puede enlazar parámetros de SQLiteRaw) con el hash condicional.
+    const sealBlock = db.insert(irisChainBlocks).values({
+      height,
+      hash: sql`CASE
+        WHEN (SELECT COUNT(*) FROM iris_chain_transactions WHERE block_height = ${height}) = ${pending.length}
+         AND COALESCE((SELECT MAX(height) FROM iris_chain_blocks), -1) = ${height - 1}
+        THEN ${hash}
+        ELSE NULL
+      END`,
+      previousHash,
+      merkleRoot,
+      transactionCount: pending.length,
+      validator,
+      createdAt,
+    });
     try {
       const [first, ...rest] = confirmations;
       await db.batch([first, ...rest, sealBlock]);
-    } catch {
-      return Response.json({ error: "Otro bloque se selló al mismo tiempo. Vuelve a intentarlo." }, { status: 409 });
+    } catch (error) {
+      // Solo un choque de restricciones significa que otro sellado se cruzó;
+      // cualquier otro error es un fallo real y no se disfraza de conflicto.
+      const message = error instanceof Error ? `${error.message} ${String((error as { cause?: unknown }).cause ?? "")}` : String(error);
+      if (/NOT NULL|UNIQUE|PRIMARY KEY|constraint/i.test(message)) {
+        return Response.json({ error: "Otro bloque se selló al mismo tiempo. Vuelve a intentarlo." }, { status: 409 });
+      }
+      throw error;
     }
     await logAudit(user.email, "IRIS_CHAIN_BLOCK_SEALED", String(height), "SUCCESS", { hash, transactionCount: pending.length });
     return Response.json({ block: { height, hash, previousHash, merkleRoot, transactionCount: pending.length, validator, createdAt } }, { status: 201 });

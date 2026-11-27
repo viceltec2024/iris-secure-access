@@ -48,6 +48,11 @@ test("IRIS Chain seals blocks with an atomic D1 batch, not db.transaction", () =
   assert.match(route, /ELSE NULL/);
   assert.match(route, /isNull\(irisChainTransactions\.blockHeight\)\)\)/);
   assert.match(route, /status: 409/);
+  // Drizzle's D1 batch cannot bind parameters of raw db.run(sql) statements.
+  assert.doesNotMatch(route, /db\.run\(/);
+  assert.match(route, /const sealBlock = db\.insert\(irisChainBlocks\)/);
+  assert.match(route, /NOT NULL\|UNIQUE\|PRIMARY KEY\|constraint/);
+  assert.match(route, /throw error;/);
 });
 
 test("generated build artifacts are ignored", () => {
