@@ -8,6 +8,7 @@ import { detectPromptInjection, guardConversation } from "../../../../lib/iris-g
 import { isEditAssistRequest, localMuseEditFallback, museApiKey, runMuseEditAgent } from "../../../../lib/iris-muse";
 import { routeIrisTextRequest } from "../../../../lib/iris-model-router";
 import { requireStepUp } from "../../../../lib/iris-step-up";
+import { afterGuardianBlock, requestIp, requireNotQuarantined } from "../../../../lib/iris-threats";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,8 @@ export async function POST(request: Request) {
   if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
   const stepUp = await requireStepUp(user.email);
   if (stepUp) return stepUp;
+  const quarantined = await requireNotQuarantined(user.email);
+  if (quarantined) return quarantined;
 
   if (!(await enforceRateLimit(`iris-agent:${user.email}`, 12, 60 * 1000))) {
     await logAudit(user.email, "IRIS_AGENT_RUN", "agent", "DENIED", { reason: "rate_limited" });
@@ -62,7 +65,8 @@ export async function POST(request: Request) {
   const lastUser = [...messages].reverse().find(message => message.role === "user")?.content || "";
   if (conversation.dropped) await logAudit(user.email, "GUARDIAN_HISTORY_DROPPED", "agent", "DENIED", { dropped: conversation.dropped });
   if (guardian.blocked) {
-    await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: guardian.code });
+    await logAudit(user.email, "IRIS_AGENT_GUARDIAN_BLOCKED", "agent", "DENIED", { code: guardian.code, ...(requestIp(request) ? { ip: requestIp(request) } : {}) });
+    await afterGuardianBlock(user.email);
     return Response.json({
       error: guardian.message,
       answer: guardian.message,

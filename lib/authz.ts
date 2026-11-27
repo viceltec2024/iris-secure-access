@@ -2,6 +2,9 @@ import { and, count, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditEvents, users } from "../db/schema";
 import type { ChatGPTUser } from "../app/chatgpt-auth";
+import { auditEventHash } from "./iris-audit-chain.ts";
+
+export { auditEventHash };
 
 export type IrisRole = "ADMIN" | "USER";
 
@@ -11,9 +14,12 @@ export async function provisionIrisUser(identity: ChatGPTUser) {
   const existing = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
 
   if (existing[0]) {
-    await db.update(users).set({ displayName: identity.fullName, lastSeenAt: new Date().toISOString() }).where(eq(users.email, normalizedEmail));
+    // Si ChatGPT no envía el nombre en esta petición, se conserva el guardado
+    // (antes se borraba y Ask IRIS dejaba de llamar al usuario por su nombre).
+    const displayName = identity.fullName || existing[0].displayName;
+    await db.update(users).set({ displayName, lastSeenAt: new Date().toISOString() }).where(eq(users.email, normalizedEmail));
     await logAudit(normalizedEmail, "SESSION_STARTED", "iris_workspace", "SUCCESS");
-    return { ...existing[0], displayName: identity.fullName, lastSeenAt: new Date().toISOString() };
+    return { ...existing[0], displayName, lastSeenAt: new Date().toISOString() };
   }
 
   const configuredOwner = String(process.env.IRIS_OWNER_EMAIL || "").trim().toLowerCase();
@@ -73,28 +79,6 @@ export async function logAudit(
     previousHash,
     eventHash,
   });
-}
-
-export async function auditEventHash(
-  previousHash: string,
-  actorEmail: string,
-  organizationId: string | null | undefined,
-  action: string,
-  resource: string,
-  outcome: "SUCCESS" | "DENIED",
-  metadata: string,
-): Promise<string> {
-  const material = JSON.stringify({
-    previousHash,
-    actorEmail,
-    organizationId: organizationId || null,
-    action,
-    resource,
-    outcome,
-    metadata,
-  });
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function listRecentAudit(actorEmail: string, role: IrisRole, limit = 20) {

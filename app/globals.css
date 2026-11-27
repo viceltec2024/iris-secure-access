@@ -663,3 +663,57 @@ a { color: inherit; }
   .market-stage,.market-search,.market-readouts{grid-template-columns:1fr}
   .market-live-clock{align-items:flex-end}
 }
+
+/* Guardian · ataques en tiempo real */
+.guardian-panel{display:flex;flex-direction:column;gap:12px;padding:0 22px 22px}
+.guardian-status{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid #1d3b50;border-radius:8px;background:#071522}
+.guardian-status svg{width:28px;height:28px;color:#7fe0ff;flex:none}
+.guardian-status.watch svg{color:#ffc857}
+.guardian-status.under_attack{border-color:#7a2633;background:#1a0b12}
+.guardian-status.under_attack svg{color:#ff5c6c}
+.guardian-status div{display:flex;flex-direction:column;gap:3px;flex:1}
+.guardian-status strong{font-size:15px;color:#ecf8ff}
+.guardian-status span{font-size:10px;color:#7f96a8;display:flex;align-items:center;gap:5px}
+.guardian-status button,.guardian-actions button{min-height:32px;padding:0 12px;border:1px solid #29465b;border-radius:7px;background:#0b2233;color:#cfeaf8;font-size:10px;font-weight:700;cursor:pointer}
+.guardian-actions button.danger{border-color:#7a2633;color:#ffb3bb;background:#220d14}
+.guardian-actions button:disabled{opacity:.5;cursor:wait}
+.guardian-live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#3ddc97;box-shadow:0 0 0 0 rgba(61,220,151,.6);animation:guardian-pulse 1.6s infinite}
+@keyframes guardian-pulse{0%{box-shadow:0 0 0 0 rgba(61,220,151,.6)}70%{box-shadow:0 0 0 7px rgba(61,220,151,0)}100%{box-shadow:0 0 0 0 rgba(61,220,151,0)}}
+@media (prefers-reduced-motion:reduce){.guardian-live-dot{animation:none}}
+.guardian-error,.guardian-notice{margin:0;padding:10px 12px;border-radius:7px;font-size:11px}
+.guardian-error{background:#220d14;color:#ffb3bb;display:flex;gap:6px;align-items:center}
+.guardian-notice{background:#0b2233;color:#cfeaf8}
+.guardian-report{padding:14px;border:1px solid #1d3b50;border-radius:8px;background:#081a29}
+.guardian-report h2{margin:0 0 6px;font-size:12px;color:#7fe0ff;letter-spacing:.04em}
+.guardian-report p{margin:0;font-size:13px;line-height:1.55;color:#ecf8ff}
+.guardian-report ul{margin:8px 0 0;padding-left:18px;font-size:12px;color:#cfeaf8}
+.guardian-report small{display:block;margin-top:8px;font-size:10px;color:#7f96a8}
+.guardian-counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.guardian-counts article{padding:10px 12px;border:1px solid #1d3b50;border-radius:8px;background:#081a29}
+.guardian-counts span{display:block;color:#7f96a8;font-size:8px;letter-spacing:.08em;text-transform:uppercase}
+.guardian-counts strong{display:block;margin-top:4px;font-size:20px;color:#7fe0ff}
+.guardian-counts .sev-critical strong,.guardian-counts .sev-high strong{color:#ff7a87}
+.guardian-counts .sev-medium strong{color:#ffc857}
+.guardian-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.7fr);gap:14px}
+.guardian-feed,.guardian-side article{padding:14px;border:1px solid #1d3b50;border-radius:8px;background:#071522}
+.guardian-side{display:flex;flex-direction:column;gap:14px}
+.guardian-panel h3{margin:0 0 10px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#6f879a}
+.guardian-feed ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:560px;overflow:auto}
+.guardian-feed li,.guardian-actor,.guardian-finding{padding:10px 12px;border-left:3px solid #29465b;border-radius:6px;background:#081a29}
+.guardian-feed li div{display:flex;justify-content:space-between;gap:8px}
+.guardian-feed li b{font-size:12px;color:#ecf8ff}
+.guardian-feed time{font-size:10px;color:#7f96a8;white-space:nowrap}
+.guardian-feed p,.guardian-finding p{margin:4px 0;font-size:11px;line-height:1.5;color:#cfeaf8}
+.guardian-feed small,.guardian-finding small{display:block;font-size:10px;color:#9fb6c7}
+.guardian-meta{margin-top:4px;color:#5f788b!important;font-family:ui-monospace,monospace;font-size:9px!important}
+.guardian-actor{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.guardian-actor strong,.guardian-finding strong{font-size:12px;color:#ecf8ff}
+.guardian-actor span{font-size:10px;color:#9fb6c7}
+.guardian-tag{color:#ffc857!important;font-weight:700}
+.guardian-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.guardian-empty{margin:0;font-size:11px;color:#7f96a8}
+.sev-critical{border-left-color:#ff3b52!important}
+.sev-high{border-left-color:#ff7a87!important}
+.sev-medium{border-left-color:#ffc857!important}
+.sev-low{border-left-color:#3d8fb8!important}
+@media (max-width:900px){.guardian-grid{grid-template-columns:1fr}.guardian-counts{grid-template-columns:repeat(3,minmax(0,1fr))}}

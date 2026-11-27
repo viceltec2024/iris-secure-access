@@ -8,8 +8,9 @@ import { authorizeTool, defaultToolsForAgent, type ToolAclDecision } from "./iri
 import { queueStats, type JobQueueState } from "./iris-job-queue.ts";
 import type { CreatorDeskState } from "./iris-creator.ts";
 import type { MissionDesk } from "./iris-mission.ts";
+import { isThreatQuestion } from "./iris-threats-core.ts";
 
-export type CoordinatorTaskKind = "ask" | "edit" | "voice" | "mission" | "creator" | "probe";
+export type CoordinatorTaskKind = "ask" | "edit" | "voice" | "mission" | "creator" | "probe" | "guardian";
 
 export type CoordinatorDecision = {
   task: CoordinatorTaskKind;
@@ -48,6 +49,9 @@ export type CoordinatorSnapshot = {
 
 export function classifyCoordinatorTask(question: string): CoordinatorTaskKind {
   const text = question.trim();
+  // Ataques, amenazas y vulnerabilidades de IRIS: los lleva Guardian, que
+  // responde con el registro real de auditoría.
+  if (isThreatQuestion(text)) return "guardian";
   if (/\b(voz|habla|speak|tts|elevenlabs)\b/i.test(text)) return "voice";
   if (/\b(misi[oó]n|mission|objetivo)\b/i.test(text)) return "mission";
   if (/\b(crea(?:r)?|create).{0,40}\b(agente|agent)\b/i.test(text)) return "creator";
@@ -106,6 +110,12 @@ export function decideCoordinatorTask(input: {
       humanApproved: input.humanApproved,
     });
     notes.push("Creator diseña + Guardian; activación solo con aprobación humana.");
+  } else if (task === "guardian") {
+    tool = authorizeTool({
+      tool: "threat_ledger",
+      allowedTools: [...defaultToolsForAgent(), "threat_ledger"],
+    });
+    notes.push("Guardian responde con eventos reales de auditoría; contiene y avisa al administrador, no borra ni cambia nada por su cuenta.");
   } else {
     tool = authorizeTool({
       tool: "provider_status",
