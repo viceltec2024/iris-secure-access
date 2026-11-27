@@ -1,4 +1,4 @@
-import { asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { irisChainBlocks, irisChainTransactions } from "../../../db/schema";
@@ -66,10 +66,44 @@ export async function POST(request: Request) {
     const validator = user.email;
     const previousHash = latest?.hash || "0".repeat(64);
     const hash = await sha256(JSON.stringify({ height, previousHash, merkleRoot, validator, createdAt }));
-    await db.transaction(async tx => {
-      await tx.insert(irisChainBlocks).values({ height, hash, previousHash, merkleRoot, transactionCount: pending.length, validator, createdAt });
-      for (const transaction of pending) await tx.update(irisChainTransactions).set({ blockHeight: height, status: "CONFIRMED" }).where(eq(irisChainTransactions.id, transaction.id));
+    // D1 no admite transacciones interactivas (db.transaction falla en
+    // producción). db.batch ejecuta las sentencias de forma atómica y revierte
+    // todo si una falla. Primero se confirman las transacciones pendientes
+    // (solo las que siguen sin bloque) y al final se inserta el bloque solo si
+    // se confirmaron TODAS y el bloque anterior sigue siendo height - 1. Si
+    // otro sellado se cruzó, el hash queda NULL, falla la restricción NOT NULL
+    // y se revierte el lote: nunca se guarda un bloque vacío ni desalineado.
+    const confirmations = pending.map(transaction => db.update(irisChainTransactions)
+      .set({ blockHeight: height, status: "CONFIRMED" })
+      .where(and(eq(irisChainTransactions.id, transaction.id), isNull(irisChainTransactions.blockHeight))));
+    // Insert normal de Drizzle (no db.run con SQL crudo: el batch de D1 de
+    // Drizzle no puede enlazar parámetros de SQLiteRaw) con el hash condicional.
+    const sealBlock = db.insert(irisChainBlocks).values({
+      height,
+      hash: sql`CASE
+        WHEN (SELECT COUNT(*) FROM iris_chain_transactions WHERE block_height = ${height}) = ${pending.length}
+         AND COALESCE((SELECT MAX(height) FROM iris_chain_blocks), -1) = ${height - 1}
+        THEN ${hash}
+        ELSE NULL
+      END`,
+      previousHash,
+      merkleRoot,
+      transactionCount: pending.length,
+      validator,
+      createdAt,
     });
+    try {
+      const [first, ...rest] = confirmations;
+      await db.batch([first, ...rest, sealBlock]);
+    } catch (error) {
+      // Solo un choque de restricciones significa que otro sellado se cruzó;
+      // cualquier otro error es un fallo real y no se disfraza de conflicto.
+      const message = error instanceof Error ? `${error.message} ${String((error as { cause?: unknown }).cause ?? "")}` : String(error);
+      if (/NOT NULL|UNIQUE|PRIMARY KEY|constraint/i.test(message)) {
+        return Response.json({ error: "Otro bloque se selló al mismo tiempo. Vuelve a intentarlo." }, { status: 409 });
+      }
+      throw error;
+    }
     await logAudit(user.email, "IRIS_CHAIN_BLOCK_SEALED", String(height), "SUCCESS", { hash, transactionCount: pending.length });
     return Response.json({ block: { height, hash, previousHash, merkleRoot, transactionCount: pending.length, validator, createdAt } }, { status: 201 });
   }
