@@ -14,6 +14,7 @@ export const IRIS_TOOLS = [
   "memory_read",
   "memory_append",
   "provider_status",
+  "threat_ledger",
 ] as const;
 
 export type IrisToolId = (typeof IRIS_TOOLS)[number];

@@ -40,6 +40,18 @@ const INJECTION_PATTERNS: Array<{ code: string; re: RegExp; messageEs: string; m
     messageEs: "Guardian bloqueó patrones de shell o escape.",
     messageEn: "Guardian blocked shell/escape patterns.",
   },
+  {
+    code: "PROMPT_LEAK",
+    re: /\b(reveal|show|print|repeat|muestra(?:me)?|ense[nñ]a(?:me)?|revela(?:me)?|repite|copia)\b[\s\S]{0,40}\b(system prompt|prompt (?:de|del) sistema|instrucciones (?:del sistema|ocultas|internas)|hidden instructions|your instructions|tus instrucciones)\b/i,
+    messageEs: "Guardian bloqueó un intento de extraer las instrucciones internas de IRIS.",
+    messageEn: "Guardian blocked an attempt to extract IRIS's internal instructions.",
+  },
+  {
+    code: "SSRF_METADATA",
+    re: /(169\.254\.169\.254|metadata\.google\.internal|fd00:ec2::254|\/latest\/meta-data|100\.100\.100\.200)/i,
+    messageEs: "Guardian bloqueó un intento de alcanzar servicios internos de metadatos.",
+    messageEn: "Guardian blocked an attempt to reach internal metadata services.",
+  },
 ];
 
 /**
@@ -68,6 +80,7 @@ const SQUASHED_PATTERNS: Array<{ code: string; re: RegExp }> = [
   { code: "ROLE_HIJACK", re: /(youarenow|actas|pretendtobe|eresahora)(unrestricted|root|admin|sinlimites|jailbreak)/ },
   { code: "SECRET_EXFIL", re: /(exfiltrat|dump|filtra|revela|print)(apikey|secret|password|token|credential|env)/ },
   { code: "CORE_MUTATION", re: /(selfmodify|modificaelnucleo|rewritecore|patchmain|gitpush)/ },
+  { code: "PROMPT_LEAK", re: /(reveal|show|print|repeat|muestra|muestrame|revela|repite)(thesystemprompt|systemprompt|elpromptdelsistema|promptdelsistema|tusinstrucciones|yourinstructions)/ },
 ];
 
 // Tamaño máximo absoluto de entrada que Guardian procesará (protege contra
@@ -159,7 +172,76 @@ export function detectPromptInjection(text: string, language: "es" | "en" = "es"
   const squashedFull = normalizeForGuardian(full).replace(/[^a-z0-9]/g, "");
   const squashedFinding = scanSquashed(squashedFull, language);
   if (squashedFinding) return squashedFinding;
+  // Una orden escondida en base64 o en %xx tampoco pasa: se decodifica un
+  // nivel y se analiza con los mismos patrones.
+  for (const decoded of decodedPayloads(full)) {
+    const finding = scanWindow(decoded, language) || scanSquashed(normalizeForGuardian(decoded).replace(/[^a-z0-9]/g, ""), language);
+    if (finding) {
+      return {
+        blocked: true,
+        code: `${finding.code.replace(/_PARAPHRASE$/, "")}_ENCODED`,
+        message: language === "es"
+          ? `${finding.message} (venía codificado).`
+          : `${finding.message} (it was encoded).`,
+      };
+    }
+  }
   return { blocked: false, code: "CLEAN", message: "" };
+}
+
+const MAX_DECODED_SEGMENTS = 20;
+
+/** Segmentos base64 (≥ 24 caracteres) y texto con %xx, decodificados un nivel. */
+export function decodedPayloads(text: string): string[] {
+  const out: string[] = [];
+  for (const match of text.matchAll(/[A-Za-z0-9+/_-]{24,}={0,2}/g)) {
+    if (out.length >= MAX_DECODED_SEGMENTS) break;
+    const decoded = tryBase64(match[0]);
+    if (decoded) out.push(decoded);
+  }
+  if (/%[0-9a-f]{2}/i.test(text)) {
+    try {
+      const decoded = decodeURIComponent(text.replace(/%(?![0-9a-f]{2})/gi, "%25"));
+      if (decoded !== text) out.push(decoded);
+    } catch {
+      // %xx inválido: no hay nada que decodificar
+    }
+  }
+  return out;
+}
+
+function tryBase64(segment: string): string | null {
+  try {
+    const normalized = segment.replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
+    const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    // Solo texto legible: evita tratar hashes o binarios como instrucciones.
+    const printable = decoded.replace(/[^\x20-\x7e\u00a0-\u024f\s]/g, "");
+    return printable.length >= decoded.length * 0.9 && /[a-z]{3,}\s+[a-z]{3,}/i.test(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+export type AttackSignal = { code: string; severity: "low" | "medium" | "high"; label: string };
+
+const ATTACK_SIGNALS: Array<{ code: string; severity: AttackSignal["severity"]; re: RegExp; labelEs: string; labelEn: string }> = [
+  { code: "SQL_INJECTION_PROBE", severity: "medium", re: /('|")\s*(or|and)\s*('?\d+'?\s*=\s*'?\d+|'[^']*'\s*=\s*')|\bunion\s+(all\s+)?select\b|;\s*drop\s+table\b/i, labelEs: "sonda de inyección SQL", labelEn: "SQL injection probe" },
+  { code: "XSS_PROBE", severity: "medium", re: /<\s*script\b|javascript\s*:|\bon(error|load|mouseover)\s*=|<\s*iframe\b/i, labelEs: "sonda de XSS", labelEn: "XSS probe" },
+  { code: "PATH_TRAVERSAL_PROBE", severity: "medium", re: /(\.\.[/\\]){2,}|\/etc\/(passwd|shadow)\b|%2e%2e%2f/i, labelEs: "intento de recorrer rutas del servidor", labelEn: "path traversal attempt" },
+  { code: "TEMPLATE_INJECTION_PROBE", severity: "low", re: /\{\{\s*[^}]*(constructor|__proto__|process|require)\b|\$\{\s*jndi:/i, labelEs: "sonda de inyección de plantillas", labelEn: "template injection probe" },
+];
+
+/**
+ * Señales de ataque que NO bloquean (IRIS es una consola de seguridad y se
+ * puede preguntar por ellas), pero se registran para rastrear a quien sondea.
+ */
+export function detectAttackSignals(text: string, language: "es" | "en" = "es"): AttackSignal[] {
+  const sample = String(text || "").slice(0, MAX_GUARDIAN_INPUT);
+  return ATTACK_SIGNALS
+    .filter(signal => signal.re.test(sample))
+    .map(signal => ({ code: signal.code, severity: signal.severity, label: language === "es" ? signal.labelEs : signal.labelEn }));
 }
 
 /**
