@@ -24,6 +24,7 @@ import { assertOrgWithinLimits, getMonthlyUsage } from "../../../lib/iris-usage"
 import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
 import { readOrgObsSummary } from "../../../lib/iris-obs-store";
 import { enforceRateLimit } from "../../../lib/rate-limit";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,8 @@ function providerSecretStatus(language: "es" | "en") {
 export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   await ensurePersonalOrganization(user.email, user.displayName);
   const memberships = await listMembershipsForEmail(user.email);
@@ -129,6 +132,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   if (!(await enforceRateLimit(`iris-orgs:${user.email}`, 40, 60 * 1000))) {
     return Response.json({ error: "Too many organization requests." }, { status: 429, headers: { "Retry-After": "60" } });

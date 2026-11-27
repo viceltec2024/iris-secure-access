@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,8 @@ export async function POST(request: Request) {
   if (!identity) return Response.json({ error: "Your IRIS session has expired." }, { status: 401 });
   const user = await provisionIrisUser(identity);
   if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   if (!(await enforceRateLimit(`iris-transcribe:${user.email}`, 20, 60 * 1000))) {
     return Response.json({ error: "Too many voice requests." }, { status: 429, headers: { "Retry-After": "60" } });
   }

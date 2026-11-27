@@ -5,6 +5,7 @@ import { appSettings } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { devAuthEnabled } from "../../dev-auth";
 import { BASE_MAINNET_CHAIN_ID, isEvmAddress, isWalletProvider, normalizeEvmAddress, parseWalletSessionValue, serializeWalletSessionValue } from "../../../lib/iris-chain";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ function sessionPayload(address: string, mode: "watch" | "metamask" | "robinhood
 export async function GET() {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   const key = `${WALLET_KEY}:${user.email}`;
   const [row] = await getDb().select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
@@ -45,6 +48,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   const body = await request.json().catch(() => ({})) as { action?: string; address?: string; mode?: string };
   const key = `${WALLET_KEY}:${user.email}`;

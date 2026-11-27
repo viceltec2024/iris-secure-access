@@ -9,6 +9,7 @@ import { irisReconnectOrigin } from "../../../lib/iris-origin";
 import { listRecentAudit, logAudit, provisionIrisUser } from "../../../lib/authz";
 import { parseWalletSessionValue } from "../../../lib/iris-chain";
 import { approveProposal, parsePurchaseDesk, rejectProposal } from "../../../lib/iris-purchases";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 const WALLET_KEY = "iris_local_wallet_session";
 const DESK_KEY = "iris_purchase_desk";
@@ -22,6 +23,8 @@ async function currentUser() {
 export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const db = getDb();
   const deviceRows = user.role === "ADMIN"
     ? await db.select().from(devices).orderBy(desc(devices.createdAt))
@@ -57,6 +60,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const body = await request.json().catch(() => ({})) as { type?: string; name?: string; platform?: string; deviceId?: string; appName?: string };
   if (body.type === "trust_application" && body.deviceId && body.appName) {
     const db = getDb();
@@ -92,6 +97,8 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const body = await request.json().catch(() => ({})) as { deviceId?: string };
   if (!body.deviceId) return Response.json({ error: "Device ID is required" }, { status: 400 });
 
@@ -113,6 +120,8 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const body = await request.json().catch(() => ({})) as { type?: string; alertId?: string; alertStatus?: "ACKNOWLEDGED" | "RESOLVED"; incidentId?: string; decision?: "approve" | "reject"; language?: "es" | "en" };
   if (body.type === "start_remediation" && body.alertId) {
     const db = getDb();

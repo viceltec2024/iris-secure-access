@@ -2,11 +2,14 @@ import { getChatGPTUser } from "../../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../../lib/authz";
 import { issueBiometricSession } from "../../../../lib/passkeys";
 import { canAttemptPassword, verifyPassword } from "../../../../lib/passwords";
+import { suspendedResponse } from "../../../../lib/iris-step-up";
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
   if (!identity) return Response.json({ error: "Authentication required" }, { status: 401 });
   const user = await provisionIrisUser(identity);
+  const suspended = suspendedResponse(user.status);
+  if (suspended) return suspended;
   if (!(await canAttemptPassword(user.email))) {
     await logAudit(user.email, "IRIS_PASSWORD_VERIFIED", "step_up_access", "DENIED", { reason: "rate_limited" });
     return Response.json({ error: "Demasiados intentos. Espera 15 minutos." }, { status: 429 });

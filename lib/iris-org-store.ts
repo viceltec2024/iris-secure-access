@@ -5,6 +5,7 @@
 
 import { loadSettingCas, saveSettingCas } from "./iris-settings-cas.ts";
 import { legacyEmailDeskKey, orgDeskKey } from "./iris-tenant-core.ts";
+import { CONCURRENT_UPDATE, runCasMutation } from "./iris-cas-core.ts";
 
 function legacyMigratedFlag(kind: "creator" | "mission" | "memory", email: string) {
   return `iris_legacy_migrated:${kind}:${email.trim().toLowerCase()}`;
@@ -47,6 +48,12 @@ export async function loadOrgDeskValue(input: {
   return { key: orgKey, value: "", updatedAt: null as string | null, updatedBy: null as string | null };
 }
 
+/**
+ * Guarda solo si nadie escribió desde la lectura (`expectedUpdatedAt`).
+ * Ante un conflicto lanza `concurrent_update`: antes reintentaba con el mismo
+ * valor y pisaba la escritura concurrente. Para añadir o cambiar algo sobre
+ * el valor más reciente, usa mutateOrgDeskValue.
+ */
 export async function saveOrgDeskValue(input: {
   kind: "creator" | "mission" | "memory";
   organizationId: string;
@@ -55,15 +62,30 @@ export async function saveOrgDeskValue(input: {
   value: string;
 }) {
   const key = orgDeskKey(input.kind, input.organizationId);
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const expected = attempt === 0 ? input.expectedUpdatedAt : (await loadSettingCas(key)).updatedAt;
-    const saved = await saveSettingCas({
-      key,
-      value: input.value,
-      actorEmail: input.email,
-      expectedUpdatedAt: expected,
-    });
-    if (saved.ok) return saved;
-  }
-  throw new Error("concurrent_update");
+  const saved = await saveSettingCas({
+    key,
+    value: input.value,
+    actorEmail: input.email,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  });
+  if (saved.ok) return saved;
+  throw new Error(CONCURRENT_UPDATE);
+}
+
+/**
+ * Lee, aplica `mutate` y guarda; si otro escritor ganó, vuelve a leer y a
+ * aplicar `mutate` sobre el valor nuevo (hasta 5 intentos).
+ */
+export async function mutateOrgDeskValue<T>(input: {
+  kind: "creator" | "mission" | "memory";
+  organizationId: string;
+  email: string;
+  mutate: (value: string) => { value: string; result: T } | { skip: true; result: T };
+}): Promise<T> {
+  const key = orgDeskKey(input.kind, input.organizationId);
+  return runCasMutation({
+    load: () => loadOrgDeskValue(input),
+    save: async (value, expectedUpdatedAt) => (await saveSettingCas({ key, value, actorEmail: input.email, expectedUpdatedAt })).ok,
+    mutate: input.mutate,
+  });
 }

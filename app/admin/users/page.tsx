@@ -5,6 +5,8 @@ import { ShieldCheck, SignOut, UserCircle, Pulse, UsersThree, ArrowLeft } from "
 import IrisBrandMark from "../../iris-brand-mark";
 import { formatUtcClock } from "../../../lib/iris-time";
 import { UserDirectory } from "./user-directory";
+import { stepUpState } from "../../../lib/iris-step-up";
+import { stepUpSatisfied } from "../../../lib/iris-step-up-core";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,12 @@ export default async function ManageUsersPage({ searchParams }: { searchParams: 
   const actor = await provisionIrisUser(identity);
   if (actor.role !== "ADMIN" || actor.status !== "ACTIVE") {
     await logAudit(actor.email, "ADMIN_USERS_OPENED", "user_directory", "DENIED");
+    redirect("/dashboard");
+  }
+  // Cambiar roles exige la misma verificación que el dashboard; sin ella se
+  // vuelve al dashboard, que muestra la pantalla de passkey/contraseña.
+  if (!stepUpSatisfied(await stepUpState(actor.email))) {
+    await logAudit(actor.email, "ADMIN_USERS_OPENED", "user_directory", "DENIED", { reason: "step_up_required" });
     redirect("/dashboard");
   }
   const params = await searchParams;

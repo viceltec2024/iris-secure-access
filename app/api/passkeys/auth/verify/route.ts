@@ -7,11 +7,14 @@ import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../../../lib/authz";
 import { consumeChallenge, decodePublicKey, issueBiometricSession, parsePasskeyTransports } from "../../../../../lib/passkeys";
 import { passkeyRelyingParty } from "../../../../../lib/iris-origin";
+import { suspendedResponse } from "../../../../../lib/iris-step-up";
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
   if (!identity) return Response.json({ error: "Authentication required" }, { status: 401 });
   const user = await provisionIrisUser(identity);
+  const suspended = suspendedResponse(user.status);
+  if (suspended) return suspended;
   const response = await request.json() as AuthenticationResponseJSON;
   const challenge = await consumeChallenge(user.email, "AUTHENTICATE");
   if (!challenge) return Response.json({ error: "The verification expired. Try again." }, { status: 400 });

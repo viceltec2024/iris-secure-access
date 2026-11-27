@@ -6,6 +6,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { appSettings } from "../db/schema";
+import { nextCasTimestamp } from "./iris-cas-core.ts";
 
 export type CasLoadResult = {
   key: string;
@@ -36,7 +37,9 @@ export async function saveSettingCas(input: {
   now?: string;
 }): Promise<{ ok: true; updatedAt: string } | { ok: false; reason: "conflict" }> {
   const db = getDb();
-  const now = input.now || new Date().toISOString();
+  // Siempre posterior al sello esperado, para que dos escrituras en el mismo
+  // milisegundo no compartan versión (ver nextCasTimestamp).
+  const now = input.now || nextCasTimestamp(input.expectedUpdatedAt);
 
   if (!input.expectedUpdatedAt) {
     try {

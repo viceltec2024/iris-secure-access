@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { irisChainBlocks, irisChainTransactions } from "../../../db/schema";
 import { logAudit, provisionIrisUser } from "../../../lib/authz";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 const encoder = new TextEncoder();
 
@@ -30,6 +31,8 @@ async function ensureGenesis() {
 export async function GET() {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   await ensureGenesis();
   const db = getDb();
   const blocks = await db.select().from(irisChainBlocks).orderBy(desc(irisChainBlocks.height)).limit(12);
@@ -42,6 +45,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   await ensureGenesis();
   const body = await request.json().catch(() => ({})) as { action?: string; type?: string; payload?: string };
   const db = getDb();

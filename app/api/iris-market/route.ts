@@ -2,6 +2,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { provisionIrisUser } from "../../../lib/authz";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { fetchLiveTape, fetchMarketBoard, fetchMarketChart, isMarketRange, isMarketSymbol, normalizeMarketSymbol, searchMarket } from "../../../lib/iris-market";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ const liveHeaders = { "Cache-Control": "private, no-store, max-age=0" };
 export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   if (!(await enforceRateLimit(`iris-market:${user.email}`, 40, 60 * 1000))) {
     return Response.json({ error: "Too many live market requests" }, { status: 429, headers: { "Retry-After": "20" } });
   }

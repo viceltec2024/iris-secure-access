@@ -9,6 +9,7 @@ import { probeAllProviders } from "../../../lib/iris-provider-probe";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { requireOrgContext } from "../../../lib/iris-tenant";
 import { recordUsageEvent } from "../../../lib/iris-usage";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,8 @@ async function currentUser() {
 export async function GET() {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   const ctx = await requireOrgContext(user.email);
   const bindings = env as unknown as Record<string, string | undefined>;
@@ -49,6 +52,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   if (!(await enforceRateLimit(`iris-coordinator:${user.email}`, 40, 60 * 1000))) {
     await logAudit(user.email, "IRIS_COORDINATOR", "coordinator", "DENIED", { reason: "rate_limited" });

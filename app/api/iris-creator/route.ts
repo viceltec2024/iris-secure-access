@@ -30,9 +30,11 @@ import { queueStats } from "../../../lib/iris-job-queue";
 import { buildModelCoordinationReport } from "../../../lib/iris-model-registry";
 import { enforceRateLimit } from "../../../lib/rate-limit";
 import { loadOrgDeskValue, saveOrgDeskValue } from "../../../lib/iris-org-store";
+import { concurrencyErrorBody, isConcurrencyError } from "../../../lib/iris-cas-core";
 import type { IrisPlanId } from "../../../lib/iris-plans";
 import { requireOrgContext } from "../../../lib/iris-tenant";
 import { assertOrgWithinLimits, recordUsageEvent } from "../../../lib/iris-usage";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +63,8 @@ function deskPayload(state: CreatorDeskState, language: "es" | "en" = "es") {
 export async function GET(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const language = new URL(request.url).searchParams.get("language") === "en" ? "en" : "es";
   const ctx = await requireOrgContext(user.email);
   const loaded = await loadOrgDeskValue({ kind: "creator", organizationId: ctx.organization.id, email: user.email });
@@ -75,16 +79,27 @@ export async function GET(request: Request) {
     ownerEmail: user.email,
   });
   next = drained.state;
+  let tickPersisted = true;
   if (JSON.stringify(next) !== JSON.stringify(state)) {
-    await saveOrgDeskValue({
-      kind: "creator",
-      organizationId: ctx.organization.id,
-      email: user.email,
-      expectedUpdatedAt: loaded.updatedAt,
-      value: JSON.stringify(next),
-    });
+    try {
+      await saveOrgDeskValue({
+        kind: "creator",
+        organizationId: ctx.organization.id,
+        email: user.email,
+        expectedUpdatedAt: loaded.updatedAt,
+        value: JSON.stringify(next),
+      });
+    } catch (error) {
+      // Otro escritor (p. ej. una aprobación humana) guardó a la vez: no se
+      // pisa. Se devuelve el estado guardado y el latido se drena otra vez
+      // en la próxima apertura del panel.
+      if (!isConcurrencyError(error)) throw error;
+      tickPersisted = false;
+      const reloaded = await loadOrgDeskValue({ kind: "creator", organizationId: ctx.organization.id, email: user.email });
+      next = reloaded.value ? parseCreatorDesk(reloaded.value) : emptyCreatorDesk();
+    }
   }
-  if (drained.tick?.ok) {
+  if (tickPersisted && drained.tick?.ok) {
     await recordOrgObs({
       organizationId: ctx.organization.id,
       actorEmail: user.email,
@@ -97,7 +112,7 @@ export async function GET(request: Request) {
     ...deskPayload(next, language),
     organizationId: ctx.organization.id,
     queue: queueStats(next.queue),
-    ticks: drained.tick
+    ticks: drained.tick && tickPersisted
       ? [{
         ok: drained.tick.ok,
         task: drained.tick.task,
@@ -113,6 +128,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser();
   if (!user || user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   if (!(await enforceRateLimit(`iris-creator:${user.email}`, 40, 60 * 1000))) {
     await logAudit(user.email, "IRIS_CREATOR", "creator", "DENIED", { reason: "rate_limited" });
@@ -348,6 +365,7 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
+    if (isConcurrencyError(error)) return Response.json(concurrencyErrorBody(language), { status: 409 });
     const message = error instanceof Error ? error.message : "creator";
     await logAudit(user.email, "IRIS_CREATOR_DENIED", String(body.agentId || "creator"), "DENIED", { message, action: body.action });
     return Response.json({ error: message }, { status: 400 });

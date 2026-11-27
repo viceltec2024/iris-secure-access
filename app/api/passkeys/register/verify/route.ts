@@ -6,11 +6,19 @@ import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { logAudit, provisionIrisUser } from "../../../../../lib/authz";
 import { consumeChallenge, encodePublicKey, issueBiometricSession } from "../../../../../lib/passkeys";
 import { passkeyRelyingParty } from "../../../../../lib/iris-origin";
+import { requireFactorEnrollment, suspendedResponse } from "../../../../../lib/iris-step-up";
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
   if (!identity) return Response.json({ error: "Authentication required" }, { status: 401 });
   const user = await provisionIrisUser(identity);
+  const suspended = suspendedResponse(user.status);
+  if (suspended) return suspended;
+  const enrollment = await requireFactorEnrollment(user.email);
+  if (enrollment) {
+    await logAudit(user.email, "STEP_UP_FACTOR_ENROLLMENT", "step_up_access", "DENIED", { reason: "existing_factor_not_verified" });
+    return enrollment;
+  }
   const response = await request.json() as RegistrationResponseJSON;
   const challenge = await consumeChallenge(user.email, "REGISTER");
   if (!challenge) return Response.json({ error: "The verification expired. Try again." }, { status: 400 });

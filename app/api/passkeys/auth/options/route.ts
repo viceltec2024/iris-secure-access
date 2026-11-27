@@ -4,11 +4,14 @@ import { provisionIrisUser } from "../../../../../lib/authz";
 import { parsePasskeyTransports, passkeysFor, storeChallenge } from "../../../../../lib/passkeys";
 import { passkeyRelyingParty } from "../../../../../lib/iris-origin";
 import { enforceRateLimit } from "../../../../../lib/rate-limit";
+import { suspendedResponse } from "../../../../../lib/iris-step-up";
 
 export async function POST(request: Request) {
   const identity = await getChatGPTUser();
   if (!identity) return Response.json({ error: "Authentication required" }, { status: 401 });
   const user = await provisionIrisUser(identity);
+  const suspended = suspendedResponse(user.status);
+  if (suspended) return suspended;
 
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
   if (!(await enforceRateLimit(`passkey-auth-options:${ip}`, 20, 5 * 60 * 1000))) {

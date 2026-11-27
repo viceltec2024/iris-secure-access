@@ -5,6 +5,7 @@ import { listProviderStatus, routeIrisVoice } from "../../../../lib/iris-model-r
 import { probeAllProviders } from "../../../../lib/iris-provider-probe";
 import { requireOrgContext } from "../../../../lib/iris-tenant";
 import { recordOrgObs } from "../../../../lib/iris-obs-store";
+import { requireStepUp } from "../../../../lib/iris-step-up";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,8 @@ export async function GET(request: Request) {
   if (!identity) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const user = await provisionIrisUser(identity);
   if (user.status !== "ACTIVE") return Response.json({ error: "IRIS access is suspended." }, { status: 403 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
 
   const bindings = env as unknown as Record<string, string | undefined>;
   const providers = listProviderStatus(bindings);

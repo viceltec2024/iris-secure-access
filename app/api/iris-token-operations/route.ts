@@ -3,6 +3,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { appSettings } from "../../../db/schema";
 import { provisionIrisUser } from "../../../lib/authz";
+import { requireStepUp } from "../../../lib/iris-step-up";
 
 const CONTRACT_KEY = "iris_token_base_mainnet_contract";
 const BASE_RPC = "https://mainnet.base.org";
@@ -30,6 +31,8 @@ export async function GET(request: Request) {
   if (!identity) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const user = await provisionIrisUser(identity);
   if (user.status !== "ACTIVE") return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const stepUp = await requireStepUp(user.email);
+  if (stepUp) return stepUp;
   const [setting] = await getDb().select().from(appSettings).where(eq(appSettings.key, CONTRACT_KEY)).limit(1);
   const contract = setting?.value || "";
   if (!ADDRESS_PATTERN.test(contract)) return Response.json({ error: "IRIS contract is not configured" }, { status: 404 });
