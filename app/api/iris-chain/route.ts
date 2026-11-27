@@ -1,4 +1,4 @@
-import { asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { irisChainBlocks, irisChainTransactions } from "../../../db/schema";
@@ -66,10 +66,21 @@ export async function POST(request: Request) {
     const validator = user.email;
     const previousHash = latest?.hash || "0".repeat(64);
     const hash = await sha256(JSON.stringify({ height, previousHash, merkleRoot, validator, createdAt }));
-    await db.transaction(async tx => {
-      await tx.insert(irisChainBlocks).values({ height, hash, previousHash, merkleRoot, transactionCount: pending.length, validator, createdAt });
-      for (const transaction of pending) await tx.update(irisChainTransactions).set({ blockHeight: height, status: "CONFIRMED" }).where(eq(irisChainTransactions.id, transaction.id));
-    });
+    // D1 no admite transacciones interactivas (db.transaction falla en
+    // producción). db.batch ejecuta las sentencias de forma atómica: si otro
+    // administrador selló el mismo height a la vez, el INSERT choca con la
+    // clave primaria y no se confirma ninguna transacción.
+    const confirmations = pending.map(transaction => db.update(irisChainTransactions)
+      .set({ blockHeight: height, status: "CONFIRMED" })
+      .where(and(eq(irisChainTransactions.id, transaction.id), isNull(irisChainTransactions.blockHeight))));
+    try {
+      await db.batch([
+        db.insert(irisChainBlocks).values({ height, hash, previousHash, merkleRoot, transactionCount: pending.length, validator, createdAt }),
+        ...confirmations,
+      ]);
+    } catch {
+      return Response.json({ error: "Otro bloque se selló al mismo tiempo. Vuelve a intentarlo." }, { status: 409 });
+    }
     await logAudit(user.email, "IRIS_CHAIN_BLOCK_SEALED", String(height), "SUCCESS", { hash, transactionCount: pending.length });
     return Response.json({ block: { height, hash, previousHash, merkleRoot, transactionCount: pending.length, validator, createdAt } }, { status: 201 });
   }

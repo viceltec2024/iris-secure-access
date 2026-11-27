@@ -1,11 +1,12 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import { isPublicAgentPath } from "../lib/iris-origin";
+import { isPublicAgentPath, trustedIdentityHosts, withoutUntrustedIdentity } from "../lib/iris-origin";
 
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  IRIS_TRUSTED_HOSTS?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -40,7 +41,14 @@ const worker = {
     return;
   },
 
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(incoming: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Las cabeceras de identidad de Sites solo cuentan si la petición llega
+    // por un host de confianza (ver withoutUntrustedIdentity).
+    const request = withoutUntrustedIdentity(
+      incoming,
+      trustedIdentityHosts(String(env.IRIS_TRUSTED_HOSTS || process.env.IRIS_TRUSTED_HOSTS || "")),
+      process.env.NODE_ENV !== "production",
+    );
     const url = new URL(request.url);
 
     if (url.pathname === "/_vinext/image") {
