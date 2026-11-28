@@ -470,10 +470,7 @@ export function processMissionQueue(
     if (executed.status === "failed") {
       const failed = failJob(leased.queue, leased.job.id, executed.result?.summary || "sandbox_failed", now);
       return {
-        desk: {
-          missions: desk.missions.map(item => item.id === executed.id ? executed : item),
-          queue: failed.queue,
-        },
+        desk: bumpMissionDesk(desk, desk.missions.map(item => item.id === executed.id ? executed : item), failed.queue),
         processed: executed,
         job: failed.job,
       };
@@ -485,10 +482,7 @@ export function processMissionQueue(
       now,
     );
     return {
-      desk: {
-        missions: desk.missions.map(item => item.id === executed.id ? executed : item),
-        queue: done.queue,
-      },
+      desk: bumpMissionDesk(desk, desk.missions.map(item => item.id === executed.id ? executed : item), done.queue),
       processed: executed,
       job: done.job,
     };
@@ -508,10 +502,7 @@ export function processMissionQueue(
       },
     };
     return {
-      desk: {
-        missions: desk.missions.map(item => item.id === failedMission.id ? failedMission : item),
-        queue: failed.queue,
-      },
+      desk: bumpMissionDesk(desk, desk.missions.map(item => item.id === failedMission.id ? failedMission : item), failed.queue),
       processed: failedMission,
       job: failed.job,
     };

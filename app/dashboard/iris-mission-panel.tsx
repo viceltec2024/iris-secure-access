@@ -2,8 +2,9 @@
 
 /* eslint-disable react-hooks/set-state-in-effect -- mission panel loads desk + scorecard on mount/language */
 import { useEffect, useState } from "react";
-import { CheckCircle, Flag, ShieldCheck, Warning } from "@phosphor-icons/react";
+import { CheckCircle, ShieldCheck } from "@phosphor-icons/react";
 import type { Language } from "./dashboard-i18n";
+import IrisMissionControl from "./iris-mission-control";
 import type { MissionDesk, MissionRecord } from "../../lib/iris-mission";
 import type { EvalRunReport } from "../../lib/iris-evals";
 import type { PriorityCapability } from "../../lib/iris-capability-audit";
@@ -54,14 +55,14 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
 
-  async function startMission() {
+  async function startMission(nextObjective = objective) {
     setBusy(true);
     setNotice("");
     try {
       const response = await fetch("/api/iris-mission", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "start", objective, language }),
+        body: JSON.stringify({ action: "start", objective: nextObjective, language }),
       });
       const payload = await response.json() as MissionDesk & { error?: string; started?: MissionRecord };
       if (!response.ok) throw new Error(payload.error || "mission");
@@ -142,15 +143,14 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
     }
   }
 
-  const waiting = desk.missions.filter(item => ["executed", "awaiting_approval", "verified"].includes(item.status));
-  const pendingLessons = memory.records.filter(item => item.kind === "lesson" && (item.promotion === "pending" || item.promotion === "none"));
+    const pendingLessons = memory.records.filter(item => item.kind === "lesson" && (item.promotion === "pending" || item.promotion === "none"));
   const approvedLessons = memory.records.filter(item => item.kind === "lesson" && item.promotion === "approved");
   const evalHistory = memory.records.filter(item => item.kind === "eval_result").slice(0, 8);
 
   return <section className="module-panel iris-mission-panel">
     <div className="module-toolbar">
       <div>
-        <h2>{es ? "IRIS Mission + Evals" : "IRIS Mission + Evals"}</h2>
+        <h2>{es ? "Centro de misión + Evals" : "Mission center + Evals"}</h2>
         <p>{es
           ? "Objetivo → plan → cola → policy sandbox → verificación humana. Sin contenedor/VM ni auto-modificar IRIS."
           : "Objective → plan → queue → policy sandbox → human verification. No container/VM and no IRIS self-modification."}</p>
@@ -167,57 +167,25 @@ export default function IrisMissionPanel({ language }: { language: Language }) {
       <article><span>{es ? "No implementadas" : "Missing"}</span><strong>{scorecard.missing}</strong></article>
     </div>}
 
-    <div className="mission-grid">
-      <form className="mission-composer" onSubmit={event => { event.preventDefault(); void startMission(); }}>
-        <label>
-          <span>{es ? "Objetivo" : "Objective"}</span>
-          <textarea value={objective} onChange={event => setObjective(event.target.value)} rows={3} maxLength={500} />
-        </label>
-        <button type="submit" disabled={busy || objective.trim().length < 8}>
-          <Flag />{busy ? (es ? "Planificando…" : "Planning…") : (es ? "Iniciar misión" : "Start mission")}
-        </button>
-      </form>
+    <IrisMissionControl
+      language={language}
+      desk={desk}
+      busy={busy}
+      notice={notice}
+      objective={objective}
+      setObjective={setObjective}
+      onStart={value => void startMission(value)}
+      onDecide={(missionId, action) => void decide(missionId, action)}
+    />
 
-      <div className="mission-capabilities">
-        <strong>{es ? "10 capacidades prioritarias" : "10 priority capabilities"}</strong>
-        <ul>
-          {capabilities.map(item => <li key={item.id}>
-            <b>{item.name}</b>
-            <em data-class={item.classification}>{classifyLabel(item.classification, language)}</em>
-          </li>)}
-        </ul>
-      </div>
-    </div>
-
-    {notice && <p className="creator-notice">{notice}</p>}
-
-    {waiting.length > 0 && <div className="creator-waiting">
-      <strong>{es ? "Misiones ejecutadas — aceptación humana" : "Executed missions — human acceptance"}</strong>
-      {waiting.map(item => <article key={item.id}>
-        <span><Flag /></span>
-        <div>
-          <b>{item.agent?.name || item.id.slice(0, 8)}</b>
-          <small>{item.objective.slice(0, 120)}</small>
-          <small>{es ? "Estado" : "Status"}: {item.status} · {item.verification?.passed ? (es ? "evidencia OK" : "evidence OK") : (es ? "evidencia pendiente" : "evidence pending")}</small>
-        </div>
-        <button disabled={busy} onClick={() => void decide(item.id, "approve")}><CheckCircle />{es ? "Aceptar" : "Accept"}</button>
-        <button disabled={busy} onClick={() => void decide(item.id, "reject")}>{es ? "Rechazar" : "Reject"}</button>
-        <button disabled={busy} onClick={() => void decide(item.id, "cancel")}>{es ? "Cancelar" : "Cancel"}</button>
-      </article>)}
-    </div>}
-
-    <div className="mission-history">
-      <h4>{es ? "Historial reciente" : "Recent history"}</h4>
-      {desk.missions.slice(0, 6).map(item => <article key={item.id}>
-        <div>
-          <b>{item.status}</b>
-          <small>{item.objective.slice(0, 140)}</small>
-          {item.result && <p>{item.result.summary}</p>}
-          {item.result && <code>{item.result.evidence.join(" · ")}</code>}
-        </div>
-        {!item.result?.verifiable && <Warning />}
-      </article>)}
-      {desk.missions.length === 0 && <p>{es ? "Aún no hay misiones." : "No missions yet."}</p>}
+    <div className="mission-capabilities mission-capabilities-wide">
+      <strong>{es ? "10 capacidades prioritarias" : "10 priority capabilities"}</strong>
+      <ul>
+        {capabilities.map(item => <li key={item.id}>
+          <b>{item.name}</b>
+          <em data-class={item.classification}>{classifyLabel(item.classification, language)}</em>
+        </li>)}
+      </ul>
     </div>
 
     {lastEval && <div className="mission-eval-report">
