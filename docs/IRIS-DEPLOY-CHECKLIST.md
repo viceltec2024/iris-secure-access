@@ -25,10 +25,17 @@ de forma automática.
 - [ ] Claves de proveedores (`OPENAI_API_KEY`, `MODEL_API_KEY`,
       `ELEVENLABS_API_KEY`) solo si vas a usar esas integraciones.
 - [ ] `IRIS_BILLING_LIVE` sin definir o `0`.
+- [ ] Para entrar con correo y contraseña sin ChatGPT: `IRIS_SETUP_CODE`
+      (16+ caracteres, aleatorio) solo durante el primer acceso del
+      propietario en `/iniciar-sesion`. Bórralo en cuanto tengas contraseña.
 
 ## 3. Comprobaciones después de desplegar
 
 - [ ] `GET /dev/sign-in` devuelve **404**.
+- [ ] `/iniciar-sesion`: entrar con correo y contraseña funciona, y una
+      contraseña incorrecta devuelve "Correo o contraseña incorrectos."
+- [ ] En el iPhone, activa Face ID desde el aviso del dashboard, cierra
+      sesión y vuelve a entrar con "Entrar con Face ID".
 - [ ] Una petición a la URL directa del Worker (p. ej. `*.workers.dev`) con
       la cabecera `oai-authenticated-user-email` falsa devuelve **401**
       en `/api/security-state`. Mejor aún: desactiva la ruta

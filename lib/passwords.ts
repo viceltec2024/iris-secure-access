@@ -70,3 +70,17 @@ export async function verifyPassword(ownerEmail: string, password: string) {
   if (verified) await db.delete(rateLimits).where(eq(rateLimits.key, `password:${ownerEmail}`));
   return verified;
 }
+
+/**
+ * Verificación para el inicio de sesión sin ChatGPT. Deriva la clave aunque
+ * la cuenta no tenga contraseña, para que el tiempo de respuesta no revele
+ * qué correos existen.
+ */
+export async function verifyPasswordForLogin(ownerEmail: string, password: string) {
+  const [record] = await getDb().select({ ownerEmail: userPasswords.ownerEmail }).from(userPasswords).where(eq(userPasswords.ownerEmail, ownerEmail)).limit(1);
+  if (!record) {
+    await derive(password.slice(0, 128), crypto.getRandomValues(new Uint8Array(16)), PASSWORD_ITERATIONS);
+    return false;
+  }
+  return verifyPassword(ownerEmail, password);
+}
