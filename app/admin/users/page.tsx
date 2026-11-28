@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireChatGPTUser, chatGPTSignOutPath } from "../../chatgpt-auth";
+import { requireChatGPTUser, irisSignOutPath } from "../../chatgpt-auth";
 import { listUserAuditForAdmin, listUsersForAdmin, logAudit, provisionIrisUser } from "../../../lib/authz";
 import { ShieldCheck, SignOut, UserCircle, Pulse, UsersThree, ArrowLeft } from "@phosphor-icons/react/dist/ssr";
 import IrisBrandMark from "../../iris-brand-mark";
@@ -27,7 +27,7 @@ export default async function ManageUsersPage({ searchParams }: { searchParams: 
         <div className="workspace-user"><UserCircle /><div><strong>{actor.displayName || actor.email}</strong><span>{actor.role}</span></div></div>
       </aside>
       <section className="workspace-main">
-        <header className="workspace-header"><div><p>Access administration</p><h1>Manage users</h1></div><a className="signout-link" href={chatGPTSignOutPath("/")}><SignOut /> Sign out</a></header>
+        <header className="workspace-header"><div><p>Access administration</p><h1>Manage users</h1></div><a className="signout-link" href={irisSignOutPath()}><SignOut /> Sign out</a></header>
         <section className="trust-banner"><ShieldCheck weight="fill" /><div><strong>Administrator controls</strong><span>Role and status changes are enforced on the server and recorded in the audit log.</span></div></section>
         <section className="user-directory workspace-panel">
           <div className="panel-title"><UsersThree /><div><h2>User directory</h2><p>{directory.length} registered {directory.length === 1 ? "account" : "accounts"}</p></div></div>
