@@ -1,4 +1,4 @@
-import { chatGPTSignInPath, chatGPTSignOutPath, getChatGPTUser } from "../chatgpt-auth";
+import { getChatGPTUser, irisSignInPath, irisSignOutPath } from "../chatgpt-auth";
 import { listRecentAudit, provisionIrisUser } from "../../lib/authz";
 import { ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 import { redirect } from "next/navigation";
@@ -16,12 +16,12 @@ export default async function Dashboard() {
   const identity = await getChatGPTUser();
   if (!identity) {
     if (devAuthEnabled()) return <LocalConnect returnTo="/dashboard" />;
-    redirect(chatGPTSignInPath("/dashboard"));
+    redirect(irisSignInPath("/dashboard"));
   }
   const user = await provisionIrisUser(identity);
 
   if (user.status !== "ACTIVE") {
-    return <main className="blocked-state"><ShieldCheck weight="fill" /><h1>Access suspended</h1><p>Contact an IRIS administrator to restore access.</p><a href={chatGPTSignOutPath("/")}>Sign out</a></main>;
+    return <main className="blocked-state"><ShieldCheck weight="fill" /><h1>Access suspended</h1><p>Contact an IRIS administrator to restore access.</p><a href={irisSignOutPath()}>Cerrar sesión</a></main>;
   }
 
   const events = await listRecentAudit(user.email, user.role);
@@ -30,7 +30,7 @@ export default async function Dashboard() {
   const hasPassword = await passwordConfigured(user.email);
   const skipStepUp = devAuthEnabled();
   const verified = skipStepUp ? true : (passkeyEnrolled || hasPassword ? await isBiometricVerified(user.email) : false);
-  const signOutPath = skipStepUp ? "/dev/sign-out?return_to=/" : chatGPTSignOutPath("/");
+  const signOutPath = skipStepUp ? "/dev/sign-out?return_to=/" : irisSignOutPath();
   return <PasskeyGate passkeyEnrolled={passkeyEnrolled} passwordConfigured={hasPassword} verified={verified} signOutPath={signOutPath} devSkipStepUp={skipStepUp}>
     <SecurityOperations user={{ email: user.email, displayName: user.displayName || user.email, role: user.role }} auditCount={events.length} signOutPath={signOutPath} initialDevices={bootstrap.devices} initialAgentOrigin={bootstrap.agentOrigin} />
   </PasskeyGate>;

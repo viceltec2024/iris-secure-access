@@ -1,6 +1,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { DEV_IDENTITY_COOKIE, devAuthEnabled, devDefaultEmail } from "./dev-auth";
+import { sessionEmailFromCookie } from "../lib/passkeys";
 
 export type ChatGPTUser = {
   displayName: string;
@@ -16,11 +17,17 @@ const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
 const CALLBACK_PATH = "/callback";
+const IRIS_SIGN_IN_PATH = "/iniciar-sesion";
+const IRIS_SIGN_OUT_PATH = "/cerrar-sesion";
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
   const email = requestHeaders.get(USER_EMAIL_HEADER);
   if (!email) {
+    // Sesión propia de IRIS (correo + contraseña o Face ID / Touch ID),
+    // emitida solo después de verificar la credencial de esa cuenta.
+    const sessionEmail = await sessionEmailFromCookie();
+    if (sessionEmail) return { displayName: sessionEmail, email: sessionEmail, fullName: null };
     if (devAuthEnabled()) {
       const rawDevEmail = (await cookies()).get(DEV_IDENTITY_COOKIE)?.value;
       const devEmail = (rawDevEmail ? safeDecodeURIComponent(rawDevEmail) : null) || devDefaultEmail();
@@ -57,7 +64,16 @@ export function irisSignInPath(returnTo: string): string {
   if (devAuthEnabled()) {
     return `/dev/sign-in?return_to=${encodeURIComponent(safeReturnTo)}`;
   }
-  return chatGPTSignInPath(safeReturnTo);
+  return `${IRIS_SIGN_IN_PATH}?return_to=${encodeURIComponent(safeReturnTo)}`;
+}
+
+/** Cierra la sesión de IRIS y, si se entró con ChatGPT, también la de ChatGPT. */
+export function irisSignOutPath(): string {
+  return IRIS_SIGN_OUT_PATH;
+}
+
+export function safeIrisReturnPath(value: string | null | undefined): string {
+  return safeRelativeReturnPath(value || "/dashboard");
 }
 
 export function chatGPTSignInPath(returnTo: string): string {
@@ -90,6 +106,8 @@ function isReservedAuthPath(pathname: string): boolean {
     pathname === SIGN_IN_PATH ||
     pathname === SIGN_OUT_PATH ||
     pathname === CALLBACK_PATH ||
+    pathname === IRIS_SIGN_IN_PATH ||
+    pathname === IRIS_SIGN_OUT_PATH ||
     pathname === "/dev/sign-in" ||
     pathname === "/dev/sign-out"
   );

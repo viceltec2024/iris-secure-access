@@ -83,3 +83,28 @@ export async function isBiometricVerified(ownerEmail: string) {
 export async function stableUserId(email: string) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(email)));
 }
+
+/**
+ * Correo de la sesión de IRIS (contraseña o passkey) del navegador, si sigue
+ * vigente. Permite entrar sin ChatGPT: la sesión solo se emite tras verificar
+ * la contraseña o la passkey de esa cuenta.
+ */
+export async function sessionEmailFromCookie(): Promise<string | null> {
+  const rawToken = (await cookies()).get(BIOMETRIC_COOKIE)?.value;
+  if (!rawToken || rawToken.length > 200) return null;
+  const [session] = await getDb().select().from(biometricSessions).where(and(
+    eq(biometricSessions.tokenHash, await digest(rawToken)),
+    gt(biometricSessions.expiresAt, new Date().toISOString()),
+  )).limit(1);
+  return session ? session.ownerEmail : null;
+}
+
+/** Cierra la sesión de IRIS de este navegador (borra la fila y la cookie). */
+export async function endBiometricSession() {
+  const jar = await cookies();
+  const rawToken = jar.get(BIOMETRIC_COOKIE)?.value;
+  if (rawToken && rawToken.length <= 200) {
+    await getDb().delete(biometricSessions).where(eq(biometricSessions.tokenHash, await digest(rawToken)));
+  }
+  jar.delete(BIOMETRIC_COOKIE);
+}

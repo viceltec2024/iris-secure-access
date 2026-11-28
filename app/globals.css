@@ -708,3 +708,22 @@ a { color: inherit; }
 @media(prefers-reduced-motion:reduce){.mc-track div{transition:none}}
 @media(max-width:860px){.mc-grid{grid-template-columns:1fr}.mc-graph{order:-1}}
 @media(max-width:520px){.mc,.mission-capabilities-wide{margin:0 10px}.mc-log button,.mc-log ul li{grid-template-columns:58px minmax(0,1fr)}.mc-log .k{display:none}}
+/* Inicio de sesión sin ChatGPT: negro y azul */
+.iris-login{min-height:100vh;min-height:100dvh;display:grid;grid-template-columns:minmax(0,1fr);place-items:center;box-sizing:border-box;padding:24px 16px;padding-top:max(24px,env(safe-area-inset-top));background:#05070c;color:#eaf2ff}
+.iris-login-card{width:100%;max-width:420px;box-sizing:border-box;padding:28px 24px;border:1px solid #1b2840;border-radius:14px;background:#0a0f1a}
+.iris-login-brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.08em;color:#3d8bff}
+.iris-login-card h1{margin:18px 0 6px;font-size:28px;line-height:1.1}
+.iris-login-card>p{margin:0 0 20px;color:#a3b3cc;font-size:15px;line-height:1.5}
+.iris-login-form form{display:flex;flex-direction:column;gap:6px}
+.iris-login-form label{margin-top:8px;color:#a3b3cc;font-size:13px}
+.iris-login-form input{box-sizing:border-box;width:100%;min-height:48px;border:1px solid #1b2840;border-radius:10px;background:#000;color:#eaf2ff;font-size:16px;padding:0 14px}
+.iris-login-form form button,.iris-login-faceid{min-height:50px;margin-top:14px;border:0;border-radius:10px;background:#3d8bff;color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+.iris-login-faceid{width:100%;margin-top:0;background:#0f2347;border:1px solid #3d8bff;color:#eaf2ff}
+.iris-login-form button:disabled{opacity:.55;cursor:default}
+.iris-login-form input:focus-visible,.iris-login-form button:focus-visible,.iris-login-chatgpt:focus-visible{outline:2px solid #3d8bff;outline-offset:2px}
+.iris-login-divider{display:flex;align-items:center;gap:10px;margin:18px 0 4px;color:#6d7d96;font-size:13px}
+.iris-login-divider::before,.iris-login-divider::after{content:"";flex:1;height:1px;background:#1b2840}
+.iris-login-chatgpt{display:block;text-align:center;min-height:44px;line-height:44px;color:#3d8bff;font-weight:600;text-decoration:none}
+.iris-login-error{margin:12px 0 0;color:#ff4d5e;font-size:14px}
+.iris-login-hint{display:block;margin-top:6px;color:#a3b3cc;font-size:13px}
+.iris-login-link{display:block;width:100%;min-height:44px;margin-top:10px;border:0;background:none;color:#a3b3cc;font-size:14px;text-decoration:underline;cursor:pointer}
